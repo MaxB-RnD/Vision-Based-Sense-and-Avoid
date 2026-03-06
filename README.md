@@ -1,74 +1,99 @@
-# Project Name
+# Vision-Based Sense and Avoid: Monocular Airborne Object Tracking for Safe Drone Flight
 
-## Summary
+## Overview
 
-A brief description of what this project does, why it exists, and what problem it solves.  
-Keep this high-level and focused on intent rather than implementation details.
+This project tackles the challenge of detecting and tracking tiny airborne objects using only a
+single monocular camera onboard a drone. Working with the Airborne Object Tracking (AOT) dataset,
+a real-world collection of 5.9M+ images across diverse flight conditions, the goal is to develop
+novel deep learning and multi-object tracking algorithms that achieve early detection with an
+extremely low false alarm rate, enabling safe collision avoidance without unnecessary manoeuvres.
+
+Objects in this dataset can appear as just a few pixels per frame, making this one of the most
+challenging small-object detection problems in computer vision, and one of the most critical for
+future autonomous flight systems.
+
+For background on the dataset and benchmarks, see the
+[Airborne Object Tracking Challenge on AIcrowd](https://www.aicrowd.com/challenges/airborne-object-tracking-challenge).
+
+---
+
+## Project Details
+
+| Field            | Details                                                                 |
+|------------------|-------------------------------------------------------------------------|
+| **Sponsor**      | Lockheed Martin Australia – Advanced Systems & Technology Group         |
+| **Supervisor**   | Dr Feras Dayoub (feras.dayoub@adelaide.edu.au)                          |
+| **Co-Supervisor**| Ms Kendall Louise Jenner (kendall.l.jenner@global.lmco.com)             |
+| **Second Marker**| Dr Lei Chen (lei.chen@adelaide.edu.au)                                  |
 
 ---
 
 ## Features
 
-- Key feature or capability
-- Another important feature
-- Optional: platform, language, or performance highlights
+> _To be completed as the project develops._
 
 ---
 
 ## Project Structure
+
 ```
-project-root/
-├── src/ # Core Source Code.
-├── include/ # Public Headers (if applicable).
-├── scripts/ # Helper or Build Scripts.
-├── tests/ # Tests.
-├── docs/ # Documentation or Notes.
+Vision-Based-Sense-and-Avoid/
+├── core/           # Competition repo helper library (AOT dataset access).
+├── data/           # Scripts for dataset selection, cleaning, and visualisation.
+│   └── browse_data.py
+├── .venv/          # Python virtual environment (not committed).
+├── requirements.txt
+├── logging_module.py
 └── README.md
 ```
-
-(Adjust this section to match the actual layout of the project.)
 
 ---
 
 ## Requirements
 
-- Language version (e.g., C++20, Python 3.11).
-- Build tools or dependencies.
-- Operating system support (if relevant).
+- Python 3.10+
+- Virtual Environment (recommended)
+- AWS credentials are **NOT** required — the AOT dataset is hosted in a public S3 bucket.
+- See `requirements.txt` for full package dependencies.
 
 ---
 
-## Build / Setup
+## Setup
 
-Brief instructions on how to build or set up the project.
+1. Clone this repository:
+   ```bash
+   git clone <repo-url>
+   cd Vision-Based-Sense-and-Avoid
+   ```
 
-Examples:
-- How to configure and build.
-- How to install dependencies.
-- Any required environment variables.
+2. Create and activate a virtual environment:
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate        # Linux/macOS/WSL
+   .venv\Scripts\activate           # Windows
+   ```
+
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+---
+
+## Dataset
+
+> _To be completed as algorithms and tooling are developed._
 
 ---
 
 ## Usage
 
-Basic examples of how to use or run the project.
-
-- Command-line usage.
-- Example input/output.
-- How this project is intended to be consumed (library, tool, service, etc.).
+> _To be completed as algorithms and tooling are developed._
 
 ---
 
 ## Development Notes
 
-Optional section for:
-- Design decisions.
-- Known limitations.
-- Future improvements.
-- Gotchas or assumptions.
+> _To be completed as the project develops._
 
 ---
-
-## License
-
-Specify the license for this project (or note if it is private/internal).
