@@ -1,0 +1,12 @@
+--------------------------------------------------------------------------------
+-                           D E S C R I P T I O N                              -
+--------------------------------------------------------------------------------
+
+This txt file contains the selected flight IDs appended from the data browser.
+These IDs can be used to create custom datasets according to predetermined
+criteria. This allows harder or more feature-specific datasets to be made for
+testing the robustness of different models and finding any weaknesses in them.
+
+--------------------------------------------------------------------------------
+
+# FLIGHT IDs
