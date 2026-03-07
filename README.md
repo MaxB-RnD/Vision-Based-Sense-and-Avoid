@@ -41,9 +41,7 @@ Vision-Based-Sense-and-Avoid/
 ├── core/           # Competition repo helper library (AOT dataset access).
 ├── data/           # Scripts for dataset selection, cleaning, and visualisation.
 │   └── browse_data.py
-├── .venv/          # Python virtual environment (not committed).
 ├── requirements.txt
-├── logging_module.py
 └── README.md
 ```
 
@@ -51,7 +49,7 @@ Vision-Based-Sense-and-Avoid/
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.8.
 - Virtual Environment (recommended)
 - AWS credentials are **NOT** required — the AOT dataset is hosted in a public S3 bucket.
 - See `requirements.txt` for full package dependencies.
