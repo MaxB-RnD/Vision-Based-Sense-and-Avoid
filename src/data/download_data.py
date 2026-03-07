@@ -112,7 +112,7 @@ def loadFlightIds(path: str) -> List[str]:
 
 
 # ------------------------------------------------------------------------------
-#                           DOWNLOAD FLIGHTS
+#                               DOWNLOAD FLIGHTS
 # ------------------------------------------------------------------------------
 def downloadFlights(dataset: Dataset, flight_ids: List[str]) -> None:
     """

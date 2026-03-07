@@ -47,7 +47,7 @@ from core.dataset import Dataset
 from logging_module import LogLevel, log
 
 # ------------------------------------------------------------------------------
-#                        CONFIGURATION VARIABLES
+#                           CONFIGURATION VARIABLES
 # ------------------------------------------------------------------------------
 # Number of Entries to Display Before Pausing for User Input.
 PAUSE_EVERY_N = 1    
@@ -62,7 +62,7 @@ SELECTED_FLIGHTS_PATH = 'data/selected_flights.txt'
 
 
 # ------------------------------------------------------------------------------
-#                              DATA DOWNLOAD
+#                               DATA DOWNLOAD
 # ------------------------------------------------------------------------------
 def dataLoader(download: bool = True) -> Dataset:
     """
@@ -135,7 +135,7 @@ def dataLoader(download: bool = True) -> Dataset:
 
 
 # ------------------------------------------------------------------------------
-#                        HELPER FUNCTIONS
+#                               HELPER FUNCTIONS
 # ------------------------------------------------------------------------------
 def bboxArea(bb: Optional[object]) -> Optional[float]:
     """
@@ -276,7 +276,7 @@ def saveFlightId(flight_id: str) -> None:
 
 
 # ------------------------------------------------------------------------------
-#                        MAIN BROWSING LOOP
+#                             MAIN BROWSING LOOP
 # ------------------------------------------------------------------------------
 def main(): 
     """

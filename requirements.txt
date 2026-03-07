@@ -38,8 +38,8 @@
 # ==============================================================================
 # Shared Libraries from Our GitHub Repository
 # ==============================================================================
-# > This installs directly from my repository as a module without needing to change 
-# > anything.
+# > This installs directly from my repository as a module without needing to 
+# > change anything.
 
 # Custom Logger Module. 
 git+ssh://git@github.com/MaxB-RnD/Shared-Libraries.git#subdirectory=Loggers
