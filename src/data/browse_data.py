@@ -25,16 +25,16 @@
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
 # ------------------------------------------------------------------------------
-# This software and its contents are the intellectual property of
-# Lockheed Martin Australia and are protected under applicable copyright
-# and intellectual property laws.
+# This software and its contents are the intellectual property of Lockheed 
+# Martin Australia and are protected under applicable copyright and intellectual
+# property laws.
 #
-# All rights reserved. No part of this software may be reproduced,
-# distributed, modified, or transmitted in any form or by any means
-# without the prior written permission of Lockheed Martin Australia.
+# All rights reserved. No part of this software may be reproduced, distributed, 
+# modified, or transmitted in any form or by any means without the prior written
+# permission of Lockheed Martin Australia.
 #
-# Unauthorised use, copying, or distribution of this software is
-# strictly prohibited.
+# Unauthorised use, copying, or distribution of this software is strictly 
+# prohibited.
 # ------------------------------------------------------------------------------
 
 import os
@@ -85,7 +85,7 @@ def dataLoader(download: bool = True) -> Dataset:
     # Display Start Message with Clean Spacing Buffer. 
     print()
     log(LogLevel.INFO, "browse_data:dataLoader", 
-        "Loading Dataset Metadata (No Images Will Be Downloaded).\n")
+        "Loading Dataset Metadata.\n")
     
     # Check if a Fresh Download Has Been Requested.
     if download and os.path.exists("data"):
@@ -278,111 +278,120 @@ def saveFlightId(flight_id: str) -> None:
 # ------------------------------------------------------------------------------
 #                        MAIN BROWSING LOOP
 # ------------------------------------------------------------------------------
-# Ask the User Whether to Re-Download the Metadata or Use Local Copy.
-while True:
-    print("\nDo you Wish to Download the AOT Metadata? (Y/N)")
-    download = input("  >> ").strip().lower()
+def main(): 
+    """
+    The main function for running the data browsing interface.
+    """
+    # Ask the User Whether to Re-Download the Metadata or Use Local Copy.
+    while True:
+        print("\nDo you Wish to Download the AOT Metadata? (Y/N)")
+        download = input("  >> ").strip().lower()
 
-    if download == 'y':
-        # Download Fresh Metadata from S3.
-        dataset = dataLoader(download=True)
-        break
-    elif download == 'n':
-        # Use Locally Cached Metadata.
-        dataset = dataLoader(download=False)
-        break
-    else:
-        # Invalid Input. Re-Ask the Question.
-        log(LogLevel.WARNING, "browse_data:main", 
-            "Invalid Input. Please Enter Y or N.")
-
-
-# Retrieve the List of Flight IDs from the Dataset.
-flight_ids    = dataset.get_flight_ids()
-total_flights = len(flight_ids)
-
-# Display How Many Flights were Discovered in the Metadata.
-log(LogLevel.INFO, "browse_data:main", "Found %d Flights in Metadata.", total_flights)
-
-# Display Browsing Controls to the User.
-print("Controls: [Enter] Next  |  [s] Skip Flight  |  [a] Save Flight  |  [q] Quit\n")
-
-# Set View Counter & Stop Flag. 
-entry_count = 0
-stop = False
-
-
-# Iterate through Each Flight in the Dataset.
-for flight_idx, flight_id in enumerate(flight_ids):
-    # If the User Requested to Stop Browsing, Exit the Loop.
-    if stop:
-        break
-    
-    # Load the Flight Object & Retrive all Associated Frames.
-    flight = dataset.get_flight(flight_id)
-    frames = flight.frames
-
-    # Display Information about the Current Flight Being Inspected.
-    log(LogLevel.INFO, "browse_data:main", "Flight %d/%d  (%s)  |  %d Frames",
-        flight_idx + 1, total_flights, flight_id, len(frames))
-
-    # Set Flag for Skipping Remainder of Current Flight.
-    skip_flight = False
-
-    # Iterate through Each Frame in the Current Flight.
-    for frame_id, frame in frames.items():
-        # Exit Frame Loop Conditions.
-        if stop or skip_flight:
+        if download == 'y':
+            # Download Fresh Metadata from S3.
+            dataset = dataLoader(download=True)
             break
+        elif download == 'n':
+            # Use Locally Cached Metadata.
+            dataset = dataLoader(download=False)
+            break
+        else:
+            # Invalid Input. Re-Ask the Question.
+            log(LogLevel.WARNING, "browse_data:main", 
+                "Invalid Input. Please Enter Y or N.")
 
-        # Grab the Full Ground-Truth Metadata Needed.
-        object_locations = frame.detected_object_locations
 
-        # If the Frame Contains No Airborne Objects, Skip It.
-        if not object_locations:
-            log(LogLevel.WARNING, "browse_data:main",
-                "Frame %s has No Airborne Objects, Skipping.", frame_id)
-            continue
+    # Retrieve the List of Flight IDs from the Dataset.
+    flight_ids    = dataset.get_flight_ids()
+    total_flights = len(flight_ids)
+
+    # Display How Many Flights were Discovered in the Metadata.
+    log(LogLevel.INFO, "browse_data:main", "Found %d Flights in Metadata.", total_flights)
+
+    # Display Browsing Controls to the User.
+    print("Controls: [Enter] Next  |  [s] Skip Flight  |  [a] Save Flight  |  [q] Quit\n")
+
+    # Set View Counter & Stop Flag. 
+    entry_count = 0
+    stop = False
+
+
+    # Iterate through Each Flight in the Dataset.
+    for flight_idx, flight_id in enumerate(flight_ids):
+        # If the User Requested to Stop Browsing, Exit the Loop.
+        if stop:
+            break
         
+        # Load the Flight Object & Retrive all Associated Frames.
+        flight = dataset.get_flight(flight_id)
+        frames = flight.frames
 
-        # Iterate through Each Airborne Object Detected in the Frame.
-        for obj_id, obj in object_locations.items():
-            # Display this Dataset Entry to the User.
-            displayEntry(flight_id, frame_id, obj_id, obj)
-            entry_count += 1
+        # Display Information about the Current Flight Being Inspected.
+        log(LogLevel.INFO, "browse_data:main", "Flight %d/%d  (%s)  |  %d Frames",
+            flight_idx + 1, total_flights, flight_id, len(frames))
 
-            # Pause Every N Entries so the User can Interact.
-            if entry_count % PAUSE_EVERY_N == 0:
-                # Keep Prompting Until a Valid Command is Entered.
-                while True:
-                    try:
-                        # Take USer Input. 
-                        cmd = input("  >> ").strip().lower()
-                    except EOFError:
-                        # Treat Input Interruption as a Quit Command.
-                        cmd = 'q'
+        # Set Flag for Skipping Remainder of Current Flight.
+        skip_flight = False
 
-                    if cmd == 'q':
-                        # User Requested to Quit the Entire Browsing Process.
-                        log(LogLevel.INFO, "browse_data:main", "Quit Requested by User.")
-                        stop = True
-                        break
-                    elif cmd == 's':
-                        # Skip the Rest of this Flight & Move to the Next One.
-                        log(LogLevel.WARNING, "browse_data:main",
-                            "Skipping Flight %s.", flight_id)
-                        skip_flight = True
-                        break
-                    elif cmd == 'a':
-                        # Save the Parent Flight ID to the Selected List.
-                        saveFlightId(flight_id)
-                        break
-                    else:
-                        # Enter (or any other input) Continues to the Next Entry.
-                        break
+        # Iterate through Each Frame in the Current Flight.
+        for frame_id, frame in frames.items():
+            # Exit Frame Loop Conditions.
+            if stop or skip_flight:
+                break
+
+            # Grab the Full Ground-Truth Metadata Needed.
+            object_locations = frame.detected_object_locations
+
+            # If the Frame Contains No Airborne Objects, Skip It.
+            if not object_locations:
+                log(LogLevel.WARNING, "browse_data:main",
+                    "Frame %s has No Airborne Objects, Skipping.", frame_id)
+                continue
+            
+
+            # Iterate through Each Airborne Object Detected in the Frame.
+            for obj_id, obj in object_locations.items():
+                # Display this Dataset Entry to the User.
+                displayEntry(flight_id, frame_id, obj_id, obj)
+                entry_count += 1
+
+                # Pause Every N Entries so the User can Interact.
+                if entry_count % PAUSE_EVERY_N == 0:
+                    # Keep Prompting Until a Valid Command is Entered.
+                    while True:
+                        try:
+                            # Take USer Input. 
+                            cmd = input("  >> ").strip().lower()
+                        except EOFError:
+                            # Treat Input Interruption as a Quit Command.
+                            cmd = 'q'
+
+                        if cmd == 'q':
+                            # User Requested to Quit the Entire Browsing Process.
+                            log(LogLevel.INFO, "browse_data:main", "Quit Requested by User.")
+                            stop = True
+                            break
+                        elif cmd == 's':
+                            # Skip the Rest of this Flight & Move to the Next One.
+                            log(LogLevel.WARNING, "browse_data:main",
+                                "Skipping Flight %s.", flight_id)
+                            skip_flight = True
+                            break
+                        elif cmd == 'a':
+                            # Save the Parent Flight ID to the Selected List.
+                            saveFlightId(flight_id)
+                            break
+                        else:
+                            # Enter (or any other input) Continues to the Next Entry.
+                            break
 
 
-# Once Browsing Finishes Display Summary.
-log(LogLevel.INFO, "browse_data:main",
-    "Browsing Complete. Total Entries Viewed: %d.\n", entry_count)
+    # Once Browsing Finishes Display Summary.
+    log(LogLevel.INFO, "browse_data:main",
+        "Browsing Complete. Total Entries Viewed: %d.\n", entry_count)
 # ------------------------------------------------------------------------------
+
+
+# Call the Main Function
+if __name__ == "__main__":
+    main()
