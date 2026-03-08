@@ -1,6 +1,6 @@
 # Vision-Based Sense and Avoid: Monocular Airborne Object Tracking for Safe Drone Flight
 
-## Overview
+## 🛸 Overview
 
 This project tackles the challenge of detecting and tracking tiny airborne objects using only a
 single monocular camera onboard a drone. Working with the Airborne Object Tracking (AOT) dataset,
@@ -17,7 +17,7 @@ For background on the dataset and benchmarks, see the
 
 ---
 
-## Project Details
+## 📋 Project Details
 
 | Field            | Details                                                                 |
 |------------------|-------------------------------------------------------------------------|
@@ -28,13 +28,13 @@ For background on the dataset and benchmarks, see the
 
 ---
 
-## Features
+## 🤖 Features
 
 > _To be completed as the project develops._
 
 ---
 
-## Project Structure
+## 🗂️ Project Structure
 
 ```
 Vision-Based-Sense-and-Avoid/
@@ -52,7 +52,7 @@ Vision-Based-Sense-and-Avoid/
 
 ---
 
-## Requirements
+## ⚙️ Requirements
 
 - Python 3.8.
 - Virtual Environment (recommended).
@@ -61,11 +61,11 @@ Vision-Based-Sense-and-Avoid/
 
 ---
 
-## Setup
+## 🛠️ Setup
 
 **1. Clone this Repository:**
    ```bash
-   git clone <repo-url>
+   git clone https://github.com/MaxB-RnD/Vision-Based-Sense-and-Avoid.git
    cd Vision-Based-Sense-and-Avoid
    ```
 
@@ -83,7 +83,7 @@ Vision-Based-Sense-and-Avoid/
 
 ---
 
-## Dataset
+## 🗃️ Dataset
 
 > _To be completed as algorithms and tooling are developed._
 
