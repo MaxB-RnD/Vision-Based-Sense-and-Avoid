@@ -38,9 +38,14 @@ For background on the dataset and benchmarks, see the
 
 ```
 Vision-Based-Sense-and-Avoid/
-├── core/           # Competition repo helper library (AOT dataset access).
-├── data/           # Scripts for dataset selection, cleaning, and visualisation.
-│   └── browse_data.py
+├── core/           # Competition Repo Helper Library (AOT Dataset Access).
+├── data/           # Stores Flight ID Sets for Different Custom Libraries.
+├── docs/           # Further Information on Research.
+├── src/
+│   └── data/       # Dataset Selection, Cleaning, and Visualisation Scripts.
+│       ├── browse_data.py
+│       ├── download_data.py
+│       └── view_data.py
 ├── requirements.txt
 └── README.md
 ```
@@ -50,7 +55,7 @@ Vision-Based-Sense-and-Avoid/
 ## Requirements
 
 - Python 3.8.
-- Virtual Environment (recommended)
+- Virtual Environment (recommended).
 - AWS credentials are **NOT** required — the AOT dataset is hosted in a public S3 bucket.
 - See `requirements.txt` for full package dependencies.
 
@@ -58,20 +63,20 @@ Vision-Based-Sense-and-Avoid/
 
 ## Setup
 
-1. Clone this repository:
+**1. Clone this repository:**
    ```bash
    git clone <repo-url>
    cd Vision-Based-Sense-and-Avoid
    ```
 
-2. Create and activate a virtual environment:
+**2. Create and activate a virtual environment:**
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate        # Linux/macOS/WSL
    .venv\Scripts\activate           # Windows
    ```
 
-3. Install dependencies:
+**3. Install dependencies:**
    ```bash
    pip install -r requirements.txt
    ```
