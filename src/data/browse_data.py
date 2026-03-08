@@ -360,7 +360,7 @@ def main():
                     # Keep Prompting Until a Valid Command is Entered.
                     while True:
                         try:
-                            # Take USer Input. 
+                            # Take User Input. 
                             cmd = input("  >> ").strip().lower()
                         except EOFError:
                             # Treat Input Interruption as a Quit Command.

@@ -63,20 +63,20 @@ Vision-Based-Sense-and-Avoid/
 
 ## Setup
 
-**1. Clone this repository:**
+**1. Clone this Repository:**
    ```bash
    git clone <repo-url>
    cd Vision-Based-Sense-and-Avoid
    ```
 
-**2. Create and activate a virtual environment:**
+**2. Create & Activate a Virtual Environment:**
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate        # Linux/macOS/WSL
    .venv\Scripts\activate           # Windows
    ```
 
-**3. Install dependencies:**
+**3. Install Dependencies:**
    ```bash
    pip install -r requirements.txt
    ```
@@ -86,17 +86,5 @@ Vision-Based-Sense-and-Avoid/
 ## Dataset
 
 > _To be completed as algorithms and tooling are developed._
-
----
-
-## Usage
-
-> _To be completed as algorithms and tooling are developed._
-
----
-
-## Development Notes
-
-> _To be completed as the project develops._
 
 ---
