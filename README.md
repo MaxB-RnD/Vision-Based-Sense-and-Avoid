@@ -19,12 +19,12 @@ For background on the dataset and benchmarks, see the
 
 ## 📋 Project Details
 
-| Field            | Details                                                                 |
-|------------------|-------------------------------------------------------------------------|
-| **Sponsor**      | Lockheed Martin Australia – Advanced Systems & Technology Group         |
-| **Supervisor**   | Dr Feras Dayoub (feras.dayoub@adelaide.edu.au)                          |
-| **Co-Supervisor**| Ms Kendall Louise Jenner (kendall.l.jenner@global.lmco.com)             |
-| **Second Marker**| Dr Lei Chen (lei.chen@adelaide.edu.au)                                  |
+| Field            | Details                                                                                                |
+|------------------|--------------------------------------------------------------------------------------------------------|
+| **Sponsor**      | Lockheed Martin Australia – Advanced Systems & Technology Group                                        |
+| **Supervisor**   | Dr Feras Dayoub ([feras.dayoub@adelaide.edu.au](mailto:feras.dayoub@adelaide.edu.au))                  |
+| **Co-Supervisor**| Ms Kendall Louise Jenner ([kendall.l.jenner@global.lmco.com](mailto:kendall.l.jenner@global.lmco.com)) |
+| **Second Marker**| Dr Lei Chen ([lei.chen@adelaide.edu.au](mailto:lei.chen@adelaide.edu.au))                              |
 
 ---
 
@@ -36,7 +36,7 @@ For background on the dataset and benchmarks, see the
 
 ## 🗂️ Project Structure
 
-```
+```text
 Vision-Based-Sense-and-Avoid/
 ├── core/           # Competition Repo Helper Library (AOT Dataset Access).
 ├── data/           # Stores Flight ID Sets for Different Custom Libraries.
@@ -64,12 +64,14 @@ Vision-Based-Sense-and-Avoid/
 ## 🛠️ Setup
 
 **1. Clone this Repository:**
+
    ```bash
    git clone https://github.com/MaxB-RnD/Vision-Based-Sense-and-Avoid.git
    cd Vision-Based-Sense-and-Avoid
    ```
 
 **2. Create & Activate a Virtual Environment:**
+
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate        # Linux/macOS/WSL
@@ -77,6 +79,7 @@ Vision-Based-Sense-and-Avoid/
    ```
 
 **3. Install Dependencies:**
+
    ```bash
    pip install -r requirements.txt
    ```
