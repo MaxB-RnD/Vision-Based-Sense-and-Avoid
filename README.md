@@ -90,7 +90,7 @@ Vision-Based-Sense-and-Avoid/
 
 The [Airborne Object Tracking (AOT) Dataset](https://www.aicrowd.com/challenges/airborne-object-tracking-challenge#dataset) is a collection of high-resolution flight sequences captured onboard aerial vehicles. Airborne objects average just 0.01% of the image size (down to a few pixels) making it a challenging benchmark for real-world sense-and-avoid detection. 
 
-
+|                       |                                                                  |
 |-----------------------|------------------------------------------------------------------|
 | **Full Dataset**      | ~11TB via `s3://airborne-obj-detection-challenge-training/`.     |
 | **Partial Dataset**   | ~500GB containing valid planned encounters only (`partial=True`).|
@@ -98,7 +98,9 @@ The [Airborne Object Tracking (AOT) Dataset](https://www.aicrowd.com/challenges/
 | **Frames per Flight** | ~120s at 10 fps (~4–5GB per flight).                             |
 | **Resolution**        | 2448 × 2048 px.                                                  |
 
-#### Data Tools
+<br/>
+
+### Data Tools
 
 Three scripts are provided to **browse, select, download,** and visualise flights from the dataset. All scripts are run from the project root.
 
@@ -120,12 +122,20 @@ Three scripts are provided to **browse, select, download,** and visualise flight
    python -m src.data.view_data
    ```
 
-#### Visualisation
+<br/>
 
-| **Frame 1**                                                          | **Frame 2**                                                     | **Frame 3**                                                      | **Annotated Video**                                          |
-|:--------------------------------------------------------------------:|:---------------------------------------------------------------:|:----------------------------------------------------------------:|:------------------------------------------------------------:|
-| ![Frame 1: Object at Distance](docs/Images/Data_Viewer_Picture_1.png)| ![Frame 2: Object Closer](docs/Images/Data_Viewer_Picture_2.png)| ![Frame 3: Object Closest](docs/Images/Data_Viewer_Picture_3.png)| ![Annotated Flight Video](docs/Images/Data_Viewer_Video.gif) |
-| Early Detection                                                      | Closing Distance                                                | Near Range                                                       | Full Sequence                                                |
+
+### Visualisation
+
+| **Frame 1**                                                          | **Frame 2**                                                     | **Frame 3**                                                      |
+|:--------------------------------------------------------------------:|:---------------------------------------------------------------:|:----------------------------------------------------------------:|
+| ![Frame 1: Object at Distance](docs/Images/Data_Viewer_Picture_1.png)| ![Frame 2: Object Closer](docs/Images/Data_Viewer_Picture_2.png)| ![Frame 3: Object Closest](docs/Images/Data_Viewer_Picture_3.png)|
+| Early Detection                                                      | Closing Distance                                                | Near Range                                                       |
+
+| **Annotated Video**                                          |
+|:------------------------------------------------------------:|
+| ![Annotated Flight Video](docs/Images/Data_Viewer_Video.gif) |
+| Full Sequence                                                |
 
 ---
 
