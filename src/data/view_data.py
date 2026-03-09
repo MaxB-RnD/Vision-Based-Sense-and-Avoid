@@ -22,7 +22,7 @@
 #   1. Ensure Flight Images have Been Downloaded Via 'download_data.py'.
 #   2. Set the Path to the Selected Flight(s) ID Text File.
 #   3. Run the Script from Project Root:
-#       - python -m src.view.view_data
+#       - python -m src.data.view_data
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
