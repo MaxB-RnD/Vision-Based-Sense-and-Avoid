@@ -1,74 +1,137 @@
-# Project Name
+# Vision-Based Sense and Avoid: Monocular Airborne Object Tracking for Safe Drone Flight
 
-## Summary
+## 🛸 Overview
 
-A brief description of what this project does, why it exists, and what problem it solves.  
-Keep this high-level and focused on intent rather than implementation details.
+This project tackles the challenge of detecting and tracking tiny airborne objects using only a
+single monocular camera onboard a drone. Working with the Airborne Object Tracking (AOT) dataset,
+a real-world collection of 5.9M+ images across diverse flight conditions, the goal is to develop
+novel deep learning and multi-object tracking algorithms that achieve early detection with an
+extremely low false alarm rate, enabling safe collision avoidance without unnecessary manoeuvres.
+
+Objects in this dataset can appear as just a few pixels per frame, making this one of the most
+challenging small-object detection problems in computer vision, and one of the most critical for
+future autonomous flight systems.
+
+For background on the dataset and benchmarks, see the
+[Airborne Object Tracking Challenge on AIcrowd](https://www.aicrowd.com/challenges/airborne-object-tracking-challenge).
 
 ---
 
-## Features
+## 📋 Project Details
 
-- Key feature or capability
-- Another important feature
-- Optional: platform, language, or performance highlights
+| Field            | Details                                                                                                |
+|------------------|--------------------------------------------------------------------------------------------------------|
+| **Sponsor**      | Lockheed Martin Australia – Advanced Systems & Technology Group                                        |
+| **Supervisor**   | Dr Feras Dayoub ([feras.dayoub@adelaide.edu.au](mailto:feras.dayoub@adelaide.edu.au))                  |
+| **Co-Supervisor**| Ms Kendall Louise Jenner ([kendall.l.jenner@global.lmco.com](mailto:kendall.l.jenner@global.lmco.com)) |
+| **Second Marker**| Dr Lei Chen ([lei.chen@adelaide.edu.au](mailto:lei.chen@adelaide.edu.au))                              |
 
 ---
 
-## Project Structure
-```
-project-root/
-├── src/ # Core Source Code.
-├── include/ # Public Headers (if applicable).
-├── scripts/ # Helper or Build Scripts.
-├── tests/ # Tests.
-├── docs/ # Documentation or Notes.
+## 🤖 Features
+
+> _To be completed as the project develops._
+
+---
+
+## 🗂️ Project Structure
+
+```text
+Vision-Based-Sense-and-Avoid/
+├── core/           # Competition Repo Helper Library (AOT Dataset Access).
+├── data/           # Stores Flight ID Sets for Different Custom Libraries.
+├── docs/           # Further Information on Research.
+├── src/
+│   └── data/       # Dataset Selection, Cleaning, and Visualisation Scripts.
+│       ├── browse_data.py
+│       ├── download_data.py
+│       └── view_data.py
+├── requirements.txt
 └── README.md
 ```
 
-(Adjust this section to match the actual layout of the project.)
+---
+
+## ⚙️ Requirements
+
+- Python 3.8.
+- Virtual Environment (recommended).
+- AWS credentials are **NOT** required — the AOT dataset is hosted in a public S3 bucket.
+- See `requirements.txt` for full package dependencies.
 
 ---
 
-## Requirements
+## 🛠️ Setup
 
-- Language version (e.g., C++20, Python 3.11).
-- Build tools or dependencies.
-- Operating system support (if relevant).
+**1. Clone this Repository:**
 
----
+   ```bash
+   git clone https://github.com/MaxB-RnD/Vision-Based-Sense-and-Avoid.git
+   cd Vision-Based-Sense-and-Avoid
+   ```
 
-## Build / Setup
+**2. Create & Activate a Virtual Environment:**
 
-Brief instructions on how to build or set up the project.
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate        # Linux/macOS/WSL
+   .venv\Scripts\activate           # Windows
+   ```
 
-Examples:
-- How to configure and build.
-- How to install dependencies.
-- Any required environment variables.
+**3. Install Dependencies:**
 
----
-
-## Usage
-
-Basic examples of how to use or run the project.
-
-- Command-line usage.
-- Example input/output.
-- How this project is intended to be consumed (library, tool, service, etc.).
+   ```bash
+   pip install -r requirements.txt
+   ```
 
 ---
 
-## Development Notes
+## 🗃️ Dataset
 
-Optional section for:
-- Design decisions.
-- Known limitations.
-- Future improvements.
-- Gotchas or assumptions.
+The [Airborne Object Tracking (AOT) Dataset](https://www.aicrowd.com/challenges/airborne-object-tracking-challenge#dataset) is a collection of high-resolution flight sequences captured onboard aerial vehicles. Airborne objects average just 0.01% of the image size (down to a few pixels) making it a challenging benchmark for real-world sense-and-avoid detection. 
+
+|                       |                                                                  |
+|-----------------------|------------------------------------------------------------------|
+| **Full Dataset**      | ~11TB via `s3://airborne-obj-detection-challenge-training/`.     |
+| **Partial Dataset**   | ~500GB containing valid planned encounters only (`partial=True`).|
+| **Flights**           | ~2,332 sequences across 3 parts.                                 |
+| **Frames per Flight** | ~120s at 10 fps (~4–5GB per flight).                             |
+| **Resolution**        | 2448 × 2048 px.                                                  |
+
+### Data Tools
+
+Three scripts are provided to **browse, select, download,** and visualise flights from the dataset. All scripts are run from the project root.
+
+1. **`browse_data.py`:** Browses dataset ground truth metadata entry by entry without downloading any images. Use this to explore object distances, bounding box sizes, and horizon classifications to decide which flights are worth downloading.
+
+   ```bash
+   python -m src.data.browse_data
+   ```
+
+2. **`download_data.py`:** Reads the selected flight IDs saved during browsing and downloads the full image sequences for each flight from S3. Prompts for confirmation before starting and displays an estimated total download size.
+
+   ```bash
+   python -m src.data.download_data
+   ```
+
+3. **`view_data.py`:** Visualises downloaded flights either as an annotated frame-by-frame OpenCV viewer or as an exported H.264 `.mp4` video. Bounding boxes, object IDs, and distances are drawn on every detection.
+
+   ```bash
+   python -m src.data.view_data
+   ```
+
+### Visualisation
+
+| **Frame 1**                                                          | **Frame 2**                                                     | **Frame 3**                                                      |
+|:--------------------------------------------------------------------:|:---------------------------------------------------------------:|:----------------------------------------------------------------:|
+| ![Frame 1: Object at Distance](docs/Images/Data_Viewer_Picture_1.png)| ![Frame 2: Object Closer](docs/Images/Data_Viewer_Picture_2.png)| ![Frame 3: Object Closest](docs/Images/Data_Viewer_Picture_3.png)|
+| Early Detection                                                      | Closing Distance                                                | Near Range                                                       |
+
+<br/>
+
+| **Annotated Video**                                          |
+|:------------------------------------------------------------:|
+| ![Annotated Flight Video](docs/Images/Data_Viewer_Video.gif) |
+| Full Sequence                                                |
 
 ---
-
-## License
-
-Specify the license for this project (or note if it is private/internal).
