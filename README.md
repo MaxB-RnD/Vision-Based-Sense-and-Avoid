@@ -91,3 +91,66 @@ Vision-Based-Sense-and-Avoid/
 > _To be completed as algorithms and tooling are developed._
 
 ---
+
+
+
+
+Step-by-step
+1. Create a new branch from your current commits
+
+Right now your current branch likely contains the extra commits.
+
+git branch data-scripts
+
+or
+
+git checkout -b data-scripts
+
+Now all your work is saved in data-scripts.
+
+2. Find the commit you want main to stop at
+
+Run:
+
+git log --oneline
+
+Example:
+
+a34b21c add data cleaning script
+8fd1231 collect dataset
+7c91d2f fix README
+3ab9210 initial project setup
+
+If you want main to stop at fix README (7c91d2f), note that hash.
+
+3. Reset main back to that commit
+
+Switch to main:
+
+git checkout main
+
+Reset:
+
+git reset --hard 7c91d2f
+
+Now main no longer contains the data script commits.
+
+4. If you've already pushed to remote
+
+You may need to force push:
+
+git push --force
+
+Be careful if others are using the repo.
+
+✅ Final result:
+
+main
+ └── clean project history
+
+data-scripts
+ └── dataset collection + cleaning commits
+
+💡 Tip: Another safe method (especially if pushed already) is git revert instead of reset.
+
+If you want, paste your git log --oneline and I can show you exactly which command to run so nothing breaks.
