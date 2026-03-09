@@ -88,7 +88,44 @@ Vision-Based-Sense-and-Avoid/
 
 ## 🗃️ Dataset
 
-> _To be completed as algorithms and tooling are developed._
+The [Airborne Object Tracking (AOT) Dataset](https://www.aicrowd.com/challenges/airborne-object-tracking-challenge#dataset) is a collection of high-resolution flight sequences captured onboard aerial vehicles. Airborne objects average just 0.01% of the image size (down to a few pixels) making it a challenging benchmark for real-world sense-and-avoid detection. 
+
+|                       |                                                              |
+|-----------------------|--------------------------------------------------------------|
+| **Full Dataset**      | ~11TB via `s3://airborne-obj-detection-challenge-training/`. |
+| **Partial Dataset**   | ~500GB containing valid planned encounters only (`partial=True`).     |
+| **Flights**           | ~2,332 sequences across 3 parts.                             |
+| **Frames per Flight** | ~120s at 10 fps (~4–5GB per flight).                         |
+| **Resolution**        | 2448 × 2048 px.                                              |
+
+### Data Tools
+
+Three scripts are provided to **browse, select, download,** and visualise flights from the dataset. All scripts are run from the project root.
+
+1. **`browse_data.py`:** Browses dataset ground truth metadata entry by entry without downloading any images. Use this to explore object distances, bounding box sizes, and horizon classifications to decide which flights are worth downloading.
+
+   ```bash
+   python -m src.data.browse_data
+   ```
+
+2. **`download_data.py`:** Reads the selected flight IDs saved during browsing and downloads the full image sequences for each flight from S3. Prompts for confirmation before starting and displays an estimated total download size.
+
+   ```bash
+   python -m src.data.download_data
+   ```
+
+3. **`view_data.py`:** Visualises downloaded flights either as an annotated frame-by-frame OpenCV viewer or as an exported H.264 `.mp4` video. Bounding boxes, object IDs, and distances are drawn on every detection.
+
+   ```bash
+   python -m src.data.view_data
+   ```
+
+### Visualisation
+
+| **Frame 1**                                                          | **Frame 2**                                                     | **Frame 3**                                                      | **Annotated Video**                                          |
+|:--------------------------------------------------------------------:|:---------------------------------------------------------------:|:----------------------------------------------------------------:|:------------------------------------------------------------:|
+| ![Frame 1: Object at Distance](docs/images/Data_Viewer_Picture_1.png)| ![Frame 2: Object Closer](docs/images/Data_Viewer_Picture_2.png)| ![Frame 3: Object Closest](docs/images/Data_Viewer_Picture_3.png)| ![Annotated Flight Video](docs/images/Data_Viewer_Video.gif) |
+| Early Detection                                                      | Closing Distance                                                | Near Range                                                       | Full Sequence                                                |
 
 ---
 
