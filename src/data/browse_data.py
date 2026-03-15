@@ -305,7 +305,7 @@ def main():
 
 
     # Retrieve the List of Flight IDs from the Dataset.
-    flight_ids    = dataset.get_flight_ids()
+    flight_ids = dataset.get_flight_ids()
     total_flights = len(flight_ids)
 
     # Display How Many Flights were Discovered in the Metadata.
