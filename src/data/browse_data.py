@@ -4,7 +4,7 @@
 # File:                    %name: browse_data.py %
 # Date Created:            %date_created: Fri Mar 06 22:48:34 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 1 %
+# CM Instance              %instance: 2 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -205,7 +205,7 @@ def displayEntry(flight_id: str, frame_id: str, obj_id: str, obj: object) -> Non
     print("Horizon   : %s" % horizon_str)
 
 
-def saveFlightId(flight_id: str) -> None:
+def saveFlightId(flight_id: str, selected_flights_path: str = SELECTED_FLIGHTS_PATH) -> None:
     """
     Appends a flight ID to the selected flights file if not already present.
 
@@ -215,6 +215,7 @@ def saveFlightId(flight_id: str) -> None:
 
     Args:
         flight_id (str): Flight ID to save (e.g. 'part1abc123...').
+        selected_flights_path (str): Path to the text file where IDs will be stored.
 
     Returns:
         None:
@@ -236,9 +237,9 @@ def saveFlightId(flight_id: str) -> None:
     )
 
     # Create File with Header if it Does Not Yet Exist.
-    if not os.path.exists(SELECTED_FLIGHTS_PATH):
+    if not os.path.exists(selected_flights_path):
         # Write the Fixed Header to the File. 
-        with open(SELECTED_FLIGHTS_PATH, 'w') as f:
+        with open(selected_flights_path, 'w') as f:
             f.write(HEADER)
         
         # Initialise an Empty Set for Already Saved Flight IDs.
@@ -246,7 +247,7 @@ def saveFlightId(flight_id: str) -> None:
 
     else:
         # Read Only Lines Below the Sentinel to Avoid Matching Header Text.
-        with open(SELECTED_FLIGHTS_PATH, 'r') as f:
+        with open(selected_flights_path, 'r') as f:
             lines = f.readlines()
         
         # Find the Sentinel Line that Marks the Start of Flight IDs.
@@ -267,13 +268,13 @@ def saveFlightId(flight_id: str) -> None:
         return
 
     # Append the New Flight ID Below the Header.
-    with open(SELECTED_FLIGHTS_PATH, 'a') as f:
+    with open(selected_flights_path, 'a') as f:
         f.write(flight_id + '\n')
 
     # Print Success Message to Terminal.
     log(LogLevel.INFO, "browse_data:saveFlightId",
         "Flight %s Saved to %s  (%d Total).",
-        flight_id, SELECTED_FLIGHTS_PATH, len(existing) + 1)
+        flight_id, selected_flights_path, len(existing) + 1)
 # ------------------------------------------------------------------------------
 
 

@@ -4,7 +4,7 @@
 # File:                    %name: download_data.py %
 # Date Created:            %date_created: Sat Mar 07 18:58:21 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 1 %
+# CM Instance              %instance: 2 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -38,7 +38,6 @@
 # ------------------------------------------------------------------------------
 
 import os
-import glob
 import sys
 from typing import List
 
