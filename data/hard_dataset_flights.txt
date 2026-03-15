@@ -7,7 +7,6 @@ These IDs can be used to create custom datasets according to predetermined
 criteria. This allows harder or more feature-specific datasets to be made for
 testing the robustness of different models and finding any weaknesses in them.
 
-
 --------------------------------------------------------------------------------
 -                           D A T A S E T   S T A T S                          -
 --------------------------------------------------------------------------------
@@ -22,7 +21,6 @@ Below Horizon  : 1053 flights contain at least one object at or below the
 
 Multi-Object   : 627 flights contain more than one airborne object (planned
                  or unplanned) in at least one frame.
-
 
 --------------------------------------------------------------------------------
 -                             E X A M P L E S                                  -
