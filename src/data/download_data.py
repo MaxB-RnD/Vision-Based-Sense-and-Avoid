@@ -38,6 +38,7 @@
 # ------------------------------------------------------------------------------
 
 import os
+import glob
 import sys
 from typing import List
 
@@ -114,6 +115,41 @@ def loadFlightIds(path: str) -> List[str]:
 # ------------------------------------------------------------------------------
 #                               DOWNLOAD FLIGHTS
 # ------------------------------------------------------------------------------
+def estimateDownloadSize(dataset: Dataset, flight_ids: List[str]) -> float:
+    """
+    Estimates total download size based on frame count across all flights.
+
+    Uses the metadata already loaded in the dataset object to count frames
+    per flight. Assumes ~3MB per frame based on AOT's 2448x2048 resolution.
+
+    Args:
+        dataset (Dataset): Loaded dataset object.
+        flight_ids (List[str]): Flight IDs to estimate.
+
+    Returns:
+        float: Estimated total size in GB.
+    """
+    # Approximate Storage Size of a Single Frame in Bytes.
+    BYTES_PER_FRAME = 2.7 * 1024 * 1024  # ~3MB per Frame at Full Resolution.
+
+    # Running Total of Frames Across All Requested Flights.
+    total_frames = 0
+
+    # Iterate through Each Requested Flight ID.
+    for flight_id in flight_ids:
+        try:
+            # Retrieve the Flight Metadata Object from the Dataset.
+            flight = dataset.get_flight(flight_id)
+            total_frames += len(flight.frames)
+        except Exception:
+            # If the Flight Metadata Cannot be Retrieved, Fall Back to the
+            # Average Flight Length.
+            total_frames += 1200  # ~120s at 10fps.
+    
+    # Convert Total Bytes to Gigabytes before Returning.
+    return (total_frames * BYTES_PER_FRAME) / (1024 ** 3)
+
+
 def downloadFlights(dataset: Dataset, flight_ids: List[str]) -> None:
     """
     Downloads full image sequences for each flight ID in the provided list.
@@ -146,6 +182,12 @@ def downloadFlights(dataset: Dataset, flight_ids: List[str]) -> None:
     for idx, flight_id in enumerate(flight_ids):
         # Display Progress Information to the User.
         print("Flight %d/%d  %s" % (idx + 1, total, flight_id))
+
+        # Skip the Flight if Already Downloaded.
+        if os.path.exists("data/%s/Images/%s" %(flight_id[:5], flight_id)):
+            print("            Already Downloaded. Skipping.")
+            skipped += 1
+            continue
                     
         try:
             # Verify the Flight ID Exists in the Loaded Metadata.
@@ -182,7 +224,7 @@ def downloadFlights(dataset: Dataset, flight_ids: List[str]) -> None:
 # ------------------------------------------------------------------------------
 #                                  MAIN
 # ------------------------------------------------------------------------------
-def main():
+def main(selected_flights_path: str = SELECTED_FLIGHTS_PATH):
     """
     The main function for running the data downloader interface.
     """
@@ -190,7 +232,10 @@ def main():
     print()
 
     # Load the Selected Flight IDs from the .txt File.
-    flight_ids = loadFlightIds(SELECTED_FLIGHTS_PATH)
+    flight_ids = loadFlightIds(selected_flights_path)
+
+    # Load Dataset Metadata.
+    dataset = dataLoader(download=False)
 
     # Print a Blank Line for Cleaner Console Output Spacing.
     print()
@@ -198,10 +243,13 @@ def main():
     # Display Message Showing No. Flights to Download.
     log(LogLevel.INFO,  "download_data:main",
         "About to Download Images for %d Flight(s).", len(flight_ids))
+    
+    # Estimate Download Size from Frame Counts.
+    estimated_gb = estimateDownloadSize(dataset, flight_ids)
 
     # Warn the User About the Estimated Total Download Size.
     log(LogLevel.WARNING, "download_data:main",
-        "Each Flight is ~ 0.25GB. Total Estimated Size: ~%.2f GB.", len(flight_ids) * 0.25)
+        "Estimated Download Size: ~%.2f GB  (%d Flight(s)).", estimated_gb, len(flight_ids))
 
     # Ask the User for Confirmation Before Starting the Download.
     while True:
@@ -220,9 +268,6 @@ def main():
             # Handle Invalid Input.
             log(LogLevel.WARNING, "download_data:main", 
                 "Invalid Input. Please Enter Y or N.")
-
-    # Load Dataset Metadata.
-    dataset = dataLoader(download=False)
 
     # Download Images for Each Selected Flight.
     downloadFlights(dataset, flight_ids)

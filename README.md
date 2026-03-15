@@ -46,6 +46,8 @@ Vision-Based-Sense-and-Avoid/
 │       ├── browse_data.py
 │       ├── download_data.py
 │       └── view_data.py
+│   └── notebooks/  # End-to-End Model Evaluation Notebooks.
+│       └── demo.ipynb
 ├── requirements.txt
 └── README.md
 ```

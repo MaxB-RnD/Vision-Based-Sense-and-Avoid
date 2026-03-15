@@ -38,6 +38,7 @@
 # ------------------------------------------------------------------------------
 
 import os
+import glob
 import shutil
 
 import sys
@@ -88,9 +89,10 @@ def dataLoader(download: bool = True) -> Dataset:
         "Loading Dataset Metadata.\n")
     
     # Check if a Fresh Download Has Been Requested.
-    if download and os.path.exists("data"):
-        # Delete the Data Folder. ATO will Automatically ReDownload. 
-        shutil.rmtree("data")
+    if download:
+        # Delete the Data SubFolders. ATO will Automatically ReDownload. 
+        for path in glob.glob("data/part*"):
+            shutil.rmtree(path)
     else:
         # Do Nothing. ATO Only Loads when all Files still Exist. 
         ...
