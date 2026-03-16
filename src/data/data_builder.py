@@ -49,7 +49,7 @@ from src.data.browse_data import dataLoader, saveFlightId, bboxArea
 #                           CONFIGURATION VARIABLES
 # ------------------------------------------------------------------------------
 # Path to the File Where Hard Dataset Flight IDs are Saved.
-HARD_FLIGHTS_PATH = 'data/hard_dataset_flights.txt'
+SELECTED_FLIGHTS_PATH = 'data/hard_dataset_flights.txt'
 
 # Select True to Include Flights where Any Object is Below Horizon or Unclear.
 FILTER_HORIZON = True
@@ -170,6 +170,7 @@ def main():
     # Set Counters for the Final Summary Report.
     flights_saved = 0
     flights_skipped = 0
+    average_length = 0
 
     # Iterate through Every Flight in the Dataset.
     for flight_idx, flight_id in enumerate(flight_ids):
@@ -216,15 +217,23 @@ def main():
 
         # Save the Flight ID if it Met the Criteria.
         if qualifies:
-            saveFlightId(flight_id, HARD_FLIGHTS_PATH)
+            saveFlightId(flight_id, SELECTED_FLIGHTS_PATH)
             flights_saved += 1
+            average_length += len(frames)
         else:
             flights_skipped += 1
+    
+    # Calculate the Average Sequence Length.
+    if flights_saved > 0:
+        average_length = average_length / (flights_saved * 10.0)
+    else:
+        average_length = 0
 
     # Display Final Summary.
     print()
     log(LogLevel.INFO, "data_builder:main",
-        "Scan Complete.  Saved: %d  |  Skipped: %d.\n", flights_saved, flights_skipped)
+        "Scan Complete.  Saved: %d  |  Skipped: %d  |  Average Sequence Length: %.2fs.\n", 
+        flights_saved, flights_skipped, average_length)
 # ------------------------------------------------------------------------------
 
 

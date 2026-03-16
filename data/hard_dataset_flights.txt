@@ -12,19 +12,21 @@ hard scenario types.
 -                           D A T A S E T   S T A T S                          -
 --------------------------------------------------------------------------------
 
-Total Flights  : 1618
+Total Flights : 1618
 
-Small Object   : 662 flights contain at least one object with a bounding box
+Small Object  : 662 flights contain at least one object with a bounding box
                  area <= 36.0 px² at some point during the sequence.
 
-Below Horizon  : 1053 flights contain at least one object at or below the
+Below Horizon : 1053 flights contain at least one object at or below the
                  horizon, 301 of which also contain more than one object.
 
-Multi-Object   : 627 flights contain more than one airborne object (planned
+Multi-Object  : 627 flights contain more than one airborne object (planned
                  or unplanned) in at least one frame.
 
-No Object      : 354 flights contain at least one frame where no airbrone object 
+No Object     : 354 flights contain at least one frame where no airbrone object 
                  is present.
+
+Average Sequence Length: 17.77s
 
 --------------------------------------------------------------------------------
 -                             E X A M P L E S                                  -

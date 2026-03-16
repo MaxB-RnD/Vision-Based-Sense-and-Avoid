@@ -15,14 +15,21 @@ Keep this high-level and focused on intent rather than implementation details.
 
 ---
 
-## Project Structure
-```
-project-root/
-├── src/ # Core Source Code.
-├── include/ # Public Headers (if applicable).
-├── scripts/ # Helper or Build Scripts.
-├── tests/ # Tests.
-├── docs/ # Documentation or Notes.
+## 🗂️ Project Structure
+
+```text
+Vision-Based-Sense-and-Avoid/
+├── core/           # Competition Repo Helper Library (AOT Dataset Access).
+├── data/           # Stores Flight ID Sets for Different Custom Libraries.
+├── docs/           # Further Information on Research.
+├── notebooks/      # End-to-End Model Evaluation Notebooks.
+│   └── demo.ipynb
+├── src/
+│   └── data/       # Dataset Selection, Cleaning, and Visualisation Scripts.
+│       ├── browse_data.py
+│       ├── download_data.py
+│       └── view_data.py
+├── requirements.txt
 └── README.md
 ```
 
@@ -38,7 +45,17 @@ project-root/
 
 ---
 
-## Build / Setup
+## 🗃️ Dataset
+
+The [Airborne Object Tracking (AOT) Dataset](https://www.aicrowd.com/challenges/airborne-object-tracking-challenge#dataset) is a collection of high-resolution flight sequences captured onboard aerial vehicles. Airborne objects average just 0.01% of the image size (down to a few pixels) making it a challenging benchmark for real-world sense-and-avoid detection.
+
+|                       |                                                                  |
+|-----------------------|------------------------------------------------------------------|
+| **Full Dataset**      | ~11TB via `s3://airborne-obj-detection-challenge-training/`.     |
+| **Partial Dataset**   | ~500GB containing valid planned encounters only (`partial=True`).|
+| **Flights**           | ~2,332 sequences across 3 parts.                                 |
+| **Frames per Flight** | ~120s at 10 fps (~4–5GB per flight).                             |
+| **Resolution**        | 2448 × 2048 px.                                                  |
 
 Brief instructions on how to build or set up the project.
 
