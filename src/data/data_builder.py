@@ -57,6 +57,9 @@ FILTER_HORIZON = True
 # Include Flights where Any Frame has More than 1 Detected Object.
 FILTER_MULTIPLE_OBJECTS = True
 
+# Include Flights where Any Frame has No Detected Object.
+FILTER_NO_OBJECTS = True
+
 # Include Flights where Any Object Bbox Area is Below this Threshold (px²).
 FILTER_SMALL_OBJECTS = True
 SMALL_OBJECT_THRESHOLD = 37.0
@@ -105,6 +108,25 @@ def hasMultipleObjects(frame: object) -> bool:
 
     # Return True if More than One Object is Present in the Frame.
     return len(object_locations) > 1
+
+
+def hasNoObjects(frame: object) -> bool:
+    """
+    Returns True if the sequence contains no airborne object in at least one 
+    frame.
+
+    Args:
+        frame (object): AOT frame object from flight.frames.
+
+    Returns:
+        bool: True if no objects are detected, False otherwise.
+    """
+    # Retrieve Detected Object Locations from the Frame. 
+    # Return empty dict if Attribute Does Not Exist.
+    object_locations = getattr(frame, 'detected_object_locations', {})
+
+    # Return True if No Object is Present in the Frame.
+    return len(object_locations) == 0
 
 
 def isSmallObject(obj: object) -> bool:
@@ -165,13 +187,14 @@ def main():
         for frame_id, frame in frames.items():
             # Grab the Full Ground-Truth Metadata Needed.
             object_locations = frame.detected_object_locations
-
-            # Skips the Frame if No Objects were Detected.
-            if not object_locations:
-                continue
-
+            
             # Check Multiple Objects Filter at Frame Level.
             if FILTER_MULTIPLE_OBJECTS and hasMultipleObjects(frame):
+                qualifies = True
+                break
+
+            # Check No Objects Filter at Frame Level.
+            if FILTER_NO_OBJECTS and hasNoObjects(frame):
                 qualifies = True
                 break
 
