@@ -33,7 +33,14 @@ Vision-Based-Sense-and-Avoid/
 └── README.md
 ```
 
-(Adjust this section to match the actual layout of the project.)
+---
+
+## ⚙️ Requirements
+
+- Python 3.8.
+- Virtual Environment (recommended).
+- AWS credentials are **NOT** required - the AOT dataset is hosted in a public S3 bucket.
+- See `requirements.txt` for full package dependencies.
 
 ---
 
