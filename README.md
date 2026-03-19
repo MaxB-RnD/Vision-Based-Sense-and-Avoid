@@ -1,17 +1,23 @@
 # Project Name
 
-## Summary
+## 📑 Contents
 
-A brief description of what this project does, why it exists, and what problem it solves.  
-Keep this high-level and focused on intent rather than implementation details.
+- [🛸 Overview](#-overview)  
+- [📋 Project Details](#-project-details)  
+- [🗂️ Project Structure](#️-project-structure)  
+- [⚙️ Requirements](#️-requirements)  
+- [🛠️ Setup](#️-setup)  
+- [🗃️ Dataset](#️-dataset)  
+  - [Data Tools](#data-tools)  
+  - [Visualisation](#visualisation)  
+- [📊 Baseline](#-baseline)  
 
 ---
 
-## Features
+## 🛸 Overview
 
-- Key feature or capability
-- Another important feature
-- Optional: platform, language, or performance highlights
+A brief description of what this project does, why it exists, and what problem it solves.  
+Keep this high-level and focused on intent rather than implementation details.
 
 ---
 
@@ -19,16 +25,16 @@ Keep this high-level and focused on intent rather than implementation details.
 
 ```text
 Vision-Based-Sense-and-Avoid/
-├── core/           # Competition Repo Helper Library (AOT Dataset Access).
-├── data/           # Stores Flight ID Sets for Different Custom Libraries.
-├── docs/           # Further Information on Research.
-├── notebooks/      # End-to-End Model Evaluation Notebooks.
-│   └── demo.ipynb
+├── core/             # Competition helper library (AOT dataset access).
+├── data/ 
+│   ├── datasets/     # Flight ID sets for different custom libraries.
+│   ├── models/       # Trained model weights (.pth files).
+│   └── results/      # Evaluation results (.json files).
+├── docs/             # Research documentation and additional resources.
+├── notebooks/        # End-to-end model evaluation notebooks.
 ├── src/
-│   └── data/       # Dataset Selection, Cleaning, and Visualisation Scripts.
-│       ├── browse_data.py
-│       ├── download_data.py
-│       └── view_data.py
+│   ├── data/         # Dataset selection, cleaning, and visualization scripts.
+│   └── baseline/     # Baseline solution scripts and models for evaluation.
 ├── requirements.txt
 └── README.md
 ```
@@ -39,16 +45,48 @@ Vision-Based-Sense-and-Avoid/
 
 - Python 3.8.
 - Virtual Environment (recommended).
+- Git LFS (for the model weight files).
 - AWS credentials are **NOT** required - the AOT dataset is hosted in a public S3 bucket.
 - See `requirements.txt` for full package dependencies.
 
 ---
 
-## Requirements
+## 🛠️ Setup
 
-- Language version (e.g., C++20, Python 3.11).
-- Build tools or dependencies.
-- Operating system support (if relevant).
+**1. Install Git LFS (one-time setup):**
+
+   ```bash
+   git lfs install
+   ```
+
+**2. Clone this Repository:**
+
+   ```bash
+   git clone https://github.com/MaxB-RnD/Vision-Based-Sense-and-Avoid.git
+   cd Vision-Based-Sense-and-Avoid
+   ```
+
+**3. Download Git LFS Files:**
+
+   ```bash
+   git lfs pull
+   ```
+
+   > ⚠️ If you skip this step, the model weights will appear as pointer files instead of actual content.
+
+**4. Create & Activate a Virtual Environment:**
+
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate        # Linux/macOS/WSL
+   .venv\Scripts\activate           # Windows
+   ```
+
+**5. Install Dependencies:**
+
+   ```bash
+   pip install -r requirements.txt
+   ```
 
 ---
 
@@ -95,4 +133,56 @@ Optional section for:
 
 ## License
 
-Specify the license for this project (or note if it is private/internal).
+---
+
+## 📊 Baseline
+
+### Winning Solution
+
+The baseline used in this project is the winning solution from the
+[AIcrowd Airborne Object Tracking Challenge](https://www.aicrowd.com/challenges/airborne-object-tracking-challenge/winners),
+achieving the highest scores on both the public and private leaderboards. The solution uses an ensemble of three detection backbones, HRNet32, gernet_m (with BiFPN from
+EfficientDet D2), and DLA60, combined with a predicted offset-based tracking algorithm.
+
+Model weights are stored in `data/models/baseline/` via Git LFS:
+
+| Weight File                                  | Description                        |
+|----------------------------------------------|------------------------------------|
+| `030_tr_tsn_rn34_w3_crop_borders_255_0.pth`  | ResNet34 Crop Border Baseline.     |
+| `120_hrnet32_all_2220.pth`                   | HRNet32 Backbone.                  |
+| `120_gernet_m_b2_all_2220.pth`               | GerNet-M with BiFPN (EfficientDet).|
+| `120_dla60_256_sgd_all_rerun_2220.pth`       | DLA60 Backbone (Winning Ensemble). |
+| `130_hrnet48_all_2220.pth`                   | HRNet48 Backbone.                  |
+
+### Competition Results (Full AOT Dataset)
+
+Performance of the winning solution (Submission 22) on the AIcrowd competition leaderboards:
+
+| Leaderboard | Score Threshold | FPPI    | AFDR     | HFAR | EDR      |
+|-------------|-----------------|---------|----------|------|----------|
+| Public      | 0.60            | 5.0e-05 | **0.91** | 0.38 | **0.99** |
+| Private     | 0.60            | 7.8e-05 | 0.89     | 0.38 |  0.96    |
+
+**Metric Definitions:**
+
+- **AFDR** *(Average Frame-level Detection Rate)* — ratio of detected airborne objects to all objects that should be detected, considering all planned aircraft within 700m.
+- **FPPI** *(False Positives Per Image)* — ratio of false positive airborne reports to the total number of images in the dataset.
+- **EDR** *(Encounter-level Detection Rate)* — ratio of successfully detected encounters to total encounters, where an encounter is successfully detected if the object is tracked for at least 3 seconds before reaching 300m or within the first 3 seconds of the encounter.
+- **HFAR** *(False Alarm Rate per Hour)* — number of unique reported track IDs containing at least one false positive, divided by total dataset hours.
+
+### Hard Dataset Results
+
+The table below reports baseline performance broken down by scenario category across the custom
+hard dataset (1,618 flights). Flights were selected from the full AOT dataset using configurable
+filter criteria to isolate the most challenging sequences, providing a more targeted benchmark
+than the full competition dataset.
+
+| Scenario                     | Flights | FPPI | AFDR | HFAR | EDR |
+|------------------------------|---------|------|------|------|-----|
+| **Overall (All Criteria)**   |**1,618**| —    | —    | —    | —   |
+| Small Object (bbox ≤ 36 px²) | 662     | —    | —    | —    | —   |
+| Below Horizon                | 1,053   | —    | —    | —    | —   |
+| Multi-Object                 | 627     | —    | —    | —    | —   |
+| No Visible Object            | 354     | —    | —    | —    | —   |
+
+---
