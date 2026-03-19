@@ -11,6 +11,9 @@
   - [Data Tools](#data-tools)  
   - [Visualisation](#visualisation)  
 - [📊 Baseline](#-baseline)  
+  - [Winning Solution](#winning-solution)  
+  - [Competition Results (Full AOT Dataset)](#competition-results-full-aot-dataset)  
+  - [Hard Dataset Results](#hard-dataset-results)
 
 ---
 
@@ -72,7 +75,7 @@ Vision-Based-Sense-and-Avoid/
    git lfs pull
    ```
 
-   > ⚠️ If you skip this step, the model weights will appear as pointer files instead of actual content.
+   > ⚠️ *If you skip this step, the model weights will appear as pointer files instead of actual content.*
 
 **4. Create & Activate a Virtual Environment:**
 
@@ -139,12 +142,13 @@ Optional section for:
 
 ### Winning Solution
 
-The baseline used in this project is the winning solution from the
-[AIcrowd Airborne Object Tracking Challenge](https://www.aicrowd.com/challenges/airborne-object-tracking-challenge/winners),
-achieving the highest scores on both the public and private leaderboards. The solution uses an ensemble of three detection backbones, HRNet32, gernet_m (with BiFPN from
-EfficientDet D2), and DLA60, combined with a predicted offset-based tracking algorithm.
+The baseline used in this project is the [Winning Solution](https://github.com/pdima/airborne_tracking_winning_solution.git) 
+from the AIcrowd Airborne Object Tracking Challenge, achieving the highest scores
+on both the public and private leaderboards. The solution uses an ensemble of
+three detection backbones, HRNet32, gernet_m (with BiFPN from EfficientDet D2),
+and DLA60, combined with a predicted offset-based tracking algorithm.
 
-Model weights are stored in `data/models/baseline/` via Git LFS:
+**Model weights are stored in `data/models/baseline/` via Git LFS:**
 
 | Weight File                                  | Description                        |
 |----------------------------------------------|------------------------------------|
@@ -165,10 +169,10 @@ Performance of the winning solution (Submission 22) on the AIcrowd competition l
 
 **Metric Definitions:**
 
-- **AFDR** *(Average Frame-level Detection Rate)* — ratio of detected airborne objects to all objects that should be detected, considering all planned aircraft within 700m.
-- **FPPI** *(False Positives Per Image)* — ratio of false positive airborne reports to the total number of images in the dataset.
-- **EDR** *(Encounter-level Detection Rate)* — ratio of successfully detected encounters to total encounters, where an encounter is successfully detected if the object is tracked for at least 3 seconds before reaching 300m or within the first 3 seconds of the encounter.
-- **HFAR** *(False Alarm Rate per Hour)* — number of unique reported track IDs containing at least one false positive, divided by total dataset hours.
+- **AFDR** *(Average Frame-level Detection Rate)*: Ratio of detected airborne objects to all objects that should be detected, considering all planned aircraft within 700m.
+- **FPPI** *(False Positives Per Image)*: Ratio of false positive airborne reports to the total number of images in the dataset.
+- **EDR** *(Encounter-level Detection Rate)*: Ratio of successfully detected encounters to total encounters, where an encounter is successfully detected if the object is tracked for at least 3 seconds before reaching 300m or within the first 3 seconds of the encounter.
+- **HFAR** *(False Alarm Rate per Hour)*: Number of unique reported track IDs containing at least one false positive, divided by total dataset hours.
 
 ### Hard Dataset Results
 
