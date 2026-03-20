@@ -28,11 +28,10 @@ Keep this high-level and focused on intent rather than implementation details.
 
 ```text
 Vision-Based-Sense-and-Avoid/
-├── core/             # Competition helper library (AOT dataset access).
-├── data/ 
+├── configs/ 
 │   ├── datasets/     # Flight ID sets for different custom libraries.
 │   ├── models/       # Trained model weights (.pth files).
-│   └── results/      # Evaluation results (.json files).
+├── core/             # Competition helper library (AOT dataset access).
 ├── docs/             # Research documentation and additional resources.
 ├── notebooks/        # End-to-end model evaluation notebooks.
 ├── src/
