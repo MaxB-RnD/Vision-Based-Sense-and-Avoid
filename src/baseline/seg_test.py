@@ -34,7 +34,9 @@
 
 import sys
 import os
+import json
 import cv2
+import pandas as pd
 from tqdm import tqdm
 
 from os import listdir
@@ -143,6 +145,45 @@ class SegPredictor(AirbornePredictor):
 
             if self.visualize_pred and len(results):
                 plt.show()
+
+
+    def save_results(self, flight_id=None) -> None:
+        """
+        Override of AirbornePredictor.save_results to additionally write a
+        clean flat CSV alongside the JSON. The CSV uses index=False and explicit
+        dtypes so the metrics script can read it without triggering the NaN
+        assertion error caused by pandas auto-saving a CSV with an index column.
+
+        The JSON is kept for file discovery by run_airborne_metrics.py (which
+        globs *.json), but the script will switch to the CSV automatically once
+        it finds result.csv exists alongside result.json.
+        """
+        # Let the parent class write result.json as normal.
+        super().save_results(flight_id)
+
+        # Only write the flat CSV for the top-level aggregated results.
+        # Per-flight subfolder saves are intermediate and not needed by metrics.
+        if flight_id is not None:
+            return
+
+        submission = self.results
+        rows = []
+        for record in submission:
+            img_name = record['img_name']
+            for det in record['detections']:
+                rows.append({
+                    'img_name' : img_name,
+                    'n'        : det['n'],
+                    'x'        : float(det['x']),
+                    'y'        : float(det['y']),
+                    'w'        : float(det['w']),
+                    'h'        : float(det['h']),
+                    's'        : float(det['s']),
+                    'track_id' : int(det['track_id']),
+                })
+
+        csv_path = os.path.join(self.get_results_directory(None), 'result.csv')
+        pd.DataFrame(rows).to_csv(csv_path, index=False)
 
 
 def convert_and_copy_generated_results_to_metrics_folder() -> None:

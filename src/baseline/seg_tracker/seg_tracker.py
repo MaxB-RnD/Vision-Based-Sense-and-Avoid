@@ -24,7 +24,7 @@ from . import tracking
 
 class SegDetector:
     def __init__(self):
-        models_dir = 'data/models/baseline'
+        models_dir = 'configs/models/baseline'
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
