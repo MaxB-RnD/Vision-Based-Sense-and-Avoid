@@ -67,7 +67,7 @@ bounding-box
 # Numerical Computing & Data Manipulation.
 numpy>=1.16.6,<1.23
 scipy==1.6.3                        
-pandas>=2.0.3
+pandas==1.5.3
 
 # Data Visualisation.
 matplotlib>=3.7.5
