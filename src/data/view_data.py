@@ -54,7 +54,7 @@ from src.data.download_data import loadFlightIds
 #                        CONFIGURATION VARIABLES
 # ------------------------------------------------------------------------------
 # Paths & Environment Variables. 
-SELECTED_FLIGHTS_PATH = 'data/selected_flights.txt'
+SELECTED_FLIGHTS_PATH = 'configs/datasets/selected_flights.txt'
 FONT_PATH = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
 os.environ['QT_QPA_FONTDIR'] = '/usr/share/fonts/truetype/dejavu'
 

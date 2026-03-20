@@ -49,7 +49,7 @@ from src.data.browse_data import dataLoader, saveFlightId, bboxArea
 #                           CONFIGURATION VARIABLES
 # ------------------------------------------------------------------------------
 # Path to the File Where Hard Dataset Flight IDs are Saved.
-SELECTED_FLIGHTS_PATH = 'data/hard_dataset_flights.txt'
+SELECTED_FLIGHTS_PATH = 'configs/datasets/hard_dataset_flights.txt'
 
 # Select True to Include Flights where Any Object is Below Horizon or Unclear.
 FILTER_HORIZON = True

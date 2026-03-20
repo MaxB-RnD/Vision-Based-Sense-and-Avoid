@@ -58,7 +58,7 @@ PAUSE_EVERY_N = 1
 PARTIAL = True  
 
 # Path to the File Where Selected Flight IDs are Saved.
-SELECTED_FLIGHTS_PATH = 'data/selected_flights.txt'
+SELECTED_FLIGHTS_PATH = 'configs/datasets/selected_flights.txt'
 # ------------------------------------------------------------------------------
 
 
