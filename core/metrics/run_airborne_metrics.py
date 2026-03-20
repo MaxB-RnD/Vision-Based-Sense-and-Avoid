@@ -108,6 +108,12 @@ def get_min_score_from_name(result_name):
             return score
     return None 
 
+def get_next_run_dir(base_dir: str) -> str:
+    i = 0
+    while os.path.exists(os.path.join(base_dir, f"run{i}")):
+        i += 1
+    return f"run{i}"
+
 def _change_to_csv(filename):
     if filename.endswith('.csv'):
         return filename
