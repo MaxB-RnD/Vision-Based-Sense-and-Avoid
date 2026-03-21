@@ -65,7 +65,7 @@ bounding-box
 # segmentation-models-pytorch>=0.3.3
 
 # Numerical Computing & Data Manipulation.
-numpy
+numpy>=1.16.6,<1.23
 scipy==1.6.3                        
 pandas>=2.0.3
 
