@@ -73,7 +73,6 @@
 #
 # Ignore Large Dataset Files or Local Logs.
 **/*.log
-**/*.csv
 **/*.npy
 **/*.onnx
 
