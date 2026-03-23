@@ -33,8 +33,8 @@
 # ------------------------------------------------------------------------------
 
 #!/bin/bash
-# Install project dependencies.
+# Install Project Dependencies.
 pip install -r requirements.txt --break-system-packages
 
-# Install the airborne metrics evaluation package.
+# Install the Airborne Metrics Evaluation Package.
 pip install core/metrics --break-system-packages
