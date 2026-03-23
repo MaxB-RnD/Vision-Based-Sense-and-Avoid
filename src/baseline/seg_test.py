@@ -36,6 +36,7 @@ import sys
 import os
 import cv2
 from tqdm import tqdm
+import re
 
 from os import listdir
 from os.path import isfile, join
@@ -47,8 +48,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 from evaluator.airborne_detection import AirbornePredictor
 from seg_tracker.seg_tracker import SegDetector, SegTrackerFromOffset
 
-MIN_TRACK_LEN = 30
-MIN_SCORE = 0.985
+MIN_TRACK_LEN = int(os.getenv("MIN_TRACK_LEN", 30))
+MIN_SCORE = float(os.getenv("MIN_SCORE", 0.985))
 
 
 class SegPredictor(AirbornePredictor):
@@ -68,7 +69,7 @@ class SegPredictor(AirbornePredictor):
             if isfile(join(flight_folder, frame)):
                 frames.append(frame)
         return frames
-
+    
     def flight_started(self) -> None:
         self.track_id_results: Dict = {}
         self.visited_frame: Dict = {}
@@ -163,6 +164,26 @@ def convert_and_copy_generated_results_to_metrics_folder() -> None:
 
     with open("data/evaluation/result/result.json", 'w') as fp:
         json.dump(flight_results, fp)
+
+def get_next_run_dir(base_dir: str) -> str:
+    i = 0
+    while os.path.exists(os.path.join(base_dir, f"run{i}")):
+        i += 1
+    return f"run{i}"
+
+def get_last_run(results_dir):
+    runs = []
+
+    for name in os.listdir(results_dir):
+        match = re.match(r"run(\d+)", name)
+        if match:
+            runs.append((int(match.group(1)), name))
+    
+    if not runs:
+        return None
+    
+    # Return the run with the highest number
+    return max(runs, key=lambda x: x[0])[1]
 
 
 if __name__ == "__main__":
