@@ -87,8 +87,10 @@ Vision-Based-Sense-and-Avoid/
 **5. Install Dependencies:**
 
    ```bash
-   pip install -r requirements.txt
+      bash setup.sh
    ```
+
+   > *This installs all dependencies from `requirements.txt` and the airborne metrics evaluation package from `core/metrics`.*
 
 ---
 
@@ -113,13 +115,17 @@ Examples:
 
 ---
 
-## Usage
+2. **`data_builder.py`:** Filters ground truth metadata using configurable criteria to identify challenging flights. Saves the selected flight IDs to a .txt file for use with download_data.py.
+
+   ```bash
+   python -m src.data.data_builder
+   ```
+
+3. **`download_data.py`:** Reads the selected flight IDs saved during browsing and downloads the full image sequences for each flight from S3. Prompts for confirmation before starting and displays an estimated total download size.
 
 Basic examples of how to use or run the project.
 
-- Command-line usage.
-- Example input/output.
-- How this project is intended to be consumed (library, tool, service, etc.).
+4. **`view_data.py`:** Visualises downloaded flights either as an annotated frame-by-frame OpenCV viewer or as an exported H.264 `.mp4` video. Bounding boxes, object IDs, and distances are drawn on every detection.
 
 ---
 

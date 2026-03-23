@@ -165,26 +165,6 @@ def convert_and_copy_generated_results_to_metrics_folder() -> None:
     with open("data/evaluation/result/result.json", 'w') as fp:
         json.dump(flight_results, fp)
 
-def get_next_run_dir(base_dir: str) -> str:
-    i = 0
-    while os.path.exists(os.path.join(base_dir, f"run{i}")):
-        i += 1
-    return f"run{i}"
-
-def get_last_run(results_dir):
-    runs = []
-
-    for name in os.listdir(results_dir):
-        match = re.match(r"run(\d+)", name)
-        if match:
-            runs.append((int(match.group(1)), name))
-    
-    if not runs:
-        return None
-    
-    # Return the run with the highest number
-    return max(runs, key=lambda x: x[0])[1]
-
 
 if __name__ == "__main__":
     submission = SegPredictor()
