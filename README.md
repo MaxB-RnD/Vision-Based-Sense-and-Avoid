@@ -188,4 +188,6 @@ than the full competition dataset.
 | Multi-Object                 | 627     | —    | —    | —    | —   |
 | No Visible Object            | 354     | —    | —    | —    | —   |
 
+*Results evaluated at a minimum detection confidence of 0.985 and a minimum track length of 30 frames (≈ 3 seconds at 10 fps).*
+
 ---
