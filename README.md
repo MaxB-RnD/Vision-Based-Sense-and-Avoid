@@ -45,7 +45,7 @@ Vision-Based-Sense-and-Avoid/
 
 ## ⚙️ Requirements
 
-- Python 3.8.
+- Python 3.11.
 - Virtual Environment (recommended).
 - Git LFS (for the model weight files).
 - AWS credentials are **NOT** required - the AOT dataset is hosted in a public S3 bucket.
