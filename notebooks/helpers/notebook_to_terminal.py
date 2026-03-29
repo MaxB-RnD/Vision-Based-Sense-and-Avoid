@@ -21,7 +21,7 @@
 # USAGE INSTRUCTIONS:
 #   Run the Script from this Folder:
 #       1. cd notebooks/helpers/ 
-#       2. nohup python notebook_to_terminal.py > baseline_evaluation.log 2>&1 &
+#       2. nohup python notebook_to_terminal.py > ../../outputs/logs/baseline_evaluation.log 2>&1 &
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
@@ -67,7 +67,7 @@ sys.path.insert(0, os.path.join(PROJECT_ROOT, "core"))
 from logging_module import LogLevel, log
 from src.baseline.seg_test import SegPredictor
 from src.data.download_data import main as downloadData
-from notebooks.helpers.notebook_helpers import get_next_run_dir, load_combined_gt, resolve_local_flights
+from notebooks.helpers.notebook_helpers import get_next_run_dir, load_combined_gt, resolve_local_flights, convert_results_to_metrics_format
 
 # Confirm Project Root.
 log(LogLevel.INFO, "baseline:imports", "Project Root Set: %s", PROJECT_ROOT)
@@ -77,7 +77,7 @@ log(LogLevel.INFO, "baseline:imports", "Project Root Set: %s", PROJECT_ROOT)
 # ------------------------------------------------------------------------------
 def main() -> None:
     # Set Path to Desired Evaluation Dataset.
-    DATASET_PATH = "configs/datasets/hard_dataset_flights.txt"
+    DATASET_PATH = "configs/datasets/selected_flights.txt"
     DATASET_PARTS = ["part1", "part2", "part3"]
 
     # Set Results Variables (Auto-Incrementing Run Directory).
@@ -85,7 +85,7 @@ def main() -> None:
     run_name = get_next_run_dir(RESULTS_DIR)
 
     # Evaluation Filtering.
-    MIN_SCORE = 0.985
+    MIN_SCORE = 0.60
     MIN_TRACK_LEN = 30
 
     # Evaluation Output Folders.
@@ -126,6 +126,24 @@ def main() -> None:
     # Load & Filter Ground Truth to Include Local Flights Only. 
     combined_gt = load_combined_gt(DATASET_PARTS, local_flights, PROJECT_ROOT)
     log(LogLevel.INFO, "baseline:preprocessing", "Flights in Filtered Ground Truth: %d", len(combined_gt['samples']))
+
+    # Build Set of Image Filenames That Physically Exist on Disk.
+    all_images = {name for f in local_flights.values() for name in f["image_names"]}
+
+    # Cull GT Entities to Only Those With a Corresponding Image on Disk.
+    before = sum(len(flight["entities"]) for flight in combined_gt["samples"].values())
+
+    for flight_hash, flight_data in combined_gt["samples"].items():
+        flight_data["entities"] = [
+            e for e in flight_data["entities"]
+            if e["img_name"] in all_images
+        ]
+
+    after = sum(len(flight["entities"]) for flight in combined_gt["samples"].values())
+
+    # Report How Many Images were Removed. 
+    log(LogLevel.INFO, "baseline:preprocessing",
+        "GT Culled: %d -> %d entities (%d removed for missing images).", before, after, before - after)
 
     # Save the Filtered Ground Truth to the Evaluation Folder.
     os.makedirs(EVAL_GT_DIR, exist_ok=True)
@@ -173,7 +191,7 @@ def main() -> None:
     else:
         log(LogLevel.WARNING, "baseline:device_check", "No CUDA-Enabled GPU Found, Using CPU Instead.")
 
-  # Initialise Predictor (Reads Env Variables).
+    # Initialise Predictor (Reads Env Variables).
     predictor = SegPredictor()
 
     # Run Inference Over all Flights.
@@ -181,7 +199,7 @@ def main() -> None:
 
     # Print Summary Statement.
     log(LogLevel.INFO, "baseline:inference", "Inference Complete.")
-    print(f"  Raw Results Saved to: {os.path.join(RESULTS_DIR, run_name)}")
+    print(f"  Raw Results Saved to: {os.path.join(RESULTS_DIR, run_name)}\n")
 
     # Set Results Directories. 
     RAW_RESULTS_PATH = os.path.join(RESULTS_DIR, run_name, "result.json")
@@ -191,7 +209,7 @@ def main() -> None:
     os.makedirs(EVAL_RESULT_DIR, exist_ok=True)
 
     # Copy the Results File.
-    shutil.copy2(RAW_RESULTS_PATH, METRICS_RESULTS_PATH)
+    convert_results_to_metrics_format(RAW_RESULTS_PATH, METRICS_RESULTS_PATH)
 
     # Print Summary Statement.
     log(LogLevel.INFO, "baseline:inference", "Results Copied to Metrics Directory.")

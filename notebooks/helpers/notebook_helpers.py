@@ -264,21 +264,94 @@ def resolve_local_flights(txt_path: str, project_root: str) -> dict:
             # Use the First Match (there should only ever be one per hash).
             folder = matches[0]
 
+            # Collect Only Image Files That Physically Exist on Disk.
+            image_names = {
+                f.name for f in folder.iterdir()
+                if f.is_file() and f.suffix.lower() in {".png", ".jpg", ".jpeg"}
+            }
+
             # Store Metadata for this Flight in the Found Dict.
             found[folder.name] = {
                 "images_dir"  : folder,
                 "part"        : part,
                 "flight_hash" : flight_hash,
+                "image_names" : image_names,
             }
         else:
             # No Matching Folder Found, Add to Missing List.
             missing.append(f"{part}/{flight_hash}")
 
-    # Log Summary of Found Vs. Mssing Flights.
+    # Log Summary of Found Vs. Missing Flights.
     log(LogLevel.INFO, "notebook_helpers:resolve_flights",
         f"{len(found)} Flights on Disk. {len(missing)} Not Found. "
         f"(Run the Download Cell to Fetch Missing Flights).")
 
     # Return Dict of Flights that Exist Locally.
     return found
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
+#                       INFERENCE RESULTS BBOX CONVERSION
+# ------------------------------------------------------------------------------
+def convert_results_to_metrics_format(raw_path: str, out_path: str):
+    """
+    Converts inference output bounding boxes from CORNER format
+    to CENTRE format for compatibility with the metrics script.
+
+    Our inference pipeline stores bounding boxes as:
+        (x1, y1, x2, y2)  -> incorrectly placed in fields (x, y, w, h)
+
+    The metrics script expects:
+        (cx, cy, w, h) where:
+            cx = centre x-coordinate
+            cy = centre y-coordinate
+            w  = width
+            h  = height
+
+    This function rewrites each detection in-place to match the
+    expected centre-based format.
+
+    Args:
+        raw_path (str): Path to the JSON file containing raw inference results.
+        out_path (str): Path where the converted JSON will be saved.
+
+    Returns:
+        None: Writes the converted results to disk.
+    """
+
+    # Load Raw Inference Results from Disk.
+    with open(raw_path) as f:
+        data = json.load(f)
+
+    # Iterate Through Each Flight Entry.
+    for flight in data:
+
+        # Iterate Through Each Detection in the Flight.
+        for det in flight["detections"]:
+
+            # Extract Stored Values (Actually x1, y1, x2, y2).
+            x1, y1, x2, y2 = det["x"], det["y"], det["w"], det["h"]
+
+            # Compute Width and Height from Corner Coordinates.
+            w = x2 - x1
+            h = y2 - y1
+
+            # Convert to Centre Coordinates.
+            cx = x1 + w / 2
+            cy = y1 + h / 2
+
+            # Overwrite Detection with Correct Format.
+            det["x"] = cx
+            det["y"] = cy
+            det["w"] = w
+            det["h"] = h
+
+    # Write Converted Results Back to Disk.
+    with open(out_path, "w") as f:
+        json.dump(data, f)
+
+    # Log Completion of Conversion Step.
+    log(LogLevel.INFO, "notebook_helpers:convert_results",
+        f"Centre-Formated Result Conversion Complete.")
 # ------------------------------------------------------------------------------
