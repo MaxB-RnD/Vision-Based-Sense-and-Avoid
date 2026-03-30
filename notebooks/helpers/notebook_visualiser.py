@@ -47,20 +47,8 @@ from logging_module import LogLevel, log
 # ------------------------------------------------------------------------------
 #                           CONFIGURATION VARIABLES
 # ------------------------------------------------------------------------------
-# Path to the Inference Results CSV.
-RESULTS_CSV = "data/results/testing/run0/result.csv"
-
-# Path to the Ground Truth CSV.
-GROUNDTRUTH_CSV = "data/testing/ImageSets/groundtruth.csv"
-
-# Path to the Image Folder (Images/<flight_id>/<img_name>).
-IMAGES_DIR = "data/testing/Images"
-
 # Number of Random Frames to Sample and Display.
 NUM_SAMPLES = 10
-
-# Output Directory to Save Annotated Frame PNGs.
-OUTPUT_DIR = "data/results/testing/visualisations"
 
 # Bounding Box Colours (BGR).
 COLOUR_PRED = (211, 0, 0)    # Blue  - Model Prediction.
@@ -77,6 +65,46 @@ FONT_THICKNESS = 2
 # ------------------------------------------------------------------------------
 #                              DRAWING HELPERS
 # ------------------------------------------------------------------------------
+def cropToGtRegion(image: np.ndarray, gt_rows: pd.DataFrame, pad: int = 250) -> np.ndarray:
+    """
+    Crops the image to the region containing all GT bounding boxes,
+    with optional padding.
+
+    Args:
+        image (np.ndarray): Input image.
+        gt_rows (pd.DataFrame): Ground truth rows for this frame.
+        pad (int): Padding (in pixels) around the GT region.
+
+    Returns:
+        np.ndarray: Cropped image.
+    """
+    # Nothing to Crop.
+    if len(gt_rows) == 0:
+        return image  
+
+    # Get all GT Bounds.
+    x1 = gt_rows['gt_left'].min()
+    y1 = gt_rows['gt_top'].min()
+    x2 = gt_rows['gt_right'].max()
+    y2 = gt_rows['gt_bottom'].max()
+
+    # Add Padding.
+    x1 -= pad
+    y1 -= pad
+    x2 += pad
+    y2 += pad
+
+    # Clamp to Image Bounds.
+    h, w = image.shape[:2]
+    x1 = max(0, int(x1))
+    y1 = max(0, int(y1))
+    x2 = min(w, int(x2))
+    y2 = min(h, int(y2))
+
+    # Return Cropped Image.
+    return image[y1:y2, x1:x2]
+
+
 def drawPredBox(image: np.ndarray, row: pd.Series) -> np.ndarray:
     """
     Draws a predicted bounding box from a results CSV row onto the image.
@@ -90,11 +118,17 @@ def drawPredBox(image: np.ndarray, row: pd.Series) -> np.ndarray:
     Returns:
         np.ndarray: Annotated image.
     """
-    # Create Variables for Storing Results. 
-    x1 = int(row['x'])
-    y1 = int(row['y'])
-    x2 = int(row['w'])
-    y2 = int(row['h'])
+    # Extract Centre-Format Bbox.
+    cx = float(row['x'])
+    cy = float(row['y'])
+    w  = float(row['w'])
+    h  = float(row['h'])
+
+    # Convert to Corner Format
+    x1 = int(cx - w / 2)
+    y1 = int(cy - h / 2)
+    x2 = int(cx + w / 2)
+    y2 = int(cy + h / 2)
 
     # Draw Predicted BBox in Blue.
     cv2.rectangle(image, (x1, y1), (x2, y2), COLOUR_PRED, BB_THICKNESS)
@@ -136,56 +170,40 @@ def drawGtBoxes(image: np.ndarray, gt_rows: pd.DataFrame) -> np.ndarray:
     
     # Return the Annotated Image.
     return image
-
-
-def addLegendBanner(image: np.ndarray, img_name: str,
-                    has_pred: bool, has_gt: bool) -> np.ndarray:
-    """
-    Adds a status banner at the bottom of the frame showing the frame name
-    and whether predictions and ground truth boxes are present.
-
-    Args:
-        image (np.ndarray): OpenCV image to annotate.
-        img_name (str): Frame filename for display.
-        has_pred (bool): Whether any predicted boxes are drawn.
-        has_gt (bool): Whether any GT boxes are drawn.
-
-    Returns:
-        np.ndarray: Image with banner appended at the bottom.
-    """
-    # Scale the Banner to Image Size.
-    h, w = image.shape[:2]
-    banner = np.zeros((60, w, 3), dtype=np.uint8)
-    banner[:] = (40, 40, 40)
-
-    # Create Fields to Add to the Banner. 
-    pred_str = "PRED: YES" if has_pred else "PRED: NONE"
-    gt_str   = "GT:   YES" if has_gt   else "GT:   NONE"
-    label    = "%s   |   %s   |   %s" % (img_name[:60], pred_str, gt_str)
-
-    # Draw the Banner on the Image.
-    cv2.putText(banner, label, (12, 38), FONT, 0.55,
-                (255, 255, 255), 1, cv2.LINE_AA)
-
-    # Return the Annotated Image.
-    return np.vstack([image, banner])
 # ------------------------------------------------------------------------------
 
 
 # ------------------------------------------------------------------------------
 #                                   MAIN
 # ------------------------------------------------------------------------------
-def main():
+def main(results_csv=None, groundtruth_csv=None, images_dir=None, output_dir=None):
     """
-    Randomly samples frames from the results CSV and saves annotated PNGs
-    overlaying predicted (blue) and ground truth (green) bounding boxes.
+    Randomly samples frames from an inference results CSV and generates
+    annotated visualisations comparing predicted and ground truth bounding boxes.
+
+    For each sampled frame, the function overlays:
+        - Predicted bounding boxes (blue)
+        - Ground truth bounding boxes (green)
+
+    The resulting annotated images are saved to the specified output directory.
+
+    Args:
+        results_csv (str): Path to the inference results CSV file.
+        groundtruth_csv (str): Path to the ground truth CSV file.
+        images_dir (str): Root directory containing the dataset images, 
+                          structured by flight ID.
+        output_dir (str): Directory where annotated visualisation images will be saved.
+
+    Returns:
+        None:
+            This function saves annotated image files to disk as a side effect.
     """
     # Print Program Started Message.
     print()
-    log(LogLevel.INFO, "visualise_detections:main", "Loading Results CSV: %s", RESULTS_CSV)
+    log(LogLevel.INFO, "visualise_detections:main", "Loading Results CSV: %s", results_csv)
 
     # Load the Inference Results CSV.
-    df = pd.read_csv(RESULTS_CSV)
+    df = pd.read_csv(results_csv)
 
     # Drop Any Rows with Missing Image Names.
     df = df.dropna(subset=['img_name'])
@@ -197,8 +215,8 @@ def main():
 
     # Load Ground Truth Directly from CSV.
     log(LogLevel.INFO, "visualise_detections:main",
-        "Loading Ground Truth CSV: %s", GROUNDTRUTH_CSV)
-    gt_df = pd.read_csv(GROUNDTRUTH_CSV)
+        "Loading Ground Truth CSV: %s", groundtruth_csv)
+    gt_df = pd.read_csv(groundtruth_csv)
 
     # Drop Rows with No BBox.
     gt_df = gt_df.dropna(subset=['gt_left', 'gt_top', 'gt_right', 'gt_bottom'])
@@ -221,7 +239,7 @@ def main():
         "Sampled %d Frames for Visualisation.\n", sample_size)
 
     # Ensure Output Directory Exists.
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     # Process Each Sampled Frame.
     for i, img_name in enumerate(sampled_names):
@@ -239,7 +257,7 @@ def main():
         # Load the Image from Disk.
         image_path = None
         for prefix in ['', 'part1', 'part2', 'part3']:
-            candidate = os.path.join(IMAGES_DIR, prefix + flight_id, img_name)
+            candidate = os.path.join(images_dir, prefix + flight_id, img_name)
             if os.path.exists(candidate):
                 image_path = candidate
                 break
@@ -278,17 +296,18 @@ def main():
         if has_gt:
             image = drawGtBoxes(image, gt_rows)
 
-        # Add Status Banner at the Bottom.
-        image = addLegendBanner(image, img_name, has_pred, has_gt)
+        # Crop to GT Region.
+        if has_gt:
+            image = cropToGtRegion(image, gt_rows)
 
         # Save the Annotated Frame to the Output Directory.
-        out_path = os.path.join(OUTPUT_DIR, "frame_%03d_%s" % (i + 1, img_name))
+        out_path = os.path.join(output_dir, "frame_%03d_%s" % (i + 1, img_name))
         cv2.imwrite(out_path, image)
 
     # Print Success Message. 
     print()
     log(LogLevel.INFO, "visualise_detections:main",
-        "Done. %d Annotated Frames Saved to '%s'.\n", sample_size, OUTPUT_DIR)
+        "Done. %d Annotated Frames Saved to '%s'.\n", sample_size, output_dir)
 # ------------------------------------------------------------------------------
 
 

@@ -33,10 +33,14 @@
 import os
 import re
 import json
+import pandas as pd
+
+from glob import glob
 
 from pathlib import Path
 from typing import Optional
 from logging_module import LogLevel, log
+
 
 # ------------------------------------------------------------------------------
 #                           FLIGHT ID PARSING
@@ -354,4 +358,174 @@ def convert_results_to_metrics_format(raw_path: str, out_path: str):
     # Log Completion of Conversion Step.
     log(LogLevel.INFO, "notebook_helpers:convert_results",
         f"Centre-Formated Result Conversion Complete.")
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
+#                       SUBSET RESULTS COLLECTION
+# ------------------------------------------------------------------------------
+def prepare_subset(
+    subset_txt     : str,
+    run_dir        : str,
+    run_gt_dir     : str,
+    project_root   : str,
+) -> tuple[str, str, str, str]:
+    """
+    Stitches per-flight result.json files for a subset of flights, converts
+    them to metrics format, and filters the groundtruth to match.
+
+    Args:
+        subset_txt (str): Path to the .txt file listing subset flight IDs.
+        run_dir (str): Path to the run directory (e.g. outputs/results/baseline/run0).
+        run_gt_dir (str): Path to the run's gt/ dir (e.g. outputs/results/baseline/run0/gt).
+        project_root (str): Absolute path to the project root.
+
+    Returns:
+        tuple: (subset_name, subset_result_dir, subset_gt_dir, subset_summary_dir)
+    """
+    #  Derive Subset Name and Build Output Directories.
+    subset_name = os.path.splitext(os.path.basename(subset_txt))[0]
+
+    # Build Directory Structure for this Subset.
+    subset_base        = os.path.join(run_dir, "subsets", subset_name)
+    subset_result_dir  = os.path.join(subset_base, "result")
+    subset_gt_dir      = os.path.join(subset_base, "gt")
+    subset_summary_dir = os.path.join(subset_base, "summaries")
+
+    # Ensure all Required Directories Exist.
+    os.makedirs(subset_result_dir,  exist_ok=True)
+    os.makedirs(subset_gt_dir,      exist_ok=True)
+    os.makedirs(subset_summary_dir, exist_ok=True)
+
+    # Log Subset Preparation Start.
+    log(LogLevel.INFO, "notebook_helpers:prepare_subset", "Preparing Subset: %s\n", subset_name)
+
+    # Resolve Flight IDs.
+    subset_flights  = resolve_local_flights(subset_txt, project_root)
+    subset_ids_full = set(subset_flights.keys())
+    subset_ids_hash = {re.sub(r'^part\d+', '', fid) for fid in subset_ids_full}
+
+    # Log How Many Flights are in the Subset.
+    log(LogLevel.INFO, "notebook_helpers:prepare_subset", "Subset Contains %d Flights.\n", len(subset_ids_full))
+
+    # Stitch Per-Flight Results Files Together.
+    combined_results = []
+    missing_flights  = []
+
+    # Look through all Flight ID's.
+    for flight_id in subset_ids_full:
+        # Build Path to Each Flight's Result.json.
+        flight_result_path = os.path.join(run_dir, flight_id, "result.json")
+
+        # If Result File Doesn't Exist, Track & Skip.
+        if not os.path.exists(flight_result_path):
+            missing_flights.append(flight_id)
+            continue
+        
+        # Load & Append this Flight's Results.
+        with open(flight_result_path) as f:
+            combined_results.extend(json.load(f))
+    
+    # Log Warning if Any Flights were Missing Results.
+    if missing_flights:
+        log(LogLevel.WARNING, "notebook_helpers:prepare_subset",
+            "%d / %d Flights Missing Results - Skipped.", len(missing_flights), len(subset_ids_full))
+
+    # Save Combined Results into a Single File.
+    with open(os.path.join(subset_result_dir, "result.json"), "w") as f:
+        json.dump(combined_results, f)
+
+    # Log How Many Entries were Stitched Together.
+    log(LogLevel.INFO, "notebook_helpers:prepare_subset",
+        "Stitched %d Entries from %d Flights.\n", len(combined_results), len(subset_ids_full) - len(missing_flights))
+
+    # Convert Stitched Results to Metrics-Ready Format.
+    result_path = os.path.join(subset_result_dir, "result.json")
+    convert_results_to_metrics_format(result_path, result_path)
+
+    # Log Conversion Completion.
+    log(LogLevel.INFO, "notebook_helpers:prepare_subset", "Results Converted to Metrics Format.\n")
+
+    # Filter groundtruth.json to Subset Flights Only.
+    with open(os.path.join(run_gt_dir, "groundtruth.json")) as f:
+        full_gt = json.load(f)
+
+    # Keep Only Samples whose IDs Match this Subset (Using Hash IDs).
+    subset_gt = {
+        "samples": {
+            flight_id: data
+            for flight_id, data in full_gt["samples"].items()
+            if flight_id in subset_ids_hash
+        }
+    }
+
+    # Save Filtered Ground Truth to Subset Directory.
+    with open(os.path.join(subset_gt_dir, "groundtruth.json"), "w") as f:
+        json.dump(subset_gt, f)
+
+    # Log How Many GT Samples were Kept vs Total.
+    log(LogLevel.INFO, "notebook_helpers:prepare_subset",
+        "Filtered GT: %d / %d Samples.\n", len(subset_gt["samples"]), len(full_gt.get("samples", {})))
+
+    # Return Key Paths & Identifiers for Downstream Evaluation.
+    return subset_name, subset_result_dir, subset_gt_dir, subset_summary_dir
+
+
+def load_subset_summary(subset_summary_dir: str, subset_name: str) -> pd.DataFrame | None:
+    """
+    Loads the metrics summary JSON produced by the competition script and
+    returns a styled DataFrame ready for display.
+
+    Args:
+        subset_summary_dir (str): Path to the summaries folder for this subset.
+        subset_name (str): Name of the subset (used for the CSV filename).
+
+    Returns:
+        pd.DataFrame or None if no summary file was found.
+    """
+    # Find the Summary JSON in the Summaries Directory.
+    summary_files = glob(os.path.join(subset_summary_dir, "*.json"))
+
+    # Check that the Summary Files Exist.
+    if not summary_files:
+        log(LogLevel.ERROR, "notebook_helpers:load_subset_summary", "No Summary Files Found.")
+        return None
+    else:
+        # Load the Summary JSON.
+        with open(summary_files[0]) as f:
+            summary = json.load(f)
+
+    # Extract Key Metrics from Summary JSON.
+    fppi         = summary["fppi"]
+    hfar         = summary["far"]
+    afdr         = summary["fl_dr_in_range"]
+    det_aircraft = summary["det_aircraft_in_range"]
+    tot_aircraft = summary["tot_aircraft_in_range"]
+    edr_all      = summary["Detection"]["Encounters"]["300"]["All"]["dr"]
+    edr_above    = summary["Detection"]["Encounters"]["300"]["Above Horizon"]["dr"]
+    edr_below    = summary["Detection"]["Encounters"]["300"]["Below Horizon"]["dr"]
+
+    # Rank Metrics Against Thresholds.
+    fppi_status = "PASS (≤ 0.0005)" if fppi <= 0.0005 else f"FAIL — Actual: {fppi:.6f}"
+    hfar_status = "PASS (≤ 0.5)"    if hfar <= 0.5    else f"FAIL — Actual: {hfar:.4f}"
+
+    # Build Summary DataFrame.
+    summary_df = pd.DataFrame([
+        {"Metric": "AFDR (Airborne Flight Detection Rate)", "Value": f"{afdr:.4f}",      "Status": ""},
+        {"Metric": "FPPI (False Positives Per Image)",      "Value": f"{fppi:.6f}",      "Status": fppi_status},
+        {"Metric": "HFAR (Horizontal False Alarm Rate)",    "Value": f"{hfar:.4f}",      "Status": hfar_status},
+        {"Metric": "EDR - All Scenarios",                   "Value": f"{edr_all:.4f}",   "Status": ""},
+        {"Metric": "EDR - Above Horizon",                   "Value": f"{edr_above:.4f}", "Status": ""},
+        {"Metric": "EDR - Below Horizon",                   "Value": f"{edr_below:.4f}", "Status": ""},
+        {"Metric": "Total Aircraft Detected",               "Value": f"{det_aircraft}",  "Status": ""},
+        {"Metric": "Total Aircraft in Dataset",             "Value": f"{tot_aircraft}",  "Status": ""},
+    ])
+
+    # Save Aggregated Summary to CSV.
+    output_path = os.path.join(subset_summary_dir, f"{subset_name}_summary.csv")
+    summary_df.to_csv(output_path, index=False)
+    log(LogLevel.INFO, "notebook_helpers:load_subset_summary", "Summary Saved to: %s\n", output_path)
+
+    # Return the Data Frame.
+    return summary_df
 # ------------------------------------------------------------------------------
