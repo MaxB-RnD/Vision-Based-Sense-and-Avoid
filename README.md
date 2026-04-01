@@ -38,7 +38,8 @@ Vision-Based-Sense-and-Avoid/
 │   ├── data/         # Dataset selection, cleaning, and visualization scripts.
 │   └── baseline/     # Baseline solution scripts and models for evaluation.
 ├── requirements.txt
-└── README.md
+├── README.md
+└── setup.sh
 ```
 
 ---
@@ -147,13 +148,13 @@ Optional section for:
 
 ### Winning Solution
 
-The baseline used in this project is the [Winning Solution](https://github.com/pdima/airborne_tracking_winning_solution.git) 
+The baseline used in this project is the [Winning Solution](https://github.com/pdima/airborne_tracking_winning_solution.git)
 from the AIcrowd Airborne Object Tracking Challenge, achieving the highest scores
 on both the public and private leaderboards. The solution uses an ensemble of
 three detection backbones, HRNet32, gernet_m (with BiFPN from EfficientDet D2),
 and DLA60, combined with a predicted offset-based tracking algorithm.
 
-**Model weights are stored in `data/models/baseline/` via Git LFS:**
+**Model weights are stored in `configs/models/baseline/` via Git LFS:**
 
 | Weight File                                  | Description                        |
 |----------------------------------------------|------------------------------------|
@@ -186,13 +187,13 @@ hard dataset (1,618 flights). Flights were selected from the full AOT dataset us
 filter criteria to isolate the most challenging sequences, providing a more targeted benchmark
 than the full competition dataset.
 
-| Scenario                     | Flights | FPPI | AFDR | HFAR | EDR (Total) | EDR (Above) | EDR (Mixed) | EDR (Below)
-|------------------------------|---------|------|------|------|-------------|
-| **Overall (All Criteria)**   |**1,618**|0.000025|0.7382|0.1109|0.6964|0.6390|0.5793|0.7605|
-| Small Object (bbox ≤ 36 px²) | 662     |0.000045|0.7247|0.1230|0.6364|0.6439|0.4118|0.6761|
-| Below Horizon                | 1,053   |0.000031|0.7581|0.0865|0.7059|0.3158|0.55|0.7746|
-| Multi-Object                 | 627     | 0   |0.7081| 0   |0.6990|0.6970|0.44444|0.7385|
-| No Visible Object            | 354     | 0.000042|0.6043|0.2400|0.2432|0.2727|0.25|0.1667
+| Scenario                     | Flights | FPPI      | AFDR   | HFAR   | EDR (Total) | EDR (Above) | EDR (Mixed) | EDR (Below) |
+|------------------------------|---------|-----------|--------|--------|-------------|-------------|-------------|-------------|
+| **Overall (All Criteria)**   | 1,618   | 0.000025  | 0.7382 | 0.1109 | 0.6964      | 0.6390      | 0.5793      | 0.7605      |
+| Small Object (bbox ≤ 36 px²) | 662     | 0.000045  | 0.7247 | 0.1230 | 0.6364      | 0.6439      | 0.4118      | 0.6761      |
+| Below Horizon                | 1,053   | 0.000031  | 0.7581 | 0.0865 | 0.7059      | 0.3158      | 0.5500      | 0.7746      |
+| Multi-Object                 | 627     | 0.000000  | 0.7081 | 0.0000 | 0.6990      | 0.6970      | 0.4444      | 0.7385      |
+| No Visible Object            | 354     | 0.000042  | 0.6043 | 0.2400 | 0.2432      | 0.2727      | 0.2500      | 0.1667      |
 
 *Results evaluated at a minimum detection confidence of 0.60 and a minimum track length of 30 frames (≈ 3 seconds at 10 fps).*
 
