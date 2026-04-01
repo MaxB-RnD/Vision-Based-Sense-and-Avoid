@@ -49,7 +49,7 @@ from logging_module import LogLevel, log
 #                        CONFIGURATION VARIABLES
 # ------------------------------------------------------------------------------
 # Path to the .txt File Containing the Selected Flight IDs.
-SELECTED_FLIGHTS_PATH = 'data/selected_flights.txt'
+SELECTED_FLIGHTS_PATH = 'configs/datasets/selected_flights.txt'
 # ------------------------------------------------------------------------------
 
 

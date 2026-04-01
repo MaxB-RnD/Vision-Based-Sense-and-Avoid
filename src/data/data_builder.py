@@ -49,13 +49,16 @@ from src.data.browse_data import dataLoader, saveFlightId, bboxArea
 #                           CONFIGURATION VARIABLES
 # ------------------------------------------------------------------------------
 # Path to the File Where Hard Dataset Flight IDs are Saved.
-HARD_FLIGHTS_PATH = 'data/hard_dataset_flights.txt'
+SELECTED_FLIGHTS_PATH = 'configs/datasets/hard_dataset_flights.txt'
 
 # Select True to Include Flights where Any Object is Below Horizon or Unclear.
 FILTER_HORIZON = True
 
 # Include Flights where Any Frame has More than 1 Detected Object.
 FILTER_MULTIPLE_OBJECTS = True
+
+# Include Flights where Any Frame has No Detected Object.
+FILTER_NO_OBJECTS = True
 
 # Include Flights where Any Object Bbox Area is Below this Threshold (px²).
 FILTER_SMALL_OBJECTS = True
@@ -107,6 +110,25 @@ def hasMultipleObjects(frame: object) -> bool:
     return len(object_locations) > 1
 
 
+def hasNoObjects(frame: object) -> bool:
+    """
+    Returns True if the sequence contains no airborne object in at least one 
+    frame.
+
+    Args:
+        frame (object): AOT frame object from flight.frames.
+
+    Returns:
+        bool: True if no objects are detected, False otherwise.
+    """
+    # Retrieve Detected Object Locations from the Frame. 
+    # Return empty dict if Attribute Does Not Exist.
+    object_locations = getattr(frame, 'detected_object_locations', {})
+
+    # Return True if No Object is Present in the Frame.
+    return len(object_locations) == 0
+
+
 def isSmallObject(obj: object) -> bool:
     """
     Returns True if the detected object's bounding box area is below
@@ -148,6 +170,7 @@ def main():
     # Set Counters for the Final Summary Report.
     flights_saved = 0
     flights_skipped = 0
+    average_length = 0
 
     # Iterate through Every Flight in the Dataset.
     for flight_idx, flight_id in enumerate(flight_ids):
@@ -165,13 +188,14 @@ def main():
         for frame_id, frame in frames.items():
             # Grab the Full Ground-Truth Metadata Needed.
             object_locations = frame.detected_object_locations
-
-            # Skips the Frame if No Objects were Detected.
-            if not object_locations:
-                continue
-
+            
             # Check Multiple Objects Filter at Frame Level.
             if FILTER_MULTIPLE_OBJECTS and hasMultipleObjects(frame):
+                qualifies = True
+                break
+
+            # Check No Objects Filter at Frame Level.
+            if FILTER_NO_OBJECTS and hasNoObjects(frame):
                 qualifies = True
                 break
 
@@ -193,15 +217,23 @@ def main():
 
         # Save the Flight ID if it Met the Criteria.
         if qualifies:
-            saveFlightId(flight_id, HARD_FLIGHTS_PATH)
+            saveFlightId(flight_id, SELECTED_FLIGHTS_PATH)
             flights_saved += 1
+            average_length += len(frames)
         else:
             flights_skipped += 1
+    
+    # Calculate the Average Sequence Length.
+    if flights_saved > 0:
+        average_length = average_length / (flights_saved * 10.0)
+    else:
+        average_length = 0
 
     # Display Final Summary.
     print()
     log(LogLevel.INFO, "data_builder:main",
-        "Scan Complete.  Saved: %d  |  Skipped: %d.\n", flights_saved, flights_skipped)
+        "Scan Complete.  Saved: %d  |  Skipped: %d  |  Average Sequence Length: %.2fs.\n", 
+        flights_saved, flights_skipped, average_length)
 # ------------------------------------------------------------------------------
 
 
