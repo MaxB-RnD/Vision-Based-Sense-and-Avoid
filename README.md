@@ -79,7 +79,7 @@ Vision-Based-Sense-and-Avoid/
 **4. Create & Activate a Virtual Environment:**
 
    ```bash
-   python3 -m venv .venv
+   python3.11 -m venv .venv
    source .venv/bin/activate        # Linux/macOS/WSL
    .venv\Scripts\activate           # Windows
    ```
@@ -186,14 +186,14 @@ hard dataset (1,618 flights). Flights were selected from the full AOT dataset us
 filter criteria to isolate the most challenging sequences, providing a more targeted benchmark
 than the full competition dataset.
 
-| Scenario                     | Flights | FPPI | AFDR | HFAR | EDR |
-|------------------------------|---------|------|------|------|-----|
-| **Overall (All Criteria)**   |**1,618**| —    | —    | —    | —   |
-| Small Object (bbox ≤ 36 px²) | 662     | —    | —    | —    | —   |
-| Below Horizon                | 1,053   | —    | —    | —    | —   |
-| Multi-Object                 | 627     | —    | —    | —    | —   |
-| No Visible Object            | 354     | —    | —    | —    | —   |
+| Scenario                     | Flights | FPPI | AFDR | HFAR | EDR (Total) | EDR (Above) | EDR (Mixed) | EDR (Below)
+|------------------------------|---------|------|------|------|-------------|
+| **Overall (All Criteria)**   |**1,618**| —    | —    | —    | —           |
+| Small Object (bbox ≤ 36 px²) | 662     | —    | —    | —    | —           |
+| Below Horizon                | 1,053   | —    | —    | —    | —           |
+| Multi-Object                 | 627     | —    | —    | —    | —           |
+| No Visible Object            | 354     | —    | —    | —    | —           |
 
-*Results evaluated at a minimum detection confidence of 0.985 and a minimum track length of 30 frames (≈ 3 seconds at 10 fps).*
+*Results evaluated at a minimum detection confidence of 0.60 and a minimum track length of 30 frames (≈ 3 seconds at 10 fps).*
 
 ---
