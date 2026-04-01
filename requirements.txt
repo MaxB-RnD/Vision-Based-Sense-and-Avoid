@@ -21,13 +21,26 @@
 #   5. Upgrade as Required:           pip3 install --upgrade -r requirements.txt
 #
 # ------------------------------------------------------------------------------
+# -                          L I C E N S I N G                                 -
+# ------------------------------------------------------------------------------
+# This software and its contents are the intellectual property of Lockheed 
+# Martin Australia and are protected under applicable copyright and intellectual
+# property laws.
+#
+# All rights reserved. No part of this software may be reproduced, distributed, 
+# modified, or transmitted in any form or by any means without the prior written
+# permission of Lockheed Martin Australia.
+#
+# Unauthorised use, copying, or distribution of this software is strictly 
+# prohibited.
+# ------------------------------------------------------------------------------
 
 
 # ==============================================================================
 # Shared Libraries from Our GitHub Repository
 # ==============================================================================
-# > This installs directly from my repository as a module without needing to change 
-# > anything.
+# > This installs directly from my repository as a module without needing to 
+# > change anything.
 
 # Custom Logger Module. 
 git+ssh://git@github.com/MaxB-RnD/Shared-Libraries.git#subdirectory=Loggers

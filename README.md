@@ -1,4 +1,4 @@
-# Project Name
+# Vision-Based Sense and Avoid: Monocular Airborne Object Tracking for Safe Drone Flight
 
 ## 📑 Contents
 
@@ -19,8 +19,29 @@
 
 ## 🛸 Overview
 
-A brief description of what this project does, why it exists, and what problem it solves.  
-Keep this high-level and focused on intent rather than implementation details.
+This project tackles the challenge of detecting and tracking tiny airborne objects using only a
+single monocular camera onboard a drone. Working with the Airborne Object Tracking (AOT) dataset,
+a real-world collection of 5.9M+ images across diverse flight conditions, the goal is to develop
+novel deep learning and multi-object tracking algorithms that achieve early detection with an
+extremely low false alarm rate, enabling safe collision avoidance without unnecessary manoeuvres.
+
+Objects in this dataset can appear as just a few pixels per frame, making this one of the most
+challenging small-object detection problems in computer vision, and one of the most critical for
+future autonomous flight systems.
+
+For background on the dataset and benchmarks, see the
+[Airborne Object Tracking Challenge on AIcrowd](https://www.aicrowd.com/challenges/airborne-object-tracking-challenge).
+
+---
+
+## 📋 Project Details
+
+| Field            | Details                                                                                                |
+|------------------|--------------------------------------------------------------------------------------------------------|
+| **Sponsor**      | Lockheed Martin Australia – Advanced Systems & Technology Group                                        |
+| **Supervisor**   | Dr Feras Dayoub ([feras.dayoub@adelaide.edu.au](mailto:feras.dayoub@adelaide.edu.au))                  |
+| **Co-Supervisor**| Ms Kendall Louise Jenner ([kendall.l.jenner@global.lmco.com](mailto:kendall.l.jenner@global.lmco.com)) |
+| **Second Marker**| Dr Lei Chen ([lei.chen@adelaide.edu.au](mailto:lei.chen@adelaide.edu.au))                              |
 
 ---
 
@@ -107,14 +128,15 @@ The [Airborne Object Tracking (AOT) Dataset](https://www.aicrowd.com/challenges/
 | **Frames per Flight** | ~120s at 10 fps (~4–5GB per flight).                             |
 | **Resolution**        | 2448 × 2048 px.                                                  |
 
-Brief instructions on how to build or set up the project.
+### Data Tools
 
-Examples:
-- How to configure and build.
-- How to install dependencies.
-- Any required environment variables.
+Three scripts are provided to **browse, select, download,** and visualise flights from the dataset. All scripts are run from the project root.
 
----
+1. **`browse_data.py`:** Browses dataset ground truth metadata entry by entry without downloading any images. Use this to explore object distances, bounding box sizes, and horizon classifications to decide which flights are worth downloading.
+
+   ```bash
+   python -m src.data.browse_data
+   ```
 
 2. **`data_builder.py`:** Filters ground truth metadata using configurable criteria to identify challenging flights. Saves the selected flight IDs to a .txt file for use with download_data.py.
 
@@ -124,23 +146,29 @@ Examples:
 
 3. **`download_data.py`:** Reads the selected flight IDs saved during browsing and downloads the full image sequences for each flight from S3. Prompts for confirmation before starting and displays an estimated total download size.
 
-Basic examples of how to use or run the project.
+   ```bash
+   python -m src.data.download_data
+   ```
 
 4. **`view_data.py`:** Visualises downloaded flights either as an annotated frame-by-frame OpenCV viewer or as an exported H.264 `.mp4` video. Bounding boxes, object IDs, and distances are drawn on every detection.
 
----
+   ```bash
+   python -m src.data.view_data
+   ```
 
-## Development Notes
+### Visualisation
 
-Optional section for:
-- Design decisions.
-- Known limitations.
-- Future improvements.
-- Gotchas or assumptions.
+| **Frame 1**                                                          | **Frame 2**                                                     | **Frame 3**                                                      |
+|:--------------------------------------------------------------------:|:---------------------------------------------------------------:|:----------------------------------------------------------------:|
+| ![Frame 1: Object at Distance](docs/Images/Data_Viewer_Picture_1.png)| ![Frame 2: Object Closer](docs/Images/Data_Viewer_Picture_2.png)| ![Frame 3: Object Closest](docs/Images/Data_Viewer_Picture_3.png)|
+| Early Detection                                                      | Closing Distance                                                | Near Range                                                       |
 
----
+<br/>
 
-## License
+| **Annotated Video**                                          |
+|:------------------------------------------------------------:|
+| ![Annotated Flight Video](docs/Images/Data_Viewer_Video.gif) |
+| Full Sequence                                                |
 
 ---
 
