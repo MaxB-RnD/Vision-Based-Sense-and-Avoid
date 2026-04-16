@@ -21,7 +21,7 @@
 #
 # USAGE INSTRUCTIONS:
 #   1. Run the Script from Project Root:
-#       - python -m src.baseline.seg_test
+#       - python -m src.baselines.winning_solution.seg_test
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
@@ -53,8 +53,8 @@ import matplotlib.pyplot as plt
 import matplotlib.patches
 
 sys.path.insert(0, os.path.dirname(__file__))
-from evaluator.airborne_detection import AirbornePredictor
-from seg_tracker.seg_tracker import SegDetector, SegTrackerFromOffset
+from src.baselines.winning_solution.evaluator.airborne_detection import AirbornePredictor
+from src.baselines.winning_solution.seg_tracker.seg_tracker import SegDetector, SegTrackerFromOffset
 
 # ------------------------------------------------------------------------------
 #                           CONFIGURATION VARIABLES

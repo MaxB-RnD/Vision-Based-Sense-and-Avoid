@@ -57,7 +57,7 @@ Vision-Based-Sense-and-Avoid/
 ├── notebooks/        # End-to-end model evaluation notebooks.
 ├── src/
 │   ├── data/         # Dataset selection, cleaning, and visualization scripts.
-│   └── baseline/     # Baseline solution scripts and models for evaluation.
+│   └── baselines/    # Baseline solution scripts and models for evaluation.
 ├── requirements.txt
 ├── README.md
 └── setup.sh
@@ -181,16 +181,6 @@ from the AIcrowd Airborne Object Tracking Challenge, achieving the highest score
 on both the public and private leaderboards. The solution uses an ensemble of
 three detection backbones, HRNet32, gernet_m (with BiFPN from EfficientDet D2),
 and DLA60, combined with a predicted offset-based tracking algorithm.
-
-**Model weights are stored in `configs/models/baseline/` via Git LFS:**
-
-| Weight File                                  | Description                        |
-|----------------------------------------------|------------------------------------|
-| `030_tr_tsn_rn34_w3_crop_borders_255_0.pth`  | ResNet34 Crop Border Baseline.     |
-| `120_hrnet32_all_2220.pth`                   | HRNet32 Backbone.                  |
-| `120_gernet_m_b2_all_2220.pth`               | GerNet-M with BiFPN (EfficientDet).|
-| `120_dla60_256_sgd_all_rerun_2220.pth`       | DLA60 Backbone (Winning Ensemble). |
-| `130_hrnet48_all_2220.pth`                   | HRNet48 Backbone.                  |
 
 ### Competition Results (Full AOT Dataset)
 

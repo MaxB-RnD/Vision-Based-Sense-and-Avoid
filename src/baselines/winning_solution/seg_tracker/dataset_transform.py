@@ -4,16 +4,16 @@ import numpy as np
 import torch
 import torch.utils.data
 from tqdm import tqdm
-import config
+import baseline.winning_solution.seg_tracker.config as config
 import os
-import common_utils
+import baseline.winning_solution.seg_tracker.common_utils as common_utils
 import matplotlib.pyplot as plt
 import cv2
 import math
 import scipy
 import scipy.optimize
 from typing import List
-from offset_grid_to_transform import offset_grid_to_transform_params
+from baseline.winning_solution.seg_tracker.offset_grid_to_transform import offset_grid_to_transform_params
 
 
 def find_transform_between_images(cur_img, prev_img):

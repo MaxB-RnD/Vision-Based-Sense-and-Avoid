@@ -13,13 +13,13 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from collections import defaultdict
 import madgrad
-import config
+import baseline.winning_solution.seg_tracker.config as config
 
-import common_utils
-import dataset_transform
-import models_transformation
-from common_utils import DotDict, timeit_context
-import offset_grid_to_transform
+import baseline.winning_solution.seg_tracker.common_utils as common_utils
+import baseline.winning_solution.seg_tracker.dataset_transform as dataset_transform
+import baseline.winning_solution.seg_tracker.models_transformation as models_transformation
+from baseline.winning_solution.seg_tracker.common_utils import DotDict, timeit_context
+import baseline.winning_solution.seg_tracker.offset_grid_to_transform as offset_grid_to_transform
 
 from typing import Iterator, Optional, Sequence, List, TypeVar, Generic, Sized
 
@@ -397,7 +397,7 @@ def export_model(experiment_name: str, fold: int, epoch: int):
     # torch.jit.save(traced_model, f'{dst_dir}/{experiment_name}_{epoch}_{fold}jh.pth')
 
 
-from load_images_pipe import *
+from baseline.winning_solution.seg_tracker.load_images_pipe import *
 
 def find_transforms(model, img_crops):
     all_frames = torch.from_numpy(np.stack(img_crops, axis=0) / 255.0).float().cuda()

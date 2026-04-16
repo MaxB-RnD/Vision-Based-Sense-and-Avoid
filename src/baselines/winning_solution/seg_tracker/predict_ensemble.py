@@ -138,7 +138,7 @@ def check_predict_ensemble():
     torch.backends.cudnn.deterministic = False
     torch.backends.cudnn.benchmark = True
 
-    from train import build_model
+    from baseline.winning_solution.seg_tracker.train import build_model
 
     models_names = [
         ('100_hrnet32_fpm', 2220),

@@ -17,21 +17,21 @@ import loss_asl
 import pickle
 from dataclasses import dataclass
 
-import common_utils
-import dataset_tracking
-import seg_prediction_to_items
-from dataset_tracking import Frame, DetectionItem
-import models_segmentation
-from common_utils import DotDict, timeit_context
+import baseline.winning_solution.seg_tracker.common_utils as common_utils
+import baseline.winning_solution.seg_tracker.dataset_tracking as dataset_tracking
+import baseline.winning_solution.seg_tracker.seg_prediction_to_items as seg_prediction_to_items
+from baseline.winning_solution.seg_tracker.dataset_tracking import Frame, DetectionItem
+import baseline.winning_solution.seg_tracker.models_segmentation as models_segmentation
+from baseline.winning_solution.seg_tracker.common_utils import DotDict, timeit_context
 
 from typing import Iterator, Optional, Sequence, List, TypeVar, Generic, Sized
 
-from train import seed_everything, build_model, combine_images
-from load_images_pipe import *
-import config
+from baseline.winning_solution.seg_tracker.train import seed_everything, build_model, combine_images
+from baseline.winning_solution.seg_tracker.load_images_pipe import *
+import baseline.winning_solution.seg_tracker.config as config
 import scipy.stats.mstats
-import check_frame_level_prediction
-from check_frame_level_prediction import FlightFrames, load_flights_for_part, load_flights_for_time_based_validation
+import baseline.winning_solution.seg_tracker.check_frame_level_prediction as check_frame_level_prediction
+from baseline.winning_solution.seg_tracker.check_frame_level_prediction import FlightFrames, load_flights_for_part, load_flights_for_time_based_validation
 
 seed_everything(seed=42)
 

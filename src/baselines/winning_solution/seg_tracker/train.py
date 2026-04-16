@@ -13,14 +13,14 @@ from tqdm import tqdm
 from collections import defaultdict
 import madgrad
 # import sam
-import focal_loss
+import baseline.winning_solution.seg_tracker.focal_loss as focal_loss
 import copy
 
-import common_utils
-import dataset_tracking
-import seg_prediction_to_items
-import models_segmentation
-from common_utils import DotDict, timeit_context
+import baseline.winning_solution.seg_tracker.common_utils as common_utils
+import baseline.winning_solution.seg_tracker.dataset_tracking as dataset_tracking
+import baseline.winning_solution.seg_tracker.seg_prediction_to_items as seg_prediction_to_items
+import baseline.winning_solution.seg_tracker.models_segmentation as models_segmentation
+from baseline.winning_solution.seg_tracker.common_utils import DotDict, timeit_context
 
 from typing import Iterator, Optional, Sequence, List, TypeVar, Generic, Sized
 
@@ -165,7 +165,7 @@ class SkipNSampler(torch.utils.data.Sampler[int]):
         return self.num_samples
 
 
-from check_frame_level_prediction import Box, DetectedItem, extend_bounding_boxes, calc_iou
+from baseline.winning_solution.seg_tracker.check_frame_level_prediction import Box, DetectedItem, extend_bounding_boxes, calc_iou
 
 
 def find_fp_samples(model, dataset: dataset_tracking.TrackingDataset, step: int, batch_size: int = 8, input_frames: int = 2):

@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from os import listdir
 from os.path import isfile, join
 
-from evaluator import aicrowd_helpers
+from src.baselines.winning_solution.evaluator import aicrowd_helpers
 
 
 class TimeoutException(Exception): pass
