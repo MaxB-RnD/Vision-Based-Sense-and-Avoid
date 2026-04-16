@@ -1,0 +1,20 @@
+.base_ruff:
+  stage: build
+  interruptible: true
+  image:
+    name: ghcr.io/astral-sh/ruff:0.15.2-alpine
+  before_script:
+    - ruff --version
+
+Ruff Check:
+  extends: .base_ruff
+  script:
+    - ruff check --output-format=gitlab --output-file=code-quality-report.json || true
+  artifacts:
+    reports:
+      codequality: code-quality-report.json
+
+Ruff Format:
+  extends: .base_ruff
+  script:
+    - ruff format --diff
