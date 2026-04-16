@@ -1,3 +1,4 @@
+#!/bin/bash
 # ------------------------------------------------------------------------------
 # -               V E R S I O N   I D E N T I F I C A T I O N                  -
 # ------------------------------------------------------------------------------
@@ -32,9 +33,37 @@
 # prohibited.
 # ------------------------------------------------------------------------------
 
-#!/bin/bash
-# Install Project Dependencies.
-pip install -r requirements.txt --break-system-packages
+# Detect CUDA Driver and Install Correct PyTorch Build.
+echo "[setup] Detecting CUDA Driver Version..."
+
+# Extract the Driver Version Major Number from Nvidia-smi.
+GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -n1)
+
+# Install the Correct Dependencies for the Graphics Driver. 
+if [ -z "$GPU_NAME" ]; then
+    # No CUDA Driver Found. 
+    echo "[setup] WARNING: nvidia-smi Not Found or No GPU Detected. Skipping PyTorch GPU Install."
+    echo "[setup] Installing CPU-only PyTorch..."
+    pip install torch torchvision torchaudio --break-system-packages
+
+elif echo "$GPU_NAME" | grep -qiE "RTX 50|50[0-9]{2}"; then
+    # Driver 570+ Supports CUDA 12.8+ (Blackwell / RTX 50-series)
+    echo "[setup] Detected Blackwell GPU ($GPU_NAME). Installing PyTorch cu128..."
+    pip install -r configs/dependencies/requirements_torch_blackwell.txt --break-system-packages
+
+else
+    # All Other GPUs Use cu124.
+    echo "[setup] Detected GPU ($GPU_NAME). Installing PyTorch cu124..."
+    pip install -r configs/dependencies/requirements_torch_workstation.txt --break-system-packages
+fi
+
+# Install Remaining Project Dependencies.
+echo "[setup] Installing Project Dependencies..."
+pip install -r configs/dependencies/requirements.txt --break-system-packages
 
 # Install the Airborne Metrics Evaluation Package.
+echo "[setup] Installing Airborne Metrics Package..."
 pip install core/metrics --break-system-packages
+
+# Print Message when Complete.
+echo "[setup] Setup Complete."

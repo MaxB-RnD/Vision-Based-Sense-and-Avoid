@@ -151,7 +151,7 @@ def _calc_num_no_match_detections(df_matches):
     log.info('Calculating the number of detections that did not match ground truth') 
     if not is_in_df_columns(df_matches, ['detection_id']):
         # this is an edge case when there are 0 detections
-        return 0
+        return 0.0, 0, 0
     assert is_in_df_columns(df_matches, ['detection_id', 'gt_det_no_match']), (
         'One or more of detection_id, gt_det_no_match columns is not found, cannot calculate')
     # Grouping by 'detection_id' yields all the match results between the detection with 
@@ -177,7 +177,7 @@ def _calc_num_unique_track_ids_with_no_match_detection(df_matches):
             'not matched detection') 
     if not is_in_df_columns(df_matches, ['detection_id']):
         # this is an edge case when there are 0 detections
-        return 0
+        return 0.0, 0, 0
     required_cols = ['flight_id', 'detection_id', 'track_id', 'gt_det_no_match']
     assert is_in_df_columns(df_matches, required_cols), (
         'One or more of detection_id, track_id, gt_det_no_match columns is not found, cannot calculate')
@@ -272,7 +272,7 @@ def _calc_num_detected_intruders(df_matches):
     log.info('Calculating the number of intruders that were matched by detections') 
     if not is_in_df_columns(df_matches, ['detection_id']):
         # this is an edge case when there are 0 detections
-        return 0
+        return 0.0, 0, 0
     assert is_in_df_columns(df_matches, ['detection_id', 'id', 'gt_det_match']), (
         'One or more of detection_id, id, gt_det_match columns is not found, cannot calculate')
     
@@ -299,7 +299,7 @@ def compute_probability_of_detection(df_matches, min_score=None):
     """
     tot_objects_to_detect = df_matches.groupby(['img_name', 'id']).ngroups
     if tot_objects_to_detect == 0:
-        return 0
+        return 0.0, 0, 0
     log.info('PD calculation: Number of intruders to detect = %d', tot_objects_to_detect)
 
     df_matches = _filter_matches_based_on_detection_score(df_matches, min_score)

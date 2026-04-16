@@ -65,7 +65,7 @@ sys.path.insert(0, os.path.join(PROJECT_ROOT, "core"))
 
 # Import Local Project Funtions.
 from logging_module import LogLevel, log
-from baseline.winning_solution.seg_test import SegPredictor
+from src.baselines.winning_solution.seg_test import SegPredictor
 from src.data.download_data import main as downloadData
 from notebooks.helpers.notebook_helpers import get_next_run_dir, load_combined_gt, resolve_local_flights, convert_results_to_metrics_format
 

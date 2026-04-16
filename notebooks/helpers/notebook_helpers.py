@@ -298,7 +298,7 @@ def resolve_local_flights(txt_path: str, project_root: str) -> dict:
 # ------------------------------------------------------------------------------
 #                       INFERENCE RESULTS BBOX CONVERSION
 # ------------------------------------------------------------------------------
-def convert_results_to_metrics_format(raw_path: str, out_path: str):
+def convert_results_to_metrics_format(raw_path: str, out_path: str, input_format="corner"):
     """
     Converts inference output bounding boxes from CORNER format
     to CENTRE format for compatibility with the metrics script.
@@ -334,22 +334,23 @@ def convert_results_to_metrics_format(raw_path: str, out_path: str):
         # Iterate Through Each Detection in the Flight.
         for det in flight["detections"]:
 
-            # Extract Stored Values (Actually x1, y1, x2, y2).
-            x1, y1, x2, y2 = det["x"], det["y"], det["w"], det["h"]
+            if input_format == "corner":
+                # Extract Stored Values (Actually x1, y1, x2, y2).
+                x1, y1, x2, y2 = det["x"], det["y"], det["w"], det["h"]
 
-            # Compute Width and Height from Corner Coordinates.
-            w = x2 - x1
-            h = y2 - y1
+                # Compute Width and Height from Corner Coordinates.
+                w = x2 - x1
+                h = y2 - y1
 
-            # Convert to Centre Coordinates.
-            cx = x1 + w / 2
-            cy = y1 + h / 2
+                # Convert to Centre Coordinates.
+                cx = x1 + w / 2
+                cy = y1 + h / 2
 
-            # Overwrite Detection with Correct Format.
-            det["x"] = cx
-            det["y"] = cy
-            det["w"] = w
-            det["h"] = h
+                # Overwrite Detection with Correct Format.
+                det["x"] = cx
+                det["y"] = cy
+                det["w"] = w
+                det["h"] = h
 
     # Write Converted Results Back to Disk.
     with open(out_path, "w") as f:
