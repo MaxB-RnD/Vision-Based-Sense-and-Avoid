@@ -81,7 +81,7 @@ def main() -> None:
     DATASET_PARTS = ["part1", "part2", "part3"]
 
     # Set Results Variables (Auto-Incrementing Run Directory).
-    RESULTS_DIR = "outputs/results/baseline/"
+    RESULTS_DIR = "outputs/results/baselines/"
     run_name = get_next_run_dir(RESULTS_DIR)
 
     # Evaluation Filtering.
