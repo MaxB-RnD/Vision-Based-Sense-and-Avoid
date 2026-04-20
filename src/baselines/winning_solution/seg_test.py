@@ -43,7 +43,7 @@
 import os
 import sys
 import cv2
-import re
+
 from tqdm import tqdm
 from os import listdir
 from os.path import isfile, join
