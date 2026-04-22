@@ -63,10 +63,6 @@ sys.path.insert(0, PROJECT_ROOT)
 # Add Core Metric Folders to System Path.
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "core"))
 
-# Import Baseline Classes.
-from src.baselines.winning_solution.seg_test import SegPredictor
-from src.baselines.transformer_detector.transformer_test import TransformerPredictor
-
 # Import Local Project Funtions.
 from logging_module import LogLevel, log
 from notebooks.helpers.notebook_helpers import get_next_run_dir, load_combined_gt, resolve_local_flights, convert_results_to_metrics_format
@@ -84,11 +80,12 @@ def main() -> None:
     # 1 -> RT-DETR v2 (Transformer-Based Detector).
     # 2 -> DogFight (Drone Detection Model).
     # 3 -> Faster R-CNN + NGWD (Tiny Object Detection Enhancement).
-    SELECTED_MODEL = 0
+    SELECTED_MODEL = 1
     model_list = ["winning_solution","transformer_detector","drone-to-drone","satellite_view"]
 
     # Evaluation Filtering.
-    MIN_SCORE = 0.40
+    MIN_SCORE = 0.05
+    DETECTION_THRESHOLD = 0.05
     MIN_TRACK_LEN = 0
 
     # Set Path to Desired Evaluation Dataset.
@@ -184,6 +181,7 @@ def main() -> None:
     os.environ["DATASET_ENV"] = run_name
     os.environ["MIN_TRACK_LEN"] = str(MIN_TRACK_LEN)
     os.environ["MIN_SCORE"] = str(MIN_SCORE)
+    os.environ["DETECTION_THRESHOLD"] = str(DETECTION_THRESHOLD)
 
     # Limit Inference to Only the Specified Flights.
     os.environ["PARTIAL_RUN_FLIGHTS"] = ",".join(local_flights.keys())
@@ -194,6 +192,10 @@ def main() -> None:
     print(f"  Flights to Process : {len(local_flights)}")
     print(f"  MIN_SCORE          : {MIN_SCORE}")
     print(f"  MIN_TRACK_LEN      : {MIN_TRACK_LEN}")
+
+    # Import Baseline Classes.
+    from src.baselines.winning_solution.seg_test import SegPredictor
+    from src.baselines.transformer_detector.transformer_test import TransformerPredictor
 
     # Check GPU is CUDA Enabled.
     if torch.cuda.is_available():
