@@ -48,8 +48,7 @@ from src.baselines.winning_solution.evaluator.airborne_detection import Airborne
 #                           CONFIGURATION VARIABLES
 # ------------------------------------------------------------------------------
 # Path to the Fine-Tuned Model Checkpoint Directory.
-MODEL_PATH = os.getenv("TRANSFORMER_MODEL_PATH", "configs/models/baselines/transformer_detector"
-)
+MODEL_PATH = os.getenv("TRANSFORMER_MODEL_PATH", "configs/models/baselines/transformer_detector")
 
 # Minimum Number of Frames a Track Must Span Before Being Committed to Results.
 # NOTE: This Model has No Tracker. MIN_TRACK_LEN is Set to 0 so Detections are Not Suppressed.
@@ -96,15 +95,24 @@ class TransformerPredictor(AirbornePredictor):
         """
         # Import Libraries Needed for this Function. 
         import torch
+        from transformers import AutoImageProcessor, AutoModelForObjectDetection
 
         # Set the Device to GPU if Available. 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # [EDIT] Load the New Model Here. Delete this Placeholder.
-        raise NotImplementedError(
-            "inference_setup() Must Be Implemented. "
-            "Load the Model into self.model (And Any Processors Needed)."
-        )
+        # Check the Local Model Checkpoint Exists.
+        log(LogLevel.INFO, "transformer_test:inference_setup",
+            "Loading Model from '%s'.", MODEL_PATH)
+
+        # Load the Image Processor & Model from the Local Checkpoint.
+        self.image_processor = AutoImageProcessor.from_pretrained(MODEL_PATH)
+        self.model = AutoModelForObjectDetection.from_pretrained(MODEL_PATH)
+        self.model = self.model.to(self.device)
+        self.model.eval()
+
+        # Print Success Message. 
+        log(LogLevel.INFO, "transformer_test:inference_setup",
+            "Model Loaded Successfully.")
 
 
     def run_model_on_frame(
@@ -115,26 +123,71 @@ class TransformerPredictor(AirbornePredictor):
         flight_id : str
     ) -> List[Dict]:
         """
-        Run the model on a single frame and return detected objects.
+        Runs RT-DETR inference on a single frame and returns detections.
+
+        The model is stateless with respect to previous frames - prev_frame
+        is accepted for interface compatibility but is not used.
 
         Args:
-            frame: Current frame as a numpy array (BGR format).
-            prev_frame: Previous frame, or None if this is the first frame.
-            frame_name: Name of the current frame file.
-            flight_id: Identifier for the flight sequence.
+            frame: Current frame as a numpy BGR array (from cv2.imread).
+            prev_frame: Previous frame - unused by this model.
+            frame_name: Filename of the current frame (for logging only).
+            flight_id: Flight folder name (for logging only).
 
         Returns:
-            List[Dict]: A list of detections, where each detection contains:
-                - track_id: Unique identifier for the object.
-                - bbox: Bounding box coordinates.
-                - confidence: Detection confidence score (0–1).
-                - class_name: Label of the detected object.
+            List[Dict]: One dict per detection, each with keys:
+                - track_id (int): Unique ID, incremented per detection.
+                - bbox (list): [x1, y1, x2, y2] in pixel coordinates.
+                - confidence (float): Score in range (0, 1).
+                - class_name (str): Always "airborne".
         """
-        # [EDIT] Replace this with the Model's Inference Logic.
-        raise NotImplementedError(
-            "run_model_on_frame() Must Be Implemented. "
-            "Return a List of Detection Dicts."
-        )
+        # Import Libraries Needed for this Function. 
+        import torch
+        from PIL import Image
+
+        # Convert BGR Frame (cv2) to RGB PIL Image (HuggingFace Processor).
+        pil_frame = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+
+        # Preprocess & Run Inference.
+        inputs = self.image_processor(images=[pil_frame], return_tensors="pt")
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+        # Perform Inference Without Tracking Gradients (No Learning).
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+
+        # Post-process Detections to get Absolute Pixel Coordinates.
+        target_sizes = torch.tensor([pil_frame.size[::-1]]).to(self.device)
+
+        # Extract Results for the Current Frame.
+        results = self.image_processor.post_process_object_detection(
+            outputs,
+            threshold=DETECTION_THRESHOLD,
+            target_sizes=target_sizes
+        )[0]
+
+        # Create Detection List.
+        detections = []
+        
+        # Build a List of Detections with Required Information for Each Object.
+        for score, box in zip(results["scores"], results["boxes"]):
+            # Convert Score to Float for Easier Use.
+            confidence = float(score.item())
+
+            # Assign a Unique Track ID for This Detection Within This Flight.
+            track_id = self._next_track_id
+            self._next_track_id += 1
+
+            # Append the Detection Information to the List of Detections.
+            detections.append({
+                "track_id"  : track_id,
+                "bbox"      : [v.item() for v in box],  # [x1, y1, x2, y2]
+                "confidence": confidence,
+                "class_name": "airborne"
+            })
+
+        # Return the List of Detections.
+        return detections
 
 
     # --------------------------------------------------------------------------
