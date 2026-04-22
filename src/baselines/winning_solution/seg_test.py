@@ -63,7 +63,7 @@ from src.baselines.winning_solution.seg_tracker.seg_tracker import SegDetector, 
 MIN_TRACK_LEN = int(os.getenv("MIN_TRACK_LEN", 30))
 
 # Minimum Confidence Score Required for a Detection to Be Committed to Results.
-MIN_SCORE     = float(os.getenv("MIN_SCORE", 0.985))
+MIN_SCORE = float(os.getenv("MIN_SCORE", 0.6))
 # ------------------------------------------------------------------------------
 
 
