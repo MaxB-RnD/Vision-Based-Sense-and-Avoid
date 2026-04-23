@@ -14,6 +14,7 @@
   - [Winning Solution](#winning-solution)  
   - [Competition Results (Full AOT Dataset)](#competition-results-full-aot-dataset)  
   - [Hard Dataset Results](#hard-dataset-results)
+- [🚀 Proposed Improvement](#-proposed-improvement) 
 
 ---
 
@@ -214,5 +215,11 @@ than the full competition dataset.
 | No Visible Object            | 354     | 0.000042  | 0.6043 | 0.2400 | 0.2432      | 0.2727      | 0.2500      | 0.1667      |
 
 *Results evaluated at a minimum detection confidence of 0.60 and a minimum track length of 30 frames (≈ 3 seconds at 10 fps).*
+
+---
+
+## 🚀 Proposed Improvement
+
+Beyond the main baseline, a range of additional models were tested for comparison. Based on their performance on the hard dataset, the most promising direction for improvement was...
 
 ---

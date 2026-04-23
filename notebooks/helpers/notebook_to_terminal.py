@@ -89,7 +89,7 @@ def main() -> None:
     MIN_TRACK_LEN = 0
 
     # Set Path to Desired Evaluation Dataset.
-    DATASET_PATH = "configs/datasets/selected_flights.txt"
+    DATASET_PATH = "configs/datasets/hard_dataset_flights.txt"
     DATASET_PARTS = ["part1", "part2", "part3"]
 
     # Set Results Variables (Auto-Incrementing Run Directory).
