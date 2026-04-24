@@ -80,13 +80,13 @@ def main() -> None:
     # 1 -> RT-DETR v2 (Transformer-Based Detector).
     # 2 -> DogFight (Drone Detection Model).
     # 3 -> Faster R-CNN + NGWD (Tiny Object Detection Enhancement).
-    SELECTED_MODEL = 1
+    SELECTED_MODEL = 0
     model_list = ["winning_solution","transformer_detector","drone-to-drone","satellite_view"]
 
     # Evaluation Filtering.
-    MIN_SCORE = 0.05
-    DETECTION_THRESHOLD = 0.05
-    MIN_TRACK_LEN = 0
+    MIN_SCORE = 0.60
+    DETECTION_THRESHOLD = 0.60
+    MIN_TRACK_LEN = 30
 
     # Set Path to Desired Evaluation Dataset.
     DATASET_PATH = "configs/datasets/hard_dataset_flights.txt"
