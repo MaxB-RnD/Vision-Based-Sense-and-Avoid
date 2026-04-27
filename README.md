@@ -14,7 +14,7 @@
   - [Winning Solution](#winning-solution)  
   - [Competition Results (Full AOT Dataset)](#competition-results-full-aot-dataset)  
   - [Hard Dataset Results](#hard-dataset-results)
-- [🚀 Proposed Improvement](#-proposed-improvement) 
+- [🚀 Proposed Improvement](#-proposed-improvement)
 
 ---
 
@@ -52,14 +52,14 @@ For background on the dataset and benchmarks, see the
 Vision-Based-Sense-and-Avoid/
 ├── configs/ 
 │   ├── datasets/     # Flight ID sets for different custom libraries.
+│   ├── dependencies/ # Version specifications for project required software.
 │   ├── models/       # Trained model weights (.pth files).
 ├── core/             # Competition helper library (AOT dataset access).
 ├── docs/             # Research documentation and additional resources.
 ├── notebooks/        # End-to-end model evaluation notebooks.
 ├── src/
-│   ├── data/         # Dataset selection, cleaning, and visualization scripts.
+│   ├── data/         # Dataset selection, cleaning, and visualisation scripts.
 │   └── baselines/    # Baseline solution scripts and models for evaluation.
-├── requirements.txt
 ├── README.md
 └── setup.sh
 ```
