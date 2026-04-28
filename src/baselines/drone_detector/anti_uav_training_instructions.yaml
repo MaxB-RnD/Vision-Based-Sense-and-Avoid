@@ -1,0 +1,7 @@
+path: /home/busatmd021/projects/2026/YOLOv8-Small-Drones
+train: data/train/images
+val: data/val/images
+test: data/test/images
+
+names:
+  0: UAV
