@@ -51,7 +51,7 @@ from src.baselines.winning_solution.evaluator.airborne_detection import Airborne
 #                           CONFIGURATION VARIABLES
 # ------------------------------------------------------------------------------
 # Path to the Fine-Tuned Model Checkpoint Directory.
-MODEL_PATH = os.getenv("YOLO_MODEL_PATH", "configs/models/baselines/drone_detector/anti-uav-optimised.pt")
+MODEL_PATH = os.getenv("YOLO_MODEL_PATH", "configs/models/baselines/drone_detector/anti-uav-bw-optimised.pt")
 
 # Minimum Number of Frames a Track Must Span Before Being Committed to Results.
 # NOTE: This Model has No Tracker. MIN_TRACK_LEN is Set to 0 so Detections are Not Suppressed.
@@ -66,7 +66,7 @@ DETECTION_THRESHOLD = float(os.getenv("DETECTION_THRESHOLD", 0.4))
 
 # Image Size Passed to YOLO Inference.
 # NOTE: Must Match the Resolution Used During Training.
-INFERENCE_IMG_SIZE = int(os.getenv("INFERENCE_IMG_SIZE", 1024))
+INFERENCE_IMG_SIZE = int(os.getenv("INFERENCE_IMG_SIZE", 1280))
 # ------------------------------------------------------------------------------
 
 

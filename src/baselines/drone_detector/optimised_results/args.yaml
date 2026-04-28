@@ -6,14 +6,14 @@ epochs: 100
 time: null
 patience: 100
 batch: 16
-imgsz: 1024
+imgsz: 1280
 save: true
 save_period: -1
 cache: false
 device: '0'
 workers: 8
 project: null
-name: uav_expert
+name: uav_expert-2
 exist_ok: false
 pretrained: true
 optimizer: auto
@@ -107,4 +107,4 @@ auto_augment: randaugment
 erasing: 0.4
 cfg: null
 tracker: botsort.yaml
-save_dir: /home/busatmd021/projects/2026/YOLOv8-Small-Drones/runs/detect/uav_expert
+save_dir: /home/busatmd021/projects/2026/YOLOv8-Small-Drones/runs/detect/uav_expert-2
