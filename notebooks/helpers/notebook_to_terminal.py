@@ -78,18 +78,17 @@ def main() -> None:
     # --------------------------------------------------
     # 0 -> Winning Solution (SegTracker Ensemble: HRNet32, HRNet48, GerNet-M + BiFPN, DLA60).
     # 1 -> RT-DETR v2 (Transformer-Based Detector).
-    # 2 -> DogFight (Drone Detection Model).
-    # 3 -> Faster R-CNN + NGWD (Tiny Object Detection Enhancement).
-    SELECTED_MODEL = 0
-    model_list = ["winning_solution","transformer_detector","drone-to-drone","satellite_view"]
+    # 2 -> YOLOv11 (UAV Detection Model).
+    SELECTED_MODEL = 2
+    model_list = ["winning_solution","transformer_detector","drone_detector"]
 
     # Evaluation Filtering.
-    MIN_SCORE = 0.60
-    DETECTION_THRESHOLD = 0.60
-    MIN_TRACK_LEN = 30
+    MIN_SCORE = 0.40
+    DETECTION_THRESHOLD = 0.40
+    MIN_TRACK_LEN = 0
 
     # Set Path to Desired Evaluation Dataset.
-    DATASET_PATH = "configs/datasets/hard_dataset_flights.txt"
+    DATASET_PATH = "configs/datasets/selected_flights.txt"
     DATASET_PARTS = ["part1", "part2", "part3"]
 
     # Set Results Variables (Auto-Incrementing Run Directory).
@@ -195,6 +194,7 @@ def main() -> None:
 
     # Import Baseline Classes.
     from src.baselines.winning_solution.seg_test import SegPredictor
+    from src.baselines.drone_detector.drone_test import DronePredictor
     from src.baselines.transformer_detector.transformer_test import TransformerPredictor
 
     # Check GPU is CUDA Enabled.
@@ -205,12 +205,11 @@ def main() -> None:
     else:
         log(LogLevel.WARNING, "baseline:device_check", "No CUDA-Enabled GPU Found, Using CPU Instead.")
 
-    # Map Model Selection to Predictor Classes
+    # Map Model Selection to Predictor Classes.
     MODEL_MAP = {
         0: SegPredictor,          # SegTracker Baseline.
         1: TransformerPredictor,  # RT-DETR v2.
-        # 2: DronePredictor,        # DogFight.
-        # 3: NGWDPredictor          # Faster R-CNN + NGWD.
+        2: DronePredictor,        # YOLOv11.
     }
 
     # Validate Selection.

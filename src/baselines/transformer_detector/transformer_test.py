@@ -64,7 +64,7 @@ DETECTION_THRESHOLD = float(os.getenv("DETECTION_THRESHOLD", 0.4))
 
 
 # ------------------------------------------------------------------------------
-#                      TEMPLATE MODEL PREDICTOR CLASS
+#                       TRANSFORMER PREDICTOR CLASS
 # ------------------------------------------------------------------------------
 class TransformerPredictor(AirbornePredictor):
     """
@@ -315,7 +315,7 @@ class TransformerPredictor(AirbornePredictor):
 
             # Skip Unreadable Frames.
             if frame is None:
-                log(LogLevel.INFO, "format_output:inference", 
+                log(LogLevel.INFO, "transformer_test:inference", 
                      "Could Not Read Frame '%s', Skipping.", frame_path)
                 prev_frame = frame
                 continue
