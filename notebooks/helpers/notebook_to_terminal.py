@@ -83,8 +83,8 @@ def main() -> None:
     model_list = ["winning_solution","transformer_detector","drone_detector"]
 
     # Evaluation Filtering.
-    MIN_SCORE = 0.40
-    DETECTION_THRESHOLD = 0.40
+    MIN_SCORE = 0.30
+    DETECTION_THRESHOLD = 0.30
     MIN_TRACK_LEN = 0
 
     # Set Path to Desired Evaluation Dataset.
