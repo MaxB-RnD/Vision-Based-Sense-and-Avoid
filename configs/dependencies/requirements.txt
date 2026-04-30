@@ -106,7 +106,7 @@ packaging>=26.0
 wheel
 
 # Pre-Built AI/ML Models.
-ultralytics==8.4.42
+ultralytics>=8.4.42
 
 # PyYAML for Configuration Files.
 # PyYAML>=6.0.1

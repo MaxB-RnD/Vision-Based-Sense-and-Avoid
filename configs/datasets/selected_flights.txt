@@ -10,12 +10,3 @@ testing the robustness of different models and finding any weaknesses in them.
 --------------------------------------------------------------------------------
 
 # FLIGHT IDs
-part16d2916d00dd940f4b67d31856b2af7a1
-part13d739c8d23d240f68fd84aeda4577fa5
-part11748d11a89fd4ded8885a3778b1241b5
-part2bf6a77afc5d4487582ee9c22f746312b
-part2e5920b2b9276498ea0a4075f292caa14
-part2c6fecaa7d50645bbadda284394b60c97
-part33652aad9f0a742d3af4f028d78a14d57
-part302376db28f0b48f3a3018df97f4e5863
-part3a4ddf240b9d14bd29b69f23ce6ab829a
