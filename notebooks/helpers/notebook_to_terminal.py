@@ -65,8 +65,6 @@ sys.path.insert(0, os.path.join(PROJECT_ROOT, "core"))
 
 # Import Local Project Funtions.
 from logging_module import LogLevel, log
-from src.baseline.seg_test import SegPredictor
-from src.data.download_data import main as downloadData
 from notebooks.helpers.notebook_helpers import get_next_run_dir, load_combined_gt, resolve_local_flights, convert_results_to_metrics_format
 
 # Confirm Project Root.
@@ -76,17 +74,26 @@ log(LogLevel.INFO, "baseline:imports", "Project Root Set: %s", PROJECT_ROOT)
 #                                   MAIN
 # ------------------------------------------------------------------------------
 def main() -> None:
+    # Choose Which Model to Run
+    # --------------------------------------------------
+    # 0 -> Winning Solution (SegTracker Ensemble: HRNet32, HRNet48, GerNet-M + BiFPN, DLA60).
+    # 1 -> RT-DETR v2 (Transformer-Based Detector).
+    # 2 -> YOLOv11 (UAV Detection Model).
+    SELECTED_MODEL = 2
+    model_list = ["winning_solution","transformer_detector","drone_detector"]
+
+    # Evaluation Filtering.
+    MIN_SCORE = 0.30
+    DETECTION_THRESHOLD = 0.30
+    MIN_TRACK_LEN = 0
+
     # Set Path to Desired Evaluation Dataset.
     DATASET_PATH = "configs/datasets/hard_dataset_flights.txt"
     DATASET_PARTS = ["part1", "part2", "part3"]
 
     # Set Results Variables (Auto-Incrementing Run Directory).
-    RESULTS_DIR = "outputs/results/baseline/"
+    RESULTS_DIR = "outputs/results/baselines/" + model_list[SELECTED_MODEL]
     run_name = get_next_run_dir(RESULTS_DIR)
-
-    # Evaluation Filtering.
-    MIN_SCORE = 0.60
-    MIN_TRACK_LEN = 30
 
     # Evaluation Output Folders.
     EVAL_GT_DIR = os.path.join(RESULTS_DIR, run_name, "gt")
@@ -95,12 +102,13 @@ def main() -> None:
 
     # Print Summary Statement.
     log(LogLevel.INFO, "baseline:config", "Configuration Loaded.")
-    print(f"  Dataset Path  : {DATASET_PATH}")
-    print(f"  Dataset Parts : {DATASET_PARTS}")
-    print(f"  Run Name      : {run_name}")
-    print(f"  Results Path  : {RESULTS_DIR}")
-    print(f"  Min Score     : {MIN_SCORE}")
-    print(f"  Min Track Len : {MIN_TRACK_LEN}")
+    print(f"  Model Selected : {model_list[SELECTED_MODEL]}")
+    print(f"  Dataset Path   : {DATASET_PATH}")
+    print(f"  Dataset Parts  : {DATASET_PARTS}")
+    print(f"  Run Name       : {run_name}")
+    print(f"  Results Path   : {RESULTS_DIR}")
+    print(f"  Min Score      : {MIN_SCORE}")
+    print(f"  Min Track Len  : {MIN_TRACK_LEN}")
     
     # Find all Available Sequences from the Provided Dataset.
     local_flights = resolve_local_flights(DATASET_PATH, PROJECT_ROOT)
@@ -166,12 +174,13 @@ def main() -> None:
         if not os.path.exists(link_path):
             os.symlink(info["images_dir"], link_path)
 
-    # Set Environment Variables that AirbornePredictor and SegPredictor Read.
+    # Set Environment Variables that AirbornePredictor and SelectedModelPredictor Read.
     os.environ["TEST_DATASET_PATH"] = EVAL_DATA_DIR
     os.environ["INFERENCE_OUTPUT_PATH"] = RESULTS_DIR
     os.environ["DATASET_ENV"] = run_name
     os.environ["MIN_TRACK_LEN"] = str(MIN_TRACK_LEN)
     os.environ["MIN_SCORE"] = str(MIN_SCORE)
+    os.environ["DETECTION_THRESHOLD"] = str(DETECTION_THRESHOLD)
 
     # Limit Inference to Only the Specified Flights.
     os.environ["PARTIAL_RUN_FLIGHTS"] = ",".join(local_flights.keys())
@@ -183,6 +192,11 @@ def main() -> None:
     print(f"  MIN_SCORE          : {MIN_SCORE}")
     print(f"  MIN_TRACK_LEN      : {MIN_TRACK_LEN}")
 
+    # Import Baseline Classes.
+    from src.baselines.winning_solution.seg_test import SegPredictor
+    from src.baselines.drone_detector.drone_test import DronePredictor
+    from src.baselines.transformer_detector.transformer_test import TransformerPredictor
+
     # Check GPU is CUDA Enabled.
     if torch.cuda.is_available():
         log(LogLevel.INFO, "baseline:device_check", "CUDA-Enabled GPU is Available.")
@@ -191,8 +205,20 @@ def main() -> None:
     else:
         log(LogLevel.WARNING, "baseline:device_check", "No CUDA-Enabled GPU Found, Using CPU Instead.")
 
-    # Initialise Predictor (Reads Env Variables).
-    predictor = SegPredictor()
+    # Map Model Selection to Predictor Classes.
+    MODEL_MAP = {
+        0: SegPredictor,          # SegTracker Baseline.
+        1: TransformerPredictor,  # RT-DETR v2.
+        2: DronePredictor,        # YOLOv11.
+    }
+
+    # Validate Selection.
+    if SELECTED_MODEL not in MODEL_MAP:
+        log(LogLevel.ERROR, "baseline:inference", "Invalid SELECTED_MODEL: %s.", SELECTED_MODEL)
+        raise ValueError("Please Select a Valid Model Index.")
+
+    # Initialise Predictor.
+    predictor = MODEL_MAP[SELECTED_MODEL]()
 
     # Run Inference Over all Flights.
     predictor.run()
@@ -276,7 +302,6 @@ def main() -> None:
         # Print Summary to Console.
         print("\n" + "=" * 60)
         print(" BASELINE MODEL - FULL HARD DATASET BENCHMARK SUMMARY")
-        print(" Model: Dmytro Poplavskiy Winning Solution (AICrowd 2021)")
         print("=" * 60)
         print(summary_df.set_index("Metric").to_string())
 

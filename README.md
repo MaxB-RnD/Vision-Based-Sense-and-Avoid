@@ -14,6 +14,7 @@
   - [Winning Solution](#winning-solution)  
   - [Competition Results (Full AOT Dataset)](#competition-results-full-aot-dataset)  
   - [Hard Dataset Results](#hard-dataset-results)
+- [🚀 Proposed Improvement](#-proposed-improvement)
 
 ---
 
@@ -51,14 +52,14 @@ For background on the dataset and benchmarks, see the
 Vision-Based-Sense-and-Avoid/
 ├── configs/ 
 │   ├── datasets/     # Flight ID sets for different custom libraries.
+│   ├── dependencies/ # Version specifications for project required software.
 │   ├── models/       # Trained model weights (.pth files).
 ├── core/             # Competition helper library (AOT dataset access).
 ├── docs/             # Research documentation and additional resources.
 ├── notebooks/        # End-to-end model evaluation notebooks.
 ├── src/
-│   ├── data/         # Dataset selection, cleaning, and visualization scripts.
-│   └── baseline/     # Baseline solution scripts and models for evaluation.
-├── requirements.txt
+│   ├── data/         # Dataset selection, cleaning, and visualisation scripts.
+│   └── baselines/    # Baseline solution scripts and models for evaluation.
 ├── README.md
 └── setup.sh
 ```
@@ -182,16 +183,6 @@ on both the public and private leaderboards. The solution uses an ensemble of
 three detection backbones, HRNet32, gernet_m (with BiFPN from EfficientDet D2),
 and DLA60, combined with a predicted offset-based tracking algorithm.
 
-**Model weights are stored in `configs/models/baseline/` via Git LFS:**
-
-| Weight File                                  | Description                        |
-|----------------------------------------------|------------------------------------|
-| `030_tr_tsn_rn34_w3_crop_borders_255_0.pth`  | ResNet34 Crop Border Baseline.     |
-| `120_hrnet32_all_2220.pth`                   | HRNet32 Backbone.                  |
-| `120_gernet_m_b2_all_2220.pth`               | GerNet-M with BiFPN (EfficientDet).|
-| `120_dla60_256_sgd_all_rerun_2220.pth`       | DLA60 Backbone (Winning Ensemble). |
-| `130_hrnet48_all_2220.pth`                   | HRNet48 Backbone.                  |
-
 ### Competition Results (Full AOT Dataset)
 
 Performance of the winning solution (Submission 22) on the AIcrowd competition leaderboards:
@@ -224,5 +215,11 @@ than the full competition dataset.
 | No Visible Object            | 354     | 0.000042  | 0.6043 | 0.2400 | 0.2432      | 0.2727      | 0.2500      | 0.1667      |
 
 *Results evaluated at a minimum detection confidence of 0.60 and a minimum track length of 30 frames (≈ 3 seconds at 10 fps).*
+
+---
+
+## 🚀 Proposed Improvement
+
+Beyond the main baseline, a range of additional models were tested for comparison. Based on their performance on the hard dataset, the most promising direction for improvement was...
 
 ---
