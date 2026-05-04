@@ -41,14 +41,18 @@
 # Import Required Libraries.
 import json
 import os
+import cv2
 import random
 import shutil
 import sys
 from glob import glob
 
-import pandas as pd
 import subprocess
+import pandas as pd
+import matplotlib.pyplot as plt
+
 import torch
+import torch.nn as nn
 
 # Because Life, Universe & Everything!
 random.seed(42)
@@ -65,10 +69,17 @@ sys.path.insert(0, os.path.join(PROJECT_ROOT, "core"))
 
 # Import Local Project Funtions.
 from logging_module import LogLevel, log
-from notebooks.helpers.notebook_helpers import get_next_run_dir, load_combined_gt, resolve_local_flights, convert_results_to_metrics_format
-
+from src.data.download_data import main as downloadData
+from notebooks.helpers.notebook_visualiser import main as visualise_results
+from notebooks.helpers.notebook_helpers import (
+    get_next_run_dir, load_combined_gt, resolve_local_flights,
+    convert_results_to_metrics_format, prepare_subset, load_subset_summary,
+    measure_model_complexity, record_fps_stats, build_extended_summary,   
+)
+ 
 # Confirm Project Root.
 log(LogLevel.INFO, "baseline:imports", "Project Root Set: %s", PROJECT_ROOT)
+
 
 # ------------------------------------------------------------------------------
 #                                   MAIN
@@ -79,16 +90,16 @@ def main() -> None:
     # 0 -> Winning Solution (SegTracker Ensemble: HRNet32, HRNet48, GerNet-M + BiFPN, DLA60).
     # 1 -> RT-DETR v2 (Transformer-Based Detector).
     # 2 -> YOLOv11 (UAV Detection Model).
-    SELECTED_MODEL = 2
+    SELECTED_MODEL = 0
     model_list = ["winning_solution","transformer_detector","drone_detector"]
 
     # Evaluation Filtering.
-    MIN_SCORE = 0.30
-    DETECTION_THRESHOLD = 0.30
-    MIN_TRACK_LEN = 0
+    MIN_SCORE = 0.60
+    DETECTION_THRESHOLD = 0.60
+    MIN_TRACK_LEN = 30
 
     # Set Path to Desired Evaluation Dataset.
-    DATASET_PATH = "configs/datasets/hard_dataset_flights.txt"
+    DATASET_PATH = "configs/datasets/training_subsets/test.txt"
     DATASET_PARTS = ["part1", "part2", "part3"]
 
     # Set Results Variables (Auto-Incrementing Run Directory).
@@ -220,6 +231,32 @@ def main() -> None:
     # Initialise Predictor.
     predictor = MODEL_MAP[SELECTED_MODEL]()
 
+    # Call inference_setup() Explicitly So Models are Loaded Before Complexity Measurement.
+    predictor.inference_setup()
+
+    # Measure Model Complexity for the Winning Solution. 
+    if SELECTED_MODEL == 0:
+        # Measure All Four Seg Models Combined.
+        ensemble = nn.ModuleList([
+            predictor.detector.model_seg1,
+            predictor.detector.model_seg2,
+            predictor.detector.model_seg3,
+            predictor.detector.model_transform,
+        ])
+        # Measure Model Complexity Before Inference. 
+        complexity = measure_model_complexity(
+            model       = ensemble,
+            input_shape = (1, 2, 2048, 2448),
+            device      = "cuda" if torch.cuda.is_available() else "cpu",
+        )
+    else:
+        # Single Model Varieants. These ONLY Have a Single .model Attribute.
+        complexity = measure_model_complexity(
+            model       = predictor.model,
+            input_shape = (1, 2, 2448, 2448),
+            device      = "cuda" if torch.cuda.is_available() else "cpu",
+        )
+
     # Run Inference Over all Flights.
     predictor.run()
 
@@ -267,49 +304,19 @@ def main() -> None:
     if not summary_files:
         log(LogLevel.ERROR, "baseline:summary", "No Summary Files Found! Run Inference First.")
     else:
-        # Load the Summary JSON.
-        with open(summary_files[0]) as f:
-            summary = json.load(f)
-
-        # Extract Key Metrics from Summary JSON.
-        score         = summary["min_det_score"]
-        fppi          = summary["fppi"]
-        hfar          = summary["far"]
-        afdr          = summary["fl_dr_in_range"]
-        det_aircraft  = summary["det_aircraft_in_range"]
-        tot_aircraft  = summary["tot_aircraft_in_range"]
-        edr_all       = summary["Detection"]["Encounters"]["300"]["All"]["dr"]
-        edr_above     = summary["Detection"]["Encounters"]["300"]["Above Horizon"]["dr"]
-        edr_below     = summary["Detection"]["Encounters"]["300"]["Below Horizon"]["dr"]
-
-        # Rank Metrics Against Thresholds.
-        fppi_status = "PASS (≤ 0.0005)" if fppi  <= 0.0005 else f"FAIL (> 0.0005)"
-        hfar_status = "PASS (≤ 0.5)"    if hfar  <= 0.5    else f"FAIL (> 0.0005)"
-
         # Build Summary DataFrame.
-        summary_df = pd.DataFrame([
-            {"Metric": "Detection Score",                       "Value": f"{score:.4f}",       "Status": ""},
-            {"Metric": "AFDR (Airborne Flight Detection Rate)", "Value": f"{afdr:.4f}",        "Status": ""},
-            {"Metric": "FPPI (False Positives Per Image)",      "Value": f"{fppi:.6f}",        "Status": fppi_status},
-            {"Metric": "HFAR (Horizontal False Alarm Rate)",    "Value": f"{hfar:.4f}",        "Status": hfar_status},
-            {"Metric": "EDR - All Scenarios",                   "Value": f"{edr_all:.4f}",     "Status": ""},
-            {"Metric": "EDR - Above Horizon",                   "Value": f"{edr_above:.4f}",   "Status": ""},
-            {"Metric": "EDR - Below Horizon",                   "Value": f"{edr_below:.4f}",   "Status": ""},
-            {"Metric": "Total Aircraft Detected",               "Value": f"{det_aircraft}",    "Status": ""},
-            {"Metric": "Total Aircraft in Dataset",             "Value": f"{tot_aircraft}",    "Status": ""},
-        ])
-
+        summary_df = build_extended_summary(
+            summary_json_path = summary_files[0],
+            run_dir           = os.path.join(RESULTS_DIR, run_name),
+            complexity        = complexity,
+            output_csv_path   = os.path.join(EVAL_SUMMARY_DIR, "baseline_benchmark_summary.csv"),
+        )
+    
         # Print Summary to Console.
         print("\n" + "=" * 60)
         print(" BASELINE MODEL - FULL HARD DATASET BENCHMARK SUMMARY")
         print("=" * 60)
         print(summary_df.set_index("Metric").to_string())
-
-        # Save Aggregated Summary to CSV.
-        output_path = os.path.join(EVAL_SUMMARY_DIR, "baseline_benchmark_summary.csv")
-        summary_df.to_csv(output_path, index=False)
-        print()
-        log(LogLevel.INFO, "baseline:summary", "Summary Saved to: %s", output_path)
 # ------------------------------------------------------------------------------
 
 

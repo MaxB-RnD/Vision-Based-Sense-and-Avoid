@@ -43,16 +43,19 @@
 import os
 import sys
 import cv2
-
+import time
+import torch
+ 
 from tqdm import tqdm
 from os import listdir
 from os.path import isfile, join
 from typing import List, Dict
 
-import matplotlib.pyplot as plt
 import matplotlib.patches
-
+import matplotlib.pyplot as plt
+ 
 sys.path.insert(0, os.path.dirname(__file__))
+from notebooks.helpers.notebook_helpers import record_fps_stats
 from src.baselines.winning_solution.evaluator.airborne_detection import AirbornePredictor
 from src.baselines.winning_solution.seg_tracker.seg_tracker import SegDetector, SegTrackerFromOffset
 
@@ -94,6 +97,9 @@ class SegPredictor(AirbornePredictor):
         self.detector       = SegDetector()
         self.tracker        = SegTrackerFromOffset(detector=self.detector)
         self.visualize_pred = False
+
+        # Accumulates Per-Frame Wall-Clock Inference Times Across All Flights.
+        self.frame_times: List[float] = []
 
 
     def get_all_frame_images(self, flight_id: str) -> List[str]:
@@ -224,9 +230,21 @@ class SegPredictor(AirbornePredictor):
             if prev_frame is None:
                 prev_frame = frame
                 continue
+            
+            # Start Timing FPS.
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            _t0 = time.perf_counter()
 
             # Run Tracker on the Current and Previous Frame.
             results    = self.tracker.predict(image=frame, prev_image=prev_frame)
+
+            # End Timing FPS.
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            self.frame_times.append(time.perf_counter() - _t0)
+            
+            # Update the Previous Frame & Assign Class Name. 
             prev_frame = frame
             class_name = "airborne"
 
@@ -262,6 +280,26 @@ class SegPredictor(AirbornePredictor):
             # Display the Visualised Frame.
             if self.visualize_pred and len(results):
                 plt.show()
+
+
+    def run(self) -> None:
+        """
+        Extends the parent run() to save FPS statistics to fps_stats.json
+        inside the run directory after all flights have been processed.
+ 
+        This ensures record_fps_stats() is called exactly once, after the
+        full frame_times list has been populated across every flight.
+        """
+        # Run the Standard Evaluation Pipeline.
+        super().run()
+ 
+        # Save FPS Stats if any Frames were Timed.
+        if self.frame_times:
+            record_fps_stats(
+                frame_times_sec = self.frame_times,
+                run_dir         = self.get_results_directory(),
+                warmup_frames   = 10,
+            )
 # ------------------------------------------------------------------------------
 
 
