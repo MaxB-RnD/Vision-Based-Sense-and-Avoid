@@ -5,9 +5,9 @@ import numpy as np
 import torch
 import torch.utils.data
 from tqdm import tqdm
-import baseline.winning_solution.seg_tracker.config as config
+import src.baselines.winning_solution.seg_tracker.config as config
 import os
-import baseline.winning_solution.seg_tracker.common_utils as common_utils
+import src.baselines.winning_solution.seg_tracker.common_utils as common_utils
 import matplotlib.pyplot as plt
 import cv2
 import math
@@ -113,12 +113,24 @@ class BaseDataset(torch.utils.data.Dataset):
             stage,
             cfg_data,
             return_torch_tensors=False,
-            small_subset=True
+            small_subset=True,
+            flight_ids=None,
     ):
         self.stage = stage
         self.is_training = False
         self.return_torch_tensors = return_torch_tensors
         self.dataset_params = cfg_data['dataset_params']
+
+        # flight_ids: optional list of flight ID strings from split_dataset.py
+        # e.g. ["part1abc123", "part2def456"]. The "part{N}" prefix is stripped
+        # to match the raw flight_id used internally. None = use all (default).
+        if flight_ids is not None:
+            self._allowed_flight_ids = set()
+            for fid in flight_ids:
+                raw = fid[5:] if fid.startswith(('part1', 'part2', 'part3')) else fid
+                self._allowed_flight_ids.add(raw)
+        else:
+            self._allowed_flight_ids = None
 
         self.scale = self.dataset_params['scale']
         self.scale_str = '2' if self.scale == 2 else ''
@@ -144,6 +156,25 @@ class BaseDataset(torch.utils.data.Dataset):
                 frames, frame_nums_with_items, frame_nums_with_match_items = self.load_ds(part,
                                                                                           stage,
                                                                                           small_subset=small_subset)
+            # Apply flight_ids filter if a split was provided
+            if self._allowed_flight_ids is not None:
+                filtered_frames = []
+                filtered_with_items = set(frame_nums_with_items)
+                filtered_with_match = set(frame_nums_with_match_items)
+                new_with_items = []
+                new_with_match = []
+                for i, frame in enumerate(frames):
+                    if frame.flight_id in self._allowed_flight_ids:
+                        new_idx = len(filtered_frames)
+                        filtered_frames.append(frame)
+                        if i in filtered_with_items:
+                            new_with_items.append(new_idx)
+                        if i in filtered_with_match:
+                            new_with_match.append(new_idx)
+                frames = filtered_frames
+                frame_nums_with_items = new_with_items
+                frame_nums_with_match_items = new_with_match
+
             l = len(self.frames)
             self.frames += frames
             self.frame_nums_with_items += [i + l for i in frame_nums_with_items]
@@ -586,9 +617,11 @@ class TrackingDataset(BaseDataset):
             parts=None,
             return_torch_tensors=False,
             small_subset=False,
-            cache_samples=False
+            cache_samples=False,
+            flight_ids=None,
     ):
-        super().__init__(stage, cfg_data, return_torch_tensors=return_torch_tensors, small_subset=small_subset)
+        super().__init__(stage, cfg_data, return_torch_tensors=return_torch_tensors,
+                         small_subset=small_subset, flight_ids=flight_ids)
         self.back_steps = self.dataset_params['back_steps']
 
         self.crop_w, self.crop_h = self.dataset_params.get('crop_size', (-1, -1))
@@ -1085,4 +1118,4 @@ if __name__ == '__main__':
     # check_dataset_for_fpm()
     # find_frames_transform_distribution()
     # check_dataset_set_fpm_samples()
-
+    

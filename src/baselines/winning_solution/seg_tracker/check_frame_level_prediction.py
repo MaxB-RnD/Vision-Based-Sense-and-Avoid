@@ -11,13 +11,13 @@ from collections import defaultdict
 import pickle
 import re
 
-import baseline.winning_solution.seg_tracker.common_utils as common_utils
-from baseline.winning_solution.seg_tracker.common_utils import DotDict, timeit_context
+import src.baselines.winning_solution.seg_tracker.common_utils as common_utils
+from src.baselines.winning_solution.seg_tracker.common_utils import DotDict, timeit_context
 from typing import Iterator, Optional, Sequence, List, Dict, TypeVar, Generic, Sized
 from dataclasses import dataclass
-from baseline.winning_solution.seg_tracker.load_images_pipe import *
-import baseline.winning_solution.seg_tracker.config as config
-from baseline.winning_solution.seg_tracker.config import MIN_OBJECT_AREA
+from src.baselines.winning_solution.seg_tracker.load_images_pipe import *
+import src.baselines.winning_solution.seg_tracker.config as config
+from src.baselines.winning_solution.seg_tracker.config import MIN_OBJECT_AREA
 
 enable_visualisation = False
 

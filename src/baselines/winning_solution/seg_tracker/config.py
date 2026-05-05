@@ -1,4 +1,5 @@
-DATA_DIR = '/opt/data2/air_track'
+from pathlib import Path
+DATA_DIR = Path(__file__).resolve().parents[4] / "data"
 SRC_DATA_DIR = '../data'
 
 IMG_FORMAT = 'png'

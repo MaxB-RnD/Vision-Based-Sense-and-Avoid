@@ -78,7 +78,7 @@ def normalize_experiment_name(experiment_name: str):
     return experiment_name
 
 
-def load_config_data(experiment_name: str, experiments_dir='experiments') -> dict:
+def load_config_data(experiment_name: str, experiments_dir='src/core_improvement') -> dict:
     with open(f"{experiments_dir}/{experiment_name}.yaml") as f:
         cfg: dict = yaml.load(f, Loader=yaml.FullLoader)
     return cfg

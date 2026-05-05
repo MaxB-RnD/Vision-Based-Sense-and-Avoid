@@ -1,0 +1,86 @@
+# ------------------------------------------------------------------------------
+# -               V E R S I O N   I D E N T I F I C A T I O N                  -
+# ------------------------------------------------------------------------------
+# File:                    %name: 120_gernet_m_b2_fpm.yaml %
+# Date Created:            %date_created: Tue May 05 19:19:19 2026 %
+# CM Version               %version: 2 %
+# CM Instance              %instance: 1 %
+# Author:                  %created_by: MBusato %
+# ------------------------------------------------------------------------------
+# -                          D E S C R I P T I O N                             -
+# ------------------------------------------------------------------------------
+# Experiment:   120_gernet_m_b2_fpm
+# Model:        EffDetSegmentation8x (tf_efficientdet_d2 + gernet_m backbone)
+# Role:         Segmentation model (model_seg2)
+# Reference:    Winning Solution Table 2 - AFDR 77.8% @ 0.0002 FPPI
+# Notes:
+#   - Uses EfficientDet D2 BiFPN (fpn_channels=112).
+#   - Custom backbone gernet_m overrides default EfficientDet backbone.
+#   - Used as ablation study base model.
+# ------------------------------------------------------------------------------
+
+meta:
+  experiment: 120_gernet_m_b2_fpm
+  version: 2
+  author: MBusato
+  model: EffDetSegmentation8x
+  backbone: tf_efficientdet_d2
+  role: segmentation
+  input_resolution: [512, 512]
+  optimizer: sgd
+  scheduler: CosineAnnealingWarmRestarts
+
+model_params:
+  model_type:           EffDetSegmentation8x
+  model_cls:            EffDetSegmentation8x
+  base_model_name:      tf_efficientdet_d2
+  custom_backbone:      gernet_m
+  input_frames:         2
+  combine_outputs_dim:  256
+  output_binary_mask:   true
+  output_above_horizon: true
+  pred_scale:           8
+
+train_params:
+  nb_epochs:              770
+  nb_samples_per_epoch:   16384
+  nb_samples_valid:       1024
+  initial_lr:             1.0e-3
+  optimizer:              sgd
+  scheduler:              CosineAnnealingWarmRestarts
+  scheduler_period:       16
+  scheduler_t_mult:       1.42
+  grad_clip:              8.0
+  freeze_backbone_steps:  5
+  mask_loss:              fl
+  tracking_samples_share: 0.25
+  fp_samples_share:       0.25
+  fpm_batch_size:         4
+  fpm_epochs:
+    250:  8
+    370:  8
+    535:  8
+    770:  8
+    1100: 8
+    1535: 8
+  loss_scale:
+    cls:           2000
+    size:          1
+    offset:        0.2
+    distance:      1
+    tracking:      1
+    above_horizon: 1
+
+train_data_loader:
+  batch_size:   4
+  num_workers:  8
+
+val_data_loader:
+  batch_size:   2
+  num_workers:  4
+
+dataset_params:
+  back_steps:            [1]
+  scale:                 1
+  crop_with_plane_ratio: 0.25
+  crop_size:             [512, 512]
