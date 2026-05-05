@@ -457,9 +457,8 @@ def measure_model_complexity(
     tag = f"[{label}] " if label else ""
     
     # Log Summary of Results.
-    print()
     log(LogLevel.INFO, "notebook_helpers:measure_complexity",
-        "%sParams: %s total / %s trainable | GFLOPs: %.3f | GMACs: %.3f",
+        "%sParams: %s total / %s trainable | GFLOPs: %.3f | GMACs: %.3f\n",
         tag, f"{total_params:,}", f"{trainable_params:,}", gflops, gmacs)
 
     # Return Summary Statistics. 
@@ -543,7 +542,7 @@ def measure_predictor_complexity(predictor: "AirbornePredictor") -> dict:
 
     # Log a Summary for Visibility in Notebooks/Logs.
     log(LogLevel.INFO, "notebook_helpers:measure_predictor_complexity",
-        "Total - Params: %s | GFLOPs: %.3f | GMACs: %.3f",
+        "Total - Params: %s | GFLOPs: %.3f | GMACs: %.3f\n",
         f"{totals['total_params']:,}", totals["gflops"], totals["gmacs"])
 
     # Return Aggregated Complexity Metrics.

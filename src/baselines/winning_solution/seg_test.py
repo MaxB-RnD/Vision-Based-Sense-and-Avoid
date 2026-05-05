@@ -132,7 +132,11 @@ class SegPredictor(AirbornePredictor):
             },
             {
                 "model"       : self.detector.model_transform,
-                "input_shape" : (1, 2, 1024, 1024),
+                "input_shape"    : None,
+                "input_override" : (
+                    torch.zeros(1, 1024, 1024),  # prev_frame.
+                    torch.zeros(1, 1024, 1024),  # cur_frame.
+                ),
                 "label"       : "ResNet34-TSM Transform (model_transform)",
             },
         ]

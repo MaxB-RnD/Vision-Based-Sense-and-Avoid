@@ -39,20 +39,14 @@
 # ------------------------------------------------------------------------------
 
 # Import Required Libraries.
-import json
 import os
-import cv2
-import random
-import shutil
 import sys
-from glob import glob
 
-import subprocess
-import pandas as pd
-import matplotlib.pyplot as plt
-
+import json
 import torch
-import torch.nn as nn
+import random
+import subprocess
+from glob import glob
 
 # Because Life, Universe & Everything!
 random.seed(42)
@@ -69,12 +63,10 @@ sys.path.insert(0, os.path.join(PROJECT_ROOT, "core"))
 
 # Import Local Project Funtions.
 from logging_module import LogLevel, log
-from src.data.download_data import main as downloadData
-from notebooks.helpers.notebook_visualiser import main as visualise_results
 from notebooks.helpers.notebook_helpers import (
     get_next_run_dir, load_combined_gt, resolve_local_flights,
-    convert_results_to_metrics_format, prepare_subset, load_subset_summary,
-    measure_model_complexity, record_fps_stats, build_extended_summary,   
+    convert_results_to_metrics_format, measure_predictor_complexity,
+    build_extended_summary
 )
  
 # Confirm Project Root.
@@ -231,31 +223,11 @@ def main() -> None:
     # Initialise Predictor.
     predictor = MODEL_MAP[SELECTED_MODEL]()
 
-    # Call inference_setup() Explicitly So Models are Loaded Before Complexity Measurement.
+    # Load Models Before Measuring Complexity.
     predictor.inference_setup()
 
-    # Measure Model Complexity for the Winning Solution. 
-    if SELECTED_MODEL == 0:
-        # Measure All Four Seg Models Combined.
-        ensemble = nn.ModuleList([
-            predictor.detector.model_seg1,
-            predictor.detector.model_seg2,
-            predictor.detector.model_seg3,
-            predictor.detector.model_transform,
-        ])
-        # Measure Model Complexity Before Inference. 
-        complexity = measure_model_complexity(
-            model       = ensemble,
-            input_shape = (1, 2, 2048, 2448),
-            device      = "cuda" if torch.cuda.is_available() else "cpu",
-        )
-    else:
-        # Single Model Varieants. These ONLY Have a Single .model Attribute.
-        complexity = measure_model_complexity(
-            model       = predictor.model,
-            input_shape = (1, 2, 2448, 2448),
-            device      = "cuda" if torch.cuda.is_available() else "cpu",
-        )
+    # Measure the Current Model's Complexity.
+    complexity = measure_predictor_complexity(predictor)
 
     # Run Inference Over all Flights.
     predictor.run()
