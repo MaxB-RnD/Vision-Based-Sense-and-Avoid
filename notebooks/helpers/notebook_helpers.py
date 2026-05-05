@@ -31,8 +31,10 @@
 # ------------------------------------------------------------------------------
 
 import os
+import sys
 import re
 import json
+
 import torch
 import numpy as np
 import pandas as pd
@@ -43,6 +45,9 @@ from fvcore.nn import FlopCountAnalysis, parameter_count
 from pathlib import Path
 from typing import Optional
 from logging_module import LogLevel, log
+
+sys.path.insert(0, os.path.dirname(__file__))
+from src.baselines.winning_solution.evaluator.airborne_detection import AirbornePredictor
 
 # ------------------------------------------------------------------------------
 #                           FLIGHT ID PARSING
@@ -367,9 +372,11 @@ def convert_results_to_metrics_format(raw_path: str, out_path: str, input_format
 #                       MODEL COMPLEXITY MEASUREMENT
 # ------------------------------------------------------------------------------
 def measure_model_complexity(
-    model       : "torch.nn.Module",
-    input_shape : tuple = (1, 2, 2048, 2448),
-    device      : str   = "cuda",
+    model        : "torch.nn.Module",
+    input_shape  : "tuple | None" = (1, 2, 2048, 2448),
+    input_override: "tuple | None" = None,
+    device       : str = "cuda",
+    label        : str = "",
 ) -> dict:
     """
     Measures the parameter count and FLOPs (GFLOPs) for a given model.
@@ -383,8 +390,12 @@ def measure_model_complexity(
         model (torch.nn.Module): A torch.nn.Module to profile.
         input_shape (tuple): The (B, C, H, W) input tensor shape to use for the
                              FLOPs analysis.
+        input_override (tuple): Optional tuple of tensors to pass directly as the
+                                model's forward arguments. Use for models that take
+                                more than one input tensor. Overrides input_shape.
         device (str): "cuda" or "cpu". FLOPs analysis runs on CPU regardless
                        but model is moved for the dummy forward pass.
+        label (str): Optional name for logging output.
 
     Returns:
         dict with keys:
@@ -396,55 +407,147 @@ def measure_model_complexity(
     # Set Model to Evaluation Mode (Disables Dropout, etc.).
     model.eval()
 
-    # Create Dummy Input Tensor Filled with Zeros on CPU.
-    dummy = torch.zeros(input_shape)
-
-    try:
-         # Initialise FLOPs Counter Using fvcore.
-        flop_counter = FlopCountAnalysis(model.cpu(), dummy)
-
-        # Disable Warnings for Unsupported Operations & Unused Models.
-        flop_counter.unsupported_ops_warnings(False)
-        flop_counter.uncalled_modules_warnings(False)
-
-        # Compute Total FLOPs (Counts MACs * 2 Internally).
-        total_flops = flop_counter.total()
-        gflops = total_flops / 1e9  # Convert FLOPs to GFLOPs.
-        gmacs  = gflops / 2.0       # Convert GFLOPs to GMACs.
-
-    except Exception as e:
-        # Log Error if FLOPs Computation Fails.
-        log(LogLevel.ERROR, "notebook_helpers:measure_complexity",
-            "FLOPs Count Failed (%s). Setting to -1.\n", str(e))
-        gflops = -1.0  # Set fallback value for GFLOPs.
-        gmacs  = -1.0  # Set fallback value for GMACs.
-
     # Count Parameters.
-    param_counts  = parameter_count(model)
-    total_params  = int(param_counts[""])
+    param_counts = parameter_count(model)
+    total_params = int(param_counts[""])
 
     # Count Only Trainable Parameters.
-    trainable_params = sum(
-        p.numel() for p in model.parameters() if p.requires_grad
-    )
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+    # Set fallback value for GFLOPs & GMACs.
+    gflops = -1.0
+    gmacs = -1.0
+
+    # Check if an Input Shape OR Input Override is Provided.
+    if input_shape is not None or input_override is not None:
+        try:
+            # Create Dummy Input Tensor.
+            if input_override is not None:
+                # Use Provided Input Override.
+                dummy = input_override
+            else:
+                # Fill with Zeros if Nothing Provided.
+                dummy = torch.zeros(input_shape)
+
+            # Initialise FLOPs Counter Using fvcore.
+            flop_counter = FlopCountAnalysis(model.cpu(), dummy)
+
+            # Disable Warnings for Unsupported Operations & Unused Models.
+            flop_counter.unsupported_ops_warnings(False)
+            flop_counter.uncalled_modules_warnings(False)
+
+            # Compute Total FLOPs (Counts MACs * 2 Internally).
+            total_flops = flop_counter.total()
+            gflops = round(total_flops / 1e9, 3) # Convert FLOPs to GFLOPs.
+            gmacs  = round(gflops / 2.0, 3)      # Convert GFLOPs to GMACs.
+
+        except Exception as e:
+            # Create Tag for Storing the Model Name.
+            tag = f"[{label}] " if label else ""
+
+            # Log Error if FLOPs Computation Fails.
+            log(LogLevel.WARNING, "notebook_helpers:measure_complexity",
+                "%s FLOPs Count Failed (%s). GFLOPS set to -1.", tag, str(e))
 
     # Move Model Back to Original Device.
     if device == "cuda" and torch.cuda.is_available():
         model.cuda()
 
+    # Create Tag for Storing the Model Name.
+    tag = f"[{label}] " if label else ""
+    
     # Log Summary of Results.
     print()
     log(LogLevel.INFO, "notebook_helpers:measure_complexity",
-        "Params: %s total / %s trainable | GFLOPs: %.2f | GMACs: %.2f",
-        f"{total_params:,}", f"{trainable_params:,}", gflops, gmacs)
+        "%sParams: %s total / %s trainable | GFLOPs: %.3f | GMACs: %.3f",
+        tag, f"{total_params:,}", f"{trainable_params:,}", gflops, gmacs)
 
     # Return Summary Statistics. 
     return {
         "total_params"    : total_params,
         "trainable_params": trainable_params,
-        "gflops"          : round(gflops, 3),
-        "gmacs"           : round(gmacs,  3),
+        "gflops"          : gflops,
+        "gmacs"           : gmacs,
     }
+
+
+def measure_predictor_complexity(predictor: "AirbornePredictor") -> dict:
+    """
+    Measures the total complexity of any predictor by calling its
+    get_complexity_targets() method. This is the function the notebook should 
+    call.
+
+    Args:
+        predictor (AirbornePredictor): Any AirbornePredictor subclass that
+                                       implements get_complexity_targets().
+
+    Returns:
+        dict: Summed total_params, trainable_params, gflops, gmacs across
+              all targets. If any target fails FLOPs counting, gflops and
+              gmacs are set to -1.0 for the whole result.
+    """
+    # Ensure the Predictor Exposes the Required Interface.
+    if not hasattr(predictor, "get_complexity_targets"):
+        raise AttributeError(
+            f"{type(predictor).__name__} Does Not Implement get_complexity_targets(). "
+            f"Add this Method to the Currently Selected Predictor."
+        )
+
+    # Retrieve All Model "targets" (Sub-Models or Components to Evaluate).
+    targets = predictor.get_complexity_targets()
+
+    # Initialise Running Totals for All Complexity Metrics.
+    totals = {
+        "total_params"    : 0,    # All Parameters (trainable + frozen).
+        "trainable_params": 0,    # Only Parameters Updated During Training.
+        "gflops"          : 0.0,  # Floating Point Operations (in Billions).
+        "gmacs"           : 0.0,  # Multiply-Accumulate Ops (in Billions).
+    }
+
+    # Track Whether FLOPs Computation Succeeds for All Targets.
+    flops_valid = True
+
+    # Iterate Over Each Target Model/Component.
+    for target in targets:
+        # Compute Complexity for the Current Target.
+        result = measure_model_complexity(
+            model          = target["model"],               # Required: Model Instance.
+            input_shape    = target.get("input_shape"),     # Optional: Shape-Based Input.
+            input_override = target.get("input_override"),  # Optional: Custom Input Tensor.
+            device         = target.get("device", "cuda"),  # Default to GPU if Unspecified.
+            label          = target.get("label", ""),       # Optional: Logging/Debug Label.
+        )
+
+        # Accumulate Parameter Counts (Always Safe to Sum).
+        totals["total_params"]     += result["total_params"]
+        totals["trainable_params"] += result["trainable_params"]
+
+        # If Any Model Fails FLOPs Calculation, Mark Entire Result as Invalid.
+        if result["gflops"] == -1.0:
+            flops_valid = False
+
+        # Only Accumulate FLOPs/MACs if All Previous Computations are Valid.
+        if flops_valid:
+            totals["gflops"] += result["gflops"]
+            totals["gmacs"]  += result["gmacs"]
+    
+    # Finalise FLOPs/MACs Results.
+    if not flops_valid:
+        # If Any Target Failed, Invalidate the Aggregate FLOPs/MACs.
+        totals["gflops"] = -1.0
+        totals["gmacs"]  = -1.0
+    else:
+        # Otherwise, Round for Cleaner Reporting.
+        totals["gflops"] = round(totals["gflops"], 3)
+        totals["gmacs"]  = round(totals["gmacs"],  3)
+
+    # Log a Summary for Visibility in Notebooks/Logs.
+    log(LogLevel.INFO, "notebook_helpers:measure_predictor_complexity",
+        "Total - Params: %s | GFLOPs: %.3f | GMACs: %.3f",
+        f"{totals['total_params']:,}", totals["gflops"], totals["gmacs"])
+
+    # Return Aggregated Complexity Metrics.
+    return totals
 # ------------------------------------------------------------------------------
 
 

@@ -100,6 +100,42 @@ class SegPredictor(AirbornePredictor):
 
         # Accumulates Per-Frame Wall-Clock Inference Times Across All Flights.
         self.frame_times: List[float] = []
+    
+    
+    def get_complexity_targets(self) -> List[dict]:
+        """
+        Declares the models and input shapes to be measured by 
+        measure_predictor_complexity() in notebook_helpers.py. Returns one 
+        entry per model in the ensemble. 
+ 
+        Returns:
+            List[dict]: Each entry has keys:
+                model        : torch.nn.Module to profile.
+                input_shape  : (B, C, H, W) dummy input shape.
+                label        : Human-readable name for logging.
+        """
+        return [
+            {
+                "model"       : self.detector.model_seg1,
+                "input_shape" : (1, 2, 2048, 2432),
+                "label"       : "HRNet32 (model_seg1)",
+            },
+            {
+                "model"       : self.detector.model_seg2,
+                "input_shape" : (1, 2, 2048, 2432),
+                "label"       : "GerNet-M BiFPN (model_seg2)",
+            },
+            {
+                "model"       : self.detector.model_seg3,
+                "input_shape" : (1, 2, 2048, 2432),
+                "label"       : "HRNet48 (model_seg3)",
+            },
+            {
+                "model"       : self.detector.model_transform,
+                "input_shape" : (1, 2, 1024, 1024),
+                "label"       : "ResNet34-TSM Transform (model_transform)",
+            },
+        ]
 
 
     def get_all_frame_images(self, flight_id: str) -> List[str]:
