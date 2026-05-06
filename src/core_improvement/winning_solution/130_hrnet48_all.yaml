@@ -31,6 +31,19 @@ meta:
   optimizer: sgd
   scheduler: CosineAnnealingWarmRestarts
 
+model_params:
+  model_type:             HRNetSegmentation
+  model_cls:              HRNetSegmentation
+  base_model_name:        hrnet_w48
+  input_frames:           2
+  feature_location:       ''
+  combine_outputs_dim:    512
+  combine_outputs_kernel: 1
+  upscale_mode:           nearest
+  output_binary_mask:     true
+  output_above_horizon:   true
+  pred_scale:             8
+
 train_params:
   nb_epochs:              770
   nb_samples_per_epoch:   16384

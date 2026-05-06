@@ -175,7 +175,7 @@ class CosineAnnealingWarmRestarts(torch.optim.lr_scheduler._LRScheduler):
         self.eta_min = eta_min
         self.first_epoch_lr_scale = first_epoch_lr_scale
 
-        super(CosineAnnealingWarmRestarts, self).__init__(optimizer, last_epoch, verbose)
+        super(CosineAnnealingWarmRestarts, self).__init__(optimizer, last_epoch)
 
         self.T_cur = self.last_epoch
 

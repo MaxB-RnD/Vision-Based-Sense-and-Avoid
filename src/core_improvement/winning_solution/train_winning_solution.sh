@@ -47,10 +47,10 @@ set -e
 # ------------------------------------------------------------------------------
 TRAIN_FLIGHTS="configs/datasets/training_subsets/train.txt"
 VAL_FLIGHTS="configs/datasets/training_subsets/val.txt"
-OUTPUT_DIR="outputs/model_training/winning_solution"
+OUTPUT_DIR="outputs/results/model_training/winning_solution"
 WANDB_PROJECT="Vision Based Sense & Avoid"
 SEED=42
-LOG_DIR="outputs/logs"
+LOG_DIR="outputs/logs/model_training"
 
 # Experiment Config Names (Relative to configs/models/ Directory).
 EXPERIMENTS=(
@@ -71,11 +71,35 @@ NAMES=(
 
 
 # ------------------------------------------------------------------------------
-#                              EXECUTION SETUP
+#                            DATA TRANSFORMS SETUP
 # ------------------------------------------------------------------------------
 # Create Logging Directory if it Doesn't Exist.
 mkdir -p "$LOG_DIR"
 
+# Create a Log File for Data Transforms.
+LOG_FILE="$LOG_DIR/frame_transforms.log"
+
+# Run DAta Transforms Script (Python Module Entry Point).
+python -m src.baselines.winning_solution.seg_tracker.generate_frame_transforms \
+    --flights-file "$TRAIN_FLIGHTS" \
+    --skip-existing \
+    2>&1 | tee "$LOG_FILE"
+
+EXIT_CODE=${PIPESTATUS[0]}
+
+# Safely Handle Failure Cases.
+if [ $EXIT_CODE -ne 0 ]; then
+    echo ""
+    echo "ERROR: Data Transforms Failed with Exit Code $EXIT_CODE."
+    echo "Check $LOG_FILE for Details."
+    exit $EXIT_CODE
+fi
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
+#                              EXECUTION SETUP
+# ------------------------------------------------------------------------------
 # Record Models Running & Start Time.
 TOTAL=${#EXPERIMENTS[@]}
 START_TIME=$(date +%s)
@@ -120,14 +144,14 @@ for i in "${!EXPERIMENTS[@]}"; do
     # Safely Handle Failure Cases.
     if [ $EXIT_CODE -ne 0 ]; then
         echo ""
-        echo "ERROR: $NAME failed with exit code $EXIT_CODE."
-        echo "Check $LOG_FILE for details."
-        echo "Remaining models will NOT be trained."
+        echo "ERROR: $NAME Failed with Exit Code $EXIT_CODE."
+        echo "Check $LOG_FILE for Details."
+        echo "Remaining Models Will NOT Be Trained."
         exit $EXIT_CODE
     fi
 
     echo ""
-    echo "  [$MODEL_NUM/$TOTAL] $NAME complete. $(date)"
+    echo "  [$MODEL_NUM/$TOTAL] $NAME Complete. $(date)"
     echo ""
 done
 
@@ -136,8 +160,8 @@ END_TIME=$(date +%s)
 ELAPSED=$(( (END_TIME - START_TIME) / 3600 ))
 
 echo "========================================================================"
-echo "  All $TOTAL models trained successfully."
-echo "  Total time : ~${ELAPSED} hours"
+echo "  All $TOTAL Models Trained Successfully."
+echo "  Total time : ~${ELAPSED} Hours"
 echo "  Finished   : $(date)"
 echo "  Results    : $OUTPUT_DIR"
 echo "========================================================================"

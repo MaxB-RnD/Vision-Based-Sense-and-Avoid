@@ -115,6 +115,7 @@ class BaseDataset(torch.utils.data.Dataset):
             return_torch_tensors=False,
             small_subset=True,
             flight_ids=None,
+            cache_dir=None,
     ):
         self.stage = stage
         self.is_training = False
@@ -127,8 +128,7 @@ class BaseDataset(torch.utils.data.Dataset):
         if flight_ids is not None:
             self._allowed_flight_ids = set()
             for fid in flight_ids:
-                raw = fid[5:] if fid.startswith(('part1', 'part2', 'part3')) else fid
-                self._allowed_flight_ids.add(raw)
+                self._allowed_flight_ids.add(fid.strip())
         else:
             self._allowed_flight_ids = None
 
@@ -143,6 +143,10 @@ class BaseDataset(torch.utils.data.Dataset):
         else:  # if stage == self.STAGE_VALID:
             self.is_training = False
 
+        self.cache_dir = cache_dir if cache_dir is not None else config.DATA_DIR
+        if cache_dir is not None:
+            os.makedirs(self.cache_dir, exist_ok=True)
+
         parts = [1, 2, 3]
 
         self.frames: List[Frame] = []
@@ -156,25 +160,6 @@ class BaseDataset(torch.utils.data.Dataset):
                 frames, frame_nums_with_items, frame_nums_with_match_items = self.load_ds(part,
                                                                                           stage,
                                                                                           small_subset=small_subset)
-            # Apply flight_ids filter if a split was provided
-            if self._allowed_flight_ids is not None:
-                filtered_frames = []
-                filtered_with_items = set(frame_nums_with_items)
-                filtered_with_match = set(frame_nums_with_match_items)
-                new_with_items = []
-                new_with_match = []
-                for i, frame in enumerate(frames):
-                    if frame.flight_id in self._allowed_flight_ids:
-                        new_idx = len(filtered_frames)
-                        filtered_frames.append(frame)
-                        if i in filtered_with_items:
-                            new_with_items.append(new_idx)
-                        if i in filtered_with_match:
-                            new_with_match.append(new_idx)
-                frames = filtered_frames
-                frame_nums_with_items = new_with_items
-                frame_nums_with_match_items = new_with_match
-
             l = len(self.frames)
             self.frames += frames
             self.frame_nums_with_items += [i + l for i in frame_nums_with_items]
@@ -185,14 +170,20 @@ class BaseDataset(torch.utils.data.Dataset):
         print(stage, len(self.frames), len(self.frame_nums_with_items), len(self.frame_nums_with_match_items))
 
     def img_fn(self, part, flight_id, img_name):
-        return f'{config.DATA_DIR}/part{part}/Images{self.scale_str}/{flight_id}/{img_name}.{config.IMG_FORMAT}'
+        # Try bare flight_id first (original dataset format)
+        bare_path = f'{config.DATA_DIR}/part{part}/Images{self.scale_str}/{flight_id}/{img_name}.{config.IMG_FORMAT}'
+        if os.path.exists(bare_path):
+            return bare_path
+        # Fall back to part-prefixed folder name (competition subset format)
+        prefixed_path = f'{config.DATA_DIR}/part{part}/Images{self.scale_str}/part{part}{flight_id}/{img_name}.{config.IMG_FORMAT}'
+        return prefixed_path
 
     def prepare_train_val_split(self):
         """
             Prepare the train_val_flights.csv file, selecting the isolated in time group of 572 flights,
             between 280 and 325 days from the first flight
         """
-        fn = f'{config.DATA_DIR}/train_val_flights.csv'
+        fn = f'{self.cache_dir}/train_val_flights.csv'
         if not os.path.exists(fn):
             print('Prepare train/val split')
             df_part1 = pd.read_csv(f'{config.DATA_DIR}/part1/ImageSets/groundtruth.csv')
@@ -214,35 +205,67 @@ class BaseDataset(torch.utils.data.Dataset):
             first_fly[['part', 'flight_id', 'ts_d', 'is_validation']].to_csv(fn, index=False)
 
     def load_ds(self, part, stage, small_subset=False):
-        if small_subset:
-            cache_fn = f'{config.DATA_DIR}/ds{self.scale_str}_{part}_small_{stage}.pkl'
+        # Build cache key from the allowed flight IDs so each split gets its own cache
+        if self._allowed_flight_ids is not None:
+            flight_key = "_".join(sorted(self._allowed_flight_ids))[:64]
+            import hashlib
+            flight_hash = hashlib.md5(flight_key.encode()).hexdigest()[:8]
+            cache_fn = f'{self.cache_dir}/ds{self.scale_str}_{part}_{stage}_flights_{flight_hash}.pkl'
+        elif small_subset:
+            cache_fn = f'{self.cache_dir}/ds{self.scale_str}_{part}_small_{stage}.pkl'
         else:
             suffix = '_all' if self.train_on_all_samples else ''
-            cache_fn = f'{config.DATA_DIR}/ds{self.scale_str}_{part}_{stage}{suffix}.pkl'
+            cache_fn = f'{self.cache_dir}/ds{self.scale_str}_{part}_{stage}{suffix}.pkl'
+
         print(cache_fn)
-        self.prepare_train_val_split()
 
         if not os.path.exists(cache_fn):
             frames_dict = {}
-            df = pd.read_csv(f'{config.DATA_DIR}/part{part}/ImageSets/groundtruth.csv')
-            print(df.shape)
-            if not self.train_on_all_samples:
-                train_val_ds = pd.read_csv(f'{config.DATA_DIR}/train_val_flights.csv')
-                train_val_ds = train_val_ds[train_val_ds['part'] == f'part{part}'].reset_index(drop=True)
 
-                df = pd.merge(df, train_val_ds[['flight_id', 'is_validation']], how='left', on='flight_id')
+            # Determine which flight IDs to load for this part
+            if self._allowed_flight_ids is not None:
+                flight_ids_for_part = []
+                for fid in self._allowed_flight_ids:
+                    # Strip part prefix for CSV lookup (CSV stores bare hex IDs)
+                    bare_fid = fid[5:] if fid.startswith(('part1', 'part2', 'part3')) else fid
+                    
+                    # Check directory using the full folder name as it exists on disk
+                    img_dir_full = f'{config.DATA_DIR}/part{part}/Images{self.scale_str}/{fid}'
+                    img_dir_bare = f'{config.DATA_DIR}/part{part}/Images{self.scale_str}/{bare_fid}'
+                    
+                    if os.path.isdir(img_dir_full):
+                        flight_ids_for_part.append(bare_fid)  # use bare for CSV
+                    elif os.path.isdir(img_dir_bare):
+                        flight_ids_for_part.append(bare_fid)  # already bare, matches CSV
+
+                if not flight_ids_for_part:
+                    # No flights from txt belong to this part, return empty
+                    return [], [], []
+
+                # Load only rows for these flights from the CSV
+                df = pd.read_csv(f'{config.DATA_DIR}/part{part}/ImageSets/groundtruth.csv')
+                df = df[df['flight_id'].isin(flight_ids_for_part)].reset_index(drop=True)
+                print(f'part{part}: {len(flight_ids_for_part)} flights from txt, {len(df)} annotation rows')
+
+            else:
+                # Original behaviour: use train/val split CSV
+                df = pd.read_csv(f'{config.DATA_DIR}/part{part}/ImageSets/groundtruth.csv')
                 print(df.shape)
-                df = df[df['is_validation'] == (stage == self.STAGE_VALID)].reset_index(drop=True)
-                print(df.shape)
+                if not self.train_on_all_samples:
+                    self.prepare_train_val_split()
+                    train_val_ds = pd.read_csv(f'{self.cache_dir}/train_val_flights.csv')
+                    train_val_ds = train_val_ds[train_val_ds['part'] == f'part{part}'].reset_index(drop=True)
+                    df = pd.merge(df, train_val_ds[['flight_id', 'is_validation']], how='left', on='flight_id')
+                    print(df.shape)
+                    df = df[df['is_validation'] == (stage == self.STAGE_VALID)].reset_index(drop=True)
+                    print(df.shape)
 
-            # discard frames with no objects for now
-            # df = df[~df['id'].isna()].reset_index(drop=True)
-
-            if small_subset:
-                df = df[:len(df) // 64]
+                if small_subset:
+                    df = df[:len(df) // 64]
 
             rx = re.compile(r'(\D+)(\d+)')
 
+            skipped = 0
             for _, row in df.iterrows():
                 flight_id = row['flight_id']
                 img_name = row['img_name'][:-4]
@@ -254,12 +277,12 @@ class BaseDataset(torch.utils.data.Dataset):
                 gt_bottom = row['gt_bottom']
                 item_id = row['id']
 
-                if not os.path.exists(self.img_fn(part, flight_id, img_name)):
-                    print('skip missing img', self.img_fn(part, flight_id, img_name))
+                img_path = self.img_fn(part, flight_id, img_name)
+                if not os.path.exists(img_path):
+                    skipped += 1
                     continue
 
                 key = (flight_id, frame_num)
-
                 if key not in frames_dict:
                     frames_dict[key] = Frame(
                         part=part,
@@ -300,13 +323,13 @@ class BaseDataset(torch.utils.data.Dataset):
             frame_nums_with_items = [i for i, f in enumerate(frames) if len(f.items)]
             frame_nums_with_match_items = [i for i, f in enumerate(frames) if f.have_match_item]
 
+            if skipped > 0:
+                print(f'part{part}: skipped {skipped} rows with missing images')
+
             pickle.dump((frames, frame_nums_with_items, frame_nums_with_match_items), open(cache_fn, 'wb'))
 
         frames, frame_nums_with_items, frame_nums_with_match_items = pickle.load(open(cache_fn, 'rb'))
         return frames, frame_nums_with_items, frame_nums_with_match_items
-
-    def __len__(self) -> int:
-        return len(self.frames)
 
 
 def gaussian2D(shape, sigma_x, sigma_y):
@@ -619,9 +642,10 @@ class TrackingDataset(BaseDataset):
             small_subset=False,
             cache_samples=False,
             flight_ids=None,
+            cache_dir=None,
     ):
         super().__init__(stage, cfg_data, return_torch_tensors=return_torch_tensors,
-                         small_subset=small_subset, flight_ids=flight_ids)
+                         small_subset=small_subset, flight_ids=flight_ids, cache_dir=cache_dir)
         self.back_steps = self.dataset_params['back_steps']
 
         self.crop_w, self.crop_h = self.dataset_params.get('crop_size', (-1, -1))
@@ -655,6 +679,9 @@ class TrackingDataset(BaseDataset):
         :return:
         """
         self.fpm_samples = {frame_index: points for conf, frame_index, points in samples}
+    
+    def __len__(self) -> int:
+        return len(self.frames)
 
     def __getitem__(self, index):
         if self.cache_samples and index in self.val_values_cache:

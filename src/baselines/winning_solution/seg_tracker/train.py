@@ -198,7 +198,7 @@ class TrackPreferredSampler(torch.utils.data.Sampler):
     """
     def __init__(self, dataset: dataset_tracking.TrackingDataset, num_samples: int, tracking_samples_share: float = 0.25):
         # Initalise Base Torch Sampler.
-        super().__init__(dataset)
+        super().__init__()
 
         # Store Variables within Class. 
         self.data_source = dataset
@@ -500,15 +500,18 @@ def train(experiment_name: str,
  
     # Setup Output Directories for this Run.
     run_dir = get_next_run_dir(output_base_dir)
+    parent_dir = os.path.dirname(run_dir)
     ckpt_dir = os.path.join(run_dir, "checkpoints")
     tb_dir = os.path.join(run_dir, "tensorboard")
     fp_cache_dir = os.path.join(run_dir, "fp_samples")
+    data_cache_dir = os.path.join(parent_dir, "data_cache")
 
     # Make Sure Directories Exist.
     os.makedirs(ckpt_dir, exist_ok=True)
     os.makedirs(tb_dir, exist_ok=True)
     os.makedirs(fp_cache_dir, exist_ok=True)
-    
+    os.makedirs(data_cache_dir,  exist_ok=True)
+
     # Print Summary Statisitcs.
     print(f"\n{'='*60}")
     print(f"  Experiment : {experiment_name}")
@@ -557,10 +560,10 @@ def train(experiment_name: str,
     # Print Success Messages when Flights Loads. 
     if train_flight_ids:
         log(LogLevel.INFO, "train:train", 
-            "Training on %d flights from %s\n", len(train_flight_ids), train_flights_file)
+            "Training on %d Flights from %s.\n", len(train_flight_ids), train_flights_file)
     if val_flight_ids:
         log(LogLevel.INFO, "train:train", 
-            "Validating on %d flights from %s\n", len(val_flight_ids), val_flights_file)
+            "Validating on %d Flights from %s.\n", len(val_flight_ids), val_flights_file)
  
     # Training Dataset (Augmented, Cropped).
     dataset_train = dataset_tracking.TrackingDataset(
@@ -569,6 +572,7 @@ def train(experiment_name: str,
         return_torch_tensors=True,
         small_subset=False,
         flight_ids=train_flight_ids,
+        cache_dir=data_cache_dir,
     )
  
     # Full-Resolution Dataset for FP Mining (No Crop Augmentation).
@@ -583,7 +587,20 @@ def train(experiment_name: str,
         return_torch_tensors=True,
         small_subset=False,
         flight_ids=train_flight_ids,
+        cache_dir=data_cache_dir,
     )
+
+    print()
+    log(LogLevel.INFO, "train:train",
+    "Train Dataset: %d Frames, %d with Tracked Objects.",
+    len(dataset_train.frames),
+    len(dataset_train.frame_nums_with_match_items))
+
+    if len(dataset_train.frame_nums_with_match_items) == 0:
+        log(LogLevel.WARNING, "train:train",
+            "WARNING: No tracking frames found in training dataset. "
+            "Check flight IDs and annotation paths.")
+    print()
 
     # Prep Dataset for Validation.
     dataset_full.is_training = False
@@ -605,6 +622,7 @@ def train(experiment_name: str,
             return_torch_tensors=True,
             small_subset=False,
             flight_ids=val_flight_ids,
+            cache_dir=data_cache_dir,
         )
 
         # Disable Training Behaviour (No Augmentation, Deterministic Outputs).
@@ -624,8 +642,9 @@ def train(experiment_name: str,
         )
 
         # Print Dataset Summary for Sanity Checking
+        print()
         log(LogLevel.INFO, "train:train", 
-            "Validation Dataset: %d frames, %d with tracked objects", 
+            "Validation Dataset: %d Frames, %d with Tracked Objects.\n", 
             len(dataset_val.frames), len(dataset_val.frame_nums_with_match_items))
  
     # Training Hyperparameters.
@@ -701,7 +720,7 @@ def train(experiment_name: str,
     else:
         raise RuntimeError(f"Invalid scheduler: {train_params.scheduler}")
  
-    scaler = torch.cuda.amp.GradScaler()
+    scaler = torch.amp.GradScaler('cuda')
  
     # Resume the Previous Run.
     if continue_epoch > -1:
@@ -734,8 +753,9 @@ def train(experiment_name: str,
     
     print()
     log(LogLevel.INFO, "train:train", 
-    "Starting training from epoch %d to %d. \nBackbone Freeze Steps: %d." \
-    " \nGrad Clip: %d", (continue_epoch + 1), nb_epochs, freeze_backbone_steps, grad_clip_value)
+    "Starting training from epoch %d to %d.", freeze_backbone_steps, grad_clip_value)
+    print(f"   Backbone Freeze Steps: {freeze_backbone_steps}.")
+    print(f"   Grad Clip: {grad_clip_value}.")
  
     # Epoch Loop.
     for epoch_num in range(continue_epoch + 1, nb_epochs + 1):
@@ -779,7 +799,7 @@ def train(experiment_name: str,
  
                 optimizer.zero_grad()
  
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast('cuda'):
                     pred = model(images)
  
                     # Heatmap Loss: Pixel-wise Min of All-Airborne Vs Planned-Only.
@@ -881,7 +901,7 @@ def train(experiment_name: str,
                     reg_offset_mask        = data['reg_offset_mask'].float().cuda()
                     reg_above_horizon_mask = data['reg_above_horizon_mask'].float().cuda()
  
-                    with torch.cuda.amp.autocast():
+                    with torch.amp.autocast('cuda'):
                         pred = model(images)
  
                         loss_cls_all     = mask_loss(pred['mask'], 1.0 - label_cls[:, :1])
@@ -990,8 +1010,8 @@ def train(experiment_name: str,
             save_checkpoint(best_path, epoch_num, model, optimizer, scheduler,
                             extra={f"{monitor_label}_loss": best_val_loss,
                                    "best_epoch": best_val_epoch})
-            log(LogLevel.INFO, "train:train", "New Best %s_loss %s at epoch %d. " / 
-                "Saved to best.pt\n", monitor_label, best_val_loss, best_val_epoch)
+            log(LogLevel.INFO, "train:train", "New Best %s_loss %s at epoch %d. Saved to best.pt\n", 
+                monitor_label, best_val_loss, best_val_epoch)
 
             if wb_run is not None:
                 wb_run.summary[f"best_{monitor_label}_loss"] = best_val_loss
@@ -1038,10 +1058,10 @@ def train(experiment_name: str,
     if wb_run is not None:
         wb_run.finish()
  
-    print(f"\nTraining complete.")
-    print(f"  Best epoch : {best_val_epoch}  (val_loss={best_val_loss:.5f})  -> {ckpt_dir}/best.pt")
-    print(f"  Last epoch : {nb_epochs}                                       -> {ckpt_dir}/last.pt")
-    print(f"  Run dir    : {run_dir}")
+    log(LogLevel.INFO, "train:train", "Training Complete.")
+    print(f"  Best Epoch : {best_val_epoch}  (val_loss={best_val_loss:.5f})  -> {ckpt_dir}/best.pt")
+    print(f"  Last Epoch : {nb_epochs}                        -> {ckpt_dir}/last.pt")
+    print(f"  Run Dir    : {run_dir}")
 # ------------------------------------------------------------------------------
 
  

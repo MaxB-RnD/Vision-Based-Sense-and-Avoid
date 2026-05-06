@@ -63,10 +63,14 @@ class HRNetSegmentation(nn.Module):
             self.fc_horizon = nn.Conv2d(hrnet_outputs, 1, kernel_size=1)
 
     def freeze_encoder(self):
-        self.base_model.freeze_encoder()
+        """Freeze all backbone parameters regardless of backbone type."""
+        for param in self.base_model.parameters():
+            param.requires_grad = False
 
     def unfreeze_encoder(self):
-        self.base_model.unfreeze_encoder()
+        """Unfreeze all backbone parameters."""
+        for param in self.base_model.parameters():
+            param.requires_grad = True
 
     def forward(self, inputs):
         stages_output = self.base_model(inputs)
@@ -608,6 +612,15 @@ class DLA8xSeparateHeads(nn.Module):
 
         return res
 
+    def freeze_encoder(self):
+        """Freeze all backbone parameters regardless of backbone type."""
+        for param in self.backbone.parameters():
+            param.requires_grad = False
+
+    def unfreeze_encoder(self):
+        """Unfreeze all backbone parameters."""
+        for param in self.backbone.parameters():
+            param.requires_grad = True
 
 
 def tsm(tensor, duration, dilation=1):

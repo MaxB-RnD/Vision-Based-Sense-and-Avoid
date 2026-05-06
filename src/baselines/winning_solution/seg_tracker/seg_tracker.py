@@ -24,7 +24,7 @@ from . import tracking
 
 class SegDetector:
     def __init__(self):
-        models_dir = 'configs/models/baselines/winning_solution'
+        models_dir = 'configs/models/core_improvement/winning_solution'
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -67,7 +67,7 @@ class SegDetector:
             pretrained=False
         )
 
-        self.model_seg1.load_state_dict(torch.load(f'{models_dir}/120_hrnet32_all_2220.pth', map_location=self.device, weights_only=False)['model_state_dict'], strict=False)
+        self.model_seg1.load_state_dict(torch.load(f'{models_dir}/120_hrnet32_all.pt', map_location=self.device, weights_only=False)['model_state_dict'], strict=False)
         self.model_seg1 = self.model_seg1.to(self.device)
         self.model_seg1.eval()
 
@@ -83,7 +83,7 @@ class SegDetector:
             pretrained=False
         )
 
-        self.model_seg2.load_state_dict(torch.load(f'{models_dir}/120_gernet_m_b2_all_2220.pth', map_location=self.device, weights_only=False)['model_state_dict'], strict=False)
+        self.model_seg2.load_state_dict(torch.load(f'{models_dir}/120_gernet_m_b2_fpm.pt', map_location=self.device, weights_only=False)['model_state_dict'], strict=False)
         self.model_seg2 = self.model_seg2.to(self.device)
         self.model_seg2.eval()
 
@@ -101,8 +101,8 @@ class SegDetector:
             pretrained=False
         )
 
-        self.model_dla.load_state_dict(torch.load(f'{models_dir}/120_dla60_256_sgd_all_rerun_2220.pth', map_location=self.device, weights_only=False)['model_state_dict'], strict=False)
-        self.model_dla = self.model_seg2.to(self.device)
+        self.model_dla.load_state_dict(torch.load(f'{models_dir}/120_dla60_256_sgd_all.pt', map_location=self.device, weights_only=False)['model_state_dict'], strict=False)
+        self.model_dla = self.model_dla.to(self.device)
         self.model_dla.eval()
 
         # self.model_seg3 = models_segmentation.EffDetSegmentation8x(
@@ -134,7 +134,7 @@ class SegDetector:
             pretrained=False
         )
 
-        self.model_seg3.load_state_dict(torch.load(f'{models_dir}/130_hrnet48_all_2220.pth', map_location=self.device, weights_only=False)['model_state_dict'], strict=False)
+        self.model_seg3.load_state_dict(torch.load(f'{models_dir}/130_hrnet48_all.pt', map_location=self.device, weights_only=False)['model_state_dict'], strict=False)
         self.model_seg3 = self.model_seg3.to(self.device)
         self.model_seg3.eval()
 
