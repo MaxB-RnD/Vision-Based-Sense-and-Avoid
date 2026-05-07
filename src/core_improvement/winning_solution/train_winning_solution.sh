@@ -76,12 +76,31 @@ NAMES=(
 # Create Logging Directory if it Doesn't Exist.
 mkdir -p "$LOG_DIR"
 
-# Create a Log File for Data Transforms.
-LOG_FILE="$LOG_DIR/frame_transforms.log"
+# Create a Log File for Training Data Transforms.
+LOG_FILE="$LOG_DIR/frame_transforms_train.log"
 
-# Run DAta Transforms Script (Python Module Entry Point).
+# Run Data Transforms Script on Training Data (Python Module Entry Point).
 python -m src.baselines.winning_solution.seg_tracker.generate_frame_transforms \
     --flights-file "$TRAIN_FLIGHTS" \
+    --skip-existing \
+    2>&1 | tee "$LOG_FILE"
+
+EXIT_CODE=${PIPESTATUS[0]}
+
+# Safely Handle Failure Cases.
+if [ $EXIT_CODE -ne 0 ]; then
+    echo ""
+    echo "ERROR: Data Transforms Failed with Exit Code $EXIT_CODE."
+    echo "Check $LOG_FILE for Details."
+    exit $EXIT_CODE
+fi
+
+# Create a Log File for Validation Data Transforms.
+LOG_FILE="$LOG_DIR/frame_transforms_valid.log"
+
+# Run Data Transforms Script on Validation (Python Module Entry Point).
+python -m src.baselines.winning_solution.seg_tracker.generate_frame_transforms \
+    --flights-file "$VAL_FLIGHTS" \
     --skip-existing \
     2>&1 | tee "$LOG_FILE"
 

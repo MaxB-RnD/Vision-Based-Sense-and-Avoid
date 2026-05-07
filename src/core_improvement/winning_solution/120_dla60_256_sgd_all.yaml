@@ -43,9 +43,9 @@ model_params:
   pred_scale:           8
 
 train_params:
-  nb_epochs:              770
-  nb_samples_per_epoch:   16384
-  nb_samples_valid:       1024
+  nb_epochs:              300
+  nb_samples_per_epoch:   2048
+  nb_samples_valid:       512
   initial_lr:             1.0e-3
   optimizer:              sgd
   scheduler:              CosineAnnealingWarmRestarts
@@ -57,13 +57,12 @@ train_params:
   tracking_samples_share: 0.25
   fp_samples_share:       0.25
   fpm_batch_size:         4
+  # Epochs at which to run false positive mining.
+  # Value = step size (every nth frame is evaluated).
   fpm_epochs:
-    250:  8
-    370:  8
-    535:  8
-    770:  8
-    1100: 8
-    1535: 8
+    80:   8
+    150:  8
+    230:  8
   loss_scale:
     cls:           2000
     size:          1
@@ -73,15 +72,15 @@ train_params:
     above_horizon: 1
 
 train_data_loader:
-  batch_size:   4
-  num_workers:  8
+  batch_size:   8
+  num_workers:  7
 
 val_data_loader:
-  batch_size:   2
+  batch_size:   4
   num_workers:  4
 
 dataset_params:
   back_steps:            [1]
   scale:                 1
-  crop_with_plane_ratio: 0.25
+  crop_with_plane_ratio: 0.50
   crop_size:             [512, 512]
