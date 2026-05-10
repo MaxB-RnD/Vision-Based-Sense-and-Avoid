@@ -2,9 +2,11 @@
 # ------------------------------------------------------------------------------
 # -               V E R S I O N   I D E N T I F I C A T I O N                  -
 # ------------------------------------------------------------------------------
-# File:                    train_all_winning_solution.sh
-# Date Created:            05/05/2026
-# Author:                  MBusato
+# File:                    %name: train_winning_solution.sh %
+# Date Created:            %date_created: Tue May 05 19:34:12 2026 %
+# CM Version               %version: 1 %
+# CM Instance              %instance: 1 %
+# Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
 # ------------------------------------------------------------------------------
@@ -20,7 +22,7 @@
 #
 # USAGE:
 #   1. Run: chmod +x src/core_improvement/winning_solution/train_winning_solution.sh
-#   2. nohup src/core_improvement/winning_solution/train_winning_solution.sh > outputs/logs/train_winning_solution.log 2>&1 &
+#   2. nohup src/core_improvement/winning_solution/train_winning_solution.sh > outputs/logs/model_training/train_winning_solution.log 2>&1 &
 #   3. Then monitor from terminal with:
 #            tail -f logs/train_all.log OR watch W&B directly.
 #
