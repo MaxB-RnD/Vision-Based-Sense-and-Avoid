@@ -108,7 +108,7 @@ TOTAL=${#EXPERIMENTS[@]}
 START_TIME=$(date +%s)
 
 echo "========================================================================"
-echo "  Winning Solution — Full Ensemble Retraining"
+echo "  MobileNet-v4 - Complexity vs AFDR Experiment"
 echo "  Models    : $TOTAL"
 echo "  Train set : $TRAIN_FLIGHTS"
 echo "  Val set   : $VAL_FLIGHTS"

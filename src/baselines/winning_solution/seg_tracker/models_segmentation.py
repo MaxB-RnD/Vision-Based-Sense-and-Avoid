@@ -933,6 +933,190 @@ class MobileNetV4Segmentation(nn.Module):
         return res
 
 
+class EfficientViTSegmentation(nn.Module):
+    # Known output channel widths for each EfficientViT-M variant.
+    # Output channels of [stage_0, stage_1, stage_2] after patch_embed.
+    _EFFICIENTVIT_CHANNELS = {
+        'efficientvit_m0': [64,  128, 192],
+        'efficientvit_m1': [128, 144, 192],
+        'efficientvit_m2': [128, 192, 224],
+        'efficientvit_m3': [128, 240, 320],
+        'efficientvit_m4': [128, 256, 384],
+        'efficientvit_m5': [192, 288, 384],
+    }
+
+    def __init__(self, cfg, pretrained=True):
+        super().__init__()
+        base_model_name             = cfg['base_model_name']
+        input_depth                 = cfg['input_frames']
+        self.combine_outputs_dim    = cfg.get('combine_outputs_dim', 256)
+        self.combine_outputs_kernel = cfg.get('combine_outputs_kernel', 1)
+        self.output_binary_mask     = cfg.get('output_binary_mask', False)
+        self.output_above_horizon   = cfg.get('output_above_horizon', False)
+        self.pred_scale             = cfg['pred_scale']
+
+        # Backbone: two-step loading required for non-default input sizes.
+        input_size = cfg.get('input_size', 512)
+
+        # Build architecture at the correct input resolution.
+        self.base_model = timm.create_model(
+            base_model_name,
+            pretrained  = False,        # Weights loaded manually in Step 2.
+            in_chans    = input_depth,
+            num_classes = 0,            # Remove classifier head.
+            img_size    = input_size,
+        )
+
+        # Transfer ImageNet weights, skipping shape-mismatched keys.
+        # All other weights (conv, BN, linear) are transferred cleanly.
+        if pretrained:
+            _tmp = timm.create_model(
+                base_model_name,
+                pretrained  = True,
+                num_classes = 0,
+            )
+            src_sd  = _tmp.state_dict()
+            tgt_sd  = self.base_model.state_dict()
+            del _tmp
+
+            # Keep only keys whose tensor shapes match exactly in both dicts.
+            filtered_sd = {
+                k: v for k, v in src_sd.items()
+                if k in tgt_sd and v.shape == tgt_sd[k].shape
+            }
+            skipped = [k for k in src_sd if k not in filtered_sd]
+
+            missing, unexpected = self.base_model.load_state_dict(
+                filtered_sd, strict=False
+            )
+
+            # Expected skipped keys, log for transparency.
+            expected_skips = {'patch_embed.conv1.conv.weight'} | {k for k in skipped if 'attention_bias' in k}
+            unexpected_skips = [k for k in skipped if k not in expected_skips]
+            if unexpected_skips:
+                print(f'[EfficientViTSegmentation] WARNING — unexpected shape '
+                      f'mismatches skipped during pretrained load: {unexpected_skips}')
+            else:
+                print(f'[EfficientViTSegmentation] Pretrained weights loaded. '
+                      f'Skipped {len(skipped)} shape-mismatched keys '
+                      f'(patch_embed stem + {len(skipped)-1} attention bias tables). '
+                      f'These will be learned from scratch.')
+
+        # Look up feature channel widths; fall back to a runtime probe if the
+        # exact variant string isn't in the table (e.g. with a weight tag suffix).
+        _key = base_model_name.split('.')[0]   # strip any weight-tag suffix
+        if _key in self._EFFICIENTVIT_CHANNELS:
+            self.backbone_depths = self._EFFICIENTVIT_CHANNELS[_key]
+        else:
+            self.backbone_depths = None   # resolved after hook registration below
+
+        # Forward hooks, attach to stage_0, stage_1, stage_2.
+        # EfficientViT-M2 (MSRA) has 3 stages after patch_embed at strides
+        # [16, 32, 64]. We hook all 3 stages (not patch_embed, since stage_0
+        # runs at the same resolution with richer features).
+        self._feature_maps: List[torch.Tensor] = []
+
+        def _make_hook(self_ref):
+            def _hook(module, input, output):
+                self_ref._feature_maps.append(output)
+            return _hook
+
+        self._hooks = []
+        for stage in self.base_model.stages.children():
+            h = stage.register_forward_hook(_make_hook(self))
+            self._hooks.append(h)
+
+        # Runtime probe for unknown variants — requires hooks to be attached.
+        if self.backbone_depths is None:
+            with torch.no_grad():
+                dummy = torch.zeros(1, input_depth, input_size, input_size)
+                self._feature_maps.clear()
+                self.base_model(dummy)
+                self.backbone_depths = [f.shape[1] for f in self._feature_maps]
+                self._feature_maps.clear()
+
+        print(f'{base_model_name} feature channels: {self.backbone_depths}')
+        total_channels = sum(self.backbone_depths)
+
+        # Projection conv, collapses the concatenated multi-scale features
+        # to a uniform width before the detection heads.
+        # Kept at 256 / kernel=1 (same deliberate choice as MobileNetV4;
+        # both are lightweight anchors on the complexity curve).
+        self.fc_comb = nn.Conv2d(
+            total_channels,
+            self.combine_outputs_dim,
+            kernel_size = self.combine_outputs_kernel,
+        )
+        head_ch = self.combine_outputs_dim
+
+        # Detection heads, identical to MobileNetV4Segmentation.
+        self.fc_cls      = nn.Conv2d(head_ch, config.NB_CLASSES, kernel_size=1)
+        self.fc_size     = nn.Conv2d(head_ch, 2, kernel_size=1)
+        self.fc_offset   = nn.Conv2d(head_ch, 2, kernel_size=1)
+        self.fc_distance = nn.Conv2d(head_ch, 1, kernel_size=1)
+        self.fc_tracking = nn.Conv2d(head_ch, 2, kernel_size=1)
+        if self.output_binary_mask:
+            self.fc_mask    = nn.Conv2d(head_ch, 1, kernel_size=1)
+        if self.output_above_horizon:
+            self.fc_horizon = nn.Conv2d(head_ch, 1, kernel_size=1)
+
+    def freeze_encoder(self):
+        for p in self.base_model.parameters():
+            p.requires_grad_(False)
+
+    def unfreeze_encoder(self):
+        for p in self.base_model.parameters():
+            p.requires_grad_(True)
+
+    def forward(self, inputs):
+        # Clear the capture buffer before each forward pass.
+        self._feature_maps.clear()
+
+        # Trigger backbone forward — hooks populate self._feature_maps.
+        self.base_model(inputs)
+
+        # stages_output: [stage_0, stage_1, stage_2]
+        #   stage_0: stride 16  (reference for pred_scale=8 after avg_pool)
+        #   stage_1: stride 32
+        #   stage_2: stride 64
+        stages_output = list(self._feature_maps)
+
+        # Calculate target dimensions based on input resolution / pred_scale
+        # e.g., if input is 1024 and pred_scale is 8, target is 128
+        target_h, target_w = inputs.shape[2] // self.pred_scale, inputs.shape[3] // self.pred_scale
+
+        # Upsample all stages to pred_scale resolution.
+        x = [
+            F.interpolate(stages_output[0], size=(target_h, target_w), mode='bilinear', align_corners=False),
+            F.interpolate(stages_output[1], size=(target_h, target_w), mode='bilinear', align_corners=False),
+            F.interpolate(stages_output[2], size=(target_h, target_w), mode='bilinear', align_corners=False),
+        ]
+
+        x = torch.cat(x, dim=1)
+        x = F.relu(self.fc_comb(x))
+
+        cls      = self.fc_cls(x)
+        size     = self.fc_size(x)
+        offset   = self.fc_offset(x)
+        distance = self.fc_distance(x)
+        tracking = self.fc_tracking(x)
+
+        res = dict(
+            cls      = cls,
+            size     = size,
+            offset   = offset,
+            distance = distance,
+            tracking = tracking,
+        )
+
+        if self.output_binary_mask:
+            res['mask'] = self.fc_mask(x)
+        if self.output_above_horizon:
+            res['above_horizon'] = self.fc_horizon(x)
+
+        return res
+
+
 def print_summary():
     import pytorch_model_summary
     # model = HRNetSegmentation(cfg={'base_model_name': 'hrnet_w32', 'input_frames': 2, 'feature_location': '', 'upscale_mode': 'nearest', 'combine_outputs_dim': 512})
