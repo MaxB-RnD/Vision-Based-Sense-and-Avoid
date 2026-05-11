@@ -242,7 +242,7 @@ class TrackPreferredSamplerWithFP(torch.utils.data.Sampler):
     """
     def __init__(self, dataset: dataset_tracking.TrackingDataset, num_samples: int, fp_samples, tracking_samples_share: float = 0.25, fp_samples_share: float = 0.25):
         # Initalise Base Torch Sampler.
-        super().__init__(dataset)
+        super().__init__()
 
         # Store Variables within Class. 
         self.data_source      = dataset
@@ -295,7 +295,7 @@ class SkipNSampler(torch.utils.data.Sampler):
     """
     def __init__(self, dataset: dataset_tracking.TrackingDataset, skip_step: int):
         # Initalise Base Torch Sampler.
-        super().__init__(dataset)
+        super().__init__()
 
         # Random Offset so we Don't Always Start Sampling from Index 0.
         self.samples = list(range(np.random.randint(skip_step), len(dataset), skip_step))
@@ -365,7 +365,7 @@ def find_fp_samples(model: nn.Module,
             images = combine_images(data, input_frames)
 
             # Mixed Precision Inference for Speed.
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast('cuda'):
                 pred = model(images)
             
             # Convert Logits to Probabilities for Mask Head.
