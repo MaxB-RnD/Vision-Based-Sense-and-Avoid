@@ -48,6 +48,6 @@
 # Ignore Custom AOT Folders.
 /data
 model_training/
-**/results*
+*/results*
 /wandb/
 # ==============================================================================
