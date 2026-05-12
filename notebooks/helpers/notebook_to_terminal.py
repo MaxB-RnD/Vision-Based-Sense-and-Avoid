@@ -84,8 +84,10 @@ def main() -> None:
     # 2 -> YOLOv11 (UAV Detection Model).
     # 3 -> MobileNetV4 (Lightweight Detection Backbone).
     # 4 -> EfficientVit-M2 (Medium-Weight Detection Backbone).
-    SELECTED_MODEL = 4
-    model_list = ["winning_solution","transformer_detector","drone_detector","mobilenetv4", "efficientvitm2"]
+    # 5 -> ResNet34 (Medium-Weight Detection Backbone).
+    # 6 -> EfficientVit-B2 (Heavy-Weight Detection Backbone).
+    SELECTED_MODEL = 6
+    model_list = ["winning_solution","transformer_detector","drone_detector","mobilenetv4", "efficientvitm2", "resnet34", "efficientvitb2"]
 
     # Evaluation Filtering.
     MIN_SCORE = 0.60
@@ -203,6 +205,7 @@ def main() -> None:
     from src.core_improvement.mobilenetv4.mobilenet_test import MobileNetV4Predictor
     from src.baselines.transformer_detector.transformer_test import TransformerPredictor
     from src.core_improvement.efficientvitm2.efficientvit_m2_test import EfficientViTM2Predictor
+    from src.core_improvement.efficientvitb2.efficientvit_b2_test import EfficientViTB2Predictor
 
     # Check GPU is CUDA Enabled.
     if torch.cuda.is_available():
@@ -214,12 +217,14 @@ def main() -> None:
 
     # Map Model Selection to Predictor Classes.
     MODEL_MAP = {
-        0: SegPredictor,           # SegTracker Baseline.
-        1: TransformerPredictor,   # RT-DETR v2.
-        2: DronePredictor,         # YOLOv11.
-        3: MobileNetV4Predictor,   # MobileNet v4.
-        4: EfficientViTM2Predictor # EfficientVit m2.
-    }
+        0: SegPredictor,            # SegTracker Baseline.
+        1: TransformerPredictor,    # RT-DETR v2.
+        2: DronePredictor,          # YOLOv11.
+        3: MobileNetV4Predictor,    # MobileNet v4.
+        4: EfficientViTM2Predictor, # EfficientVit m2.
+    #    5: ResNet34Predictor,       # ResNet34.
+        6: EfficientViTB2Predictor  # EfficientVit b2.
+}
 
     # Validate Selection.
     if SELECTED_MODEL not in MODEL_MAP:
