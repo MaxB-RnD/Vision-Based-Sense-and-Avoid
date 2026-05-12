@@ -1,0 +1,91 @@
+# ------------------------------------------------------------------------------
+# -               V E R S I O N   I D E N T I F I C A T I O N                  -
+# ------------------------------------------------------------------------------
+# File:                    %name: efficientvit_b2.yaml %
+# Date Created:            %date_created: Tue May 12 17:53:34 2026 %
+# CM Version               %version: 1 %
+# CM Instance              %instance: 1 %
+# Author:                  %created_by: MBusato %
+# ------------------------------------------------------------------------------
+# -                          D E S C R I P T I O N                             -
+# ------------------------------------------------------------------------------
+# Experiment: efficientvit_b2
+# Model:      EfficientViTB2Segmentation (efficientvit_b2)
+# Role:       Mid-weight ViT backbone in the complexity vs AFDR experiment.
+# Hypothesis: EfficientViT-B2 (MIT) is a fully convolutional hierarchical ViT
+#             with 4-stage feature pyramid at strides [4, 8, 16, 32]. Expected
+#             to sit above MobileNetV4 and EfficientViT-M2 on the complexity
+#             curve, probing whether a larger attention-based backbone yields
+#             meaningfully higher AFDR at moderate edge-deployment cost.
+# Notes:
+#   - Uses 512x512 crops around detections.
+#   - Combine_outputs_dim set to 256 (consistent with EfficientViT-B2;
+#     both are lightweight anchors vs HRNet at 512).
+#   - SGD + cosine warm restarts (identical schedule to EfficientViT-B2 run).
+# ------------------------------------------------------------------------------
+
+meta:
+  experiment: efficientvit_b2
+  version: 1
+  author: MBusato
+  model: EfficientViTB2Segmentation
+  backbone: efficientvit_b2
+  role: crop_refinement
+  input_resolution: [512, 512]
+  optimizer: sgd
+  scheduler: CosineAnnealingWarmRestarts
+
+model_params:
+  model_type:             EfficientViTB2Segmentation
+  model_cls:              EfficientViTB2Segmentation
+  base_model_name:        efficientvit_b2
+  input_frames:           2
+  feature_location:       ''
+  combine_outputs_dim:    256
+  combine_outputs_kernel: 1
+  output_binary_mask:     true
+  output_above_horizon:   true
+  pred_scale:             8
+
+train_params:
+  nb_epochs:              300
+  nb_samples_per_epoch:   2048
+  nb_samples_valid:       512
+  initial_lr:             1.0e-3
+  optimizer:              sgd
+  scheduler:              CosineAnnealingWarmRestarts
+  scheduler_period:       16
+  scheduler_t_mult:       1.42
+  grad_clip:              8.0
+  freeze_backbone_steps:  5
+  mask_loss:              fl
+  tracking_samples_share: 0.25
+  fp_samples_share:       0.25
+  fpm_batch_size:         4
+  # Epochs at which to run false positive mining.
+  # Value = step size (every nth frame is evaluated).
+  fpm_epochs:
+    80:   8
+    150:  8
+    230:  8
+  loss_scale:
+    cls:           2000
+    size:          1
+    offset:        0.2
+    distance:      1
+    tracking:      1
+    above_horizon: 1
+
+train_data_loader:
+  batch_size:   8
+  num_workers:  7
+
+val_data_loader:
+  batch_size:   4
+  num_workers:  4
+
+dataset_params:
+  back_steps:            [1]
+  scale:                 1
+  crop_with_plane_ratio: 0.50
+  crop_size:             [512, 512]

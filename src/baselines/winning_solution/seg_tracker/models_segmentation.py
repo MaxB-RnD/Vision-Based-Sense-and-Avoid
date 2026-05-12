@@ -1161,6 +1161,101 @@ class EfficientViTSegmentation(nn.Module):
         return {k: v[:, :, :orig_oh, :orig_ow] for k, v in grids.items()}
 
 
+class EfficientViTB2Segmentation(nn.Module):
+    def __init__(self, cfg, pretrained=True):
+        super().__init__()
+        base_model_name             = cfg['base_model_name']
+        input_depth                 = cfg['input_frames']
+        self.combine_outputs_dim    = cfg.get('combine_outputs_dim', 256)
+        self.combine_outputs_kernel = cfg.get('combine_outputs_kernel', 1)
+        self.output_binary_mask     = cfg.get('output_binary_mask', False)
+        self.output_above_horizon   = cfg.get('output_above_horizon', False)
+        self.pred_scale             = cfg['pred_scale']
+
+        self.base_model = timm.create_model(
+            base_model_name,
+            pretrained   = pretrained,
+            features_only = True,
+            in_chans     = input_depth,
+        )
+
+        # Probe feature channel widths from the model's own feature info.
+        self.backbone_depths = [fi['num_chs'] for fi in self.base_model.feature_info]
+        print(f'{base_model_name} feature channels: {self.backbone_depths}')
+        total_channels = sum(self.backbone_depths)
+
+        # Projection conv - collapses 720 concatenated channels to 256.
+        self.fc_comb = nn.Conv2d(
+            total_channels,
+            self.combine_outputs_dim,
+            kernel_size = self.combine_outputs_kernel,
+        )
+        head_ch = self.combine_outputs_dim
+
+        # Detection heads - identical to MobileNetV4Segmentation.
+        self.fc_cls      = nn.Conv2d(head_ch, config.NB_CLASSES, kernel_size=1)
+        self.fc_size     = nn.Conv2d(head_ch, 2, kernel_size=1)
+        self.fc_offset   = nn.Conv2d(head_ch, 2, kernel_size=1)
+        self.fc_distance = nn.Conv2d(head_ch, 1, kernel_size=1)
+        self.fc_tracking = nn.Conv2d(head_ch, 2, kernel_size=1)
+        if self.output_binary_mask:
+            self.fc_mask    = nn.Conv2d(head_ch, 1, kernel_size=1)
+        if self.output_above_horizon:
+            self.fc_horizon = nn.Conv2d(head_ch, 1, kernel_size=1)
+
+    def freeze_encoder(self):
+        for p in self.base_model.parameters():
+            p.requires_grad_(False)
+
+    def unfreeze_encoder(self):
+        for p in self.base_model.parameters():
+            p.requires_grad_(True)
+
+    def forward(self, inputs):
+        stages_output = self.base_model(inputs)
+
+        if self.pred_scale == 8:
+            x = [
+                F.avg_pool2d(stages_output[0], 2),                                # stride 4  -> 8
+                stages_output[1],                                                 # stride 8  (reference)
+                F.interpolate(stages_output[2], scale_factor=2, mode='nearest'),  # stride 16 -> 8
+                F.interpolate(stages_output[3], scale_factor=4, mode='nearest'),  # stride 32 -> 8
+            ]
+        elif self.pred_scale == 4:
+            x = [
+                stages_output[0],                                                 # stride 4  (reference)
+                F.interpolate(stages_output[1], scale_factor=2, mode='nearest'),  # stride 8  -> 4
+                F.interpolate(stages_output[2], scale_factor=4, mode='nearest'),  # stride 16 -> 4
+                F.interpolate(stages_output[3], scale_factor=8, mode='nearest'),  # stride 32 -> 4
+            ]
+        else:
+            raise RuntimeError(f'Invalid pred_scale: {self.pred_scale}')
+
+        x = torch.cat(x, dim=1)
+        x = F.relu(self.fc_comb(x))
+
+        cls      = self.fc_cls(x)
+        size     = self.fc_size(x)
+        offset   = self.fc_offset(x)
+        distance = self.fc_distance(x)
+        tracking = self.fc_tracking(x)
+
+        res = dict(
+            cls      = cls,
+            size     = size,
+            offset   = offset,
+            distance = distance,
+            tracking = tracking,
+        )
+
+        if self.output_binary_mask:
+            res['mask'] = self.fc_mask(x)
+        if self.output_above_horizon:
+            res['above_horizon'] = self.fc_horizon(x)
+
+        return res
+
+
 def print_summary():
     import pytorch_model_summary
     # model = HRNetSegmentation(cfg={'base_model_name': 'hrnet_w32', 'input_frames': 2, 'feature_location': '', 'upscale_mode': 'nearest', 'combine_outputs_dim': 512})
