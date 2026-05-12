@@ -279,76 +279,19 @@ class EfficientViTM2Predictor(AirbornePredictor):
         # Convert Input Array into Normalised PyTorch Tensor.
         X_t = torch.from_numpy(X).float().to(self.device) / 255.0
         
-        # Patch-Based Inference Size Expected by the Segmentation Model.
-        patch_size = 512
-        _, _, curr_h, curr_w = X_t.shape
-        
-        # Dynamically Pad Full Frame to be an Exact Multiple of 512x512.
-        pad_h = (patch_size - (curr_h % patch_size)) % patch_size
-        pad_w = (patch_size - (curr_w % patch_size)) % patch_size
-        
-        # Apply Spatial Padding Only if Required.
-        if pad_h > 0 or pad_w > 0:
-            X_t_padded = torch.nn.functional.pad(X_t, (0, pad_w, 0, pad_h))
-        else:
-            X_t_padded = X_t
-        
-        # Dimensions After Padding with the Number of Patches.
-        padded_h, padded_w = X_t_padded.shape[2], X_t_padded.shape[3]
-        rows = padded_h // patch_size
-        cols = padded_w // patch_size
-        
-        # Output Scale is 8x Smaller than Input (pred_scale = 8).
-        out_scale = 8
-        out_patch_size = patch_size // out_scale  # 64x64 Output Patches.
-        
-        # Allocate Empty Tensors to Collect Stitched Results on the GPU.
-        mask_grid          = torch.zeros((1, 1, rows * out_patch_size, cols * out_patch_size), device=self.device)
-        offset_grid        = torch.zeros((1, 2, rows * out_patch_size, cols * out_patch_size), device=self.device)
-        size_grid          = torch.zeros((1, 2, rows * out_patch_size, cols * out_patch_size), device=self.device)
-        tracking_grid      = torch.zeros((1, 2, rows * out_patch_size, cols * out_patch_size), device=self.device)
-        distance_grid      = torch.zeros((1, 1, rows * out_patch_size, cols * out_patch_size), device=self.device)
-        above_horizon_grid = torch.zeros((1, 1, rows * out_patch_size, cols * out_patch_size), device=self.device)
-        
         # Disable Gradients During Inference for Efficiency.
         with torch.no_grad():
             with torch.amp.autocast(self.device.type):
-                # Enable Mixed Precision Inference for Improved GPU Efficiency.
-                for r in range(rows):
-                    for c in range(cols):
-                        # Compute Patch Top-Left Coordinates.
-                        y_start = r * patch_size
-                        x_start = c * patch_size
-                        
-                        # Slice Exact 512x512 Input Patch.
-                        patch = X_t_padded[:, :, y_start : y_start + patch_size, x_start : x_start + patch_size]
-                        
-                        # Forward Pass through Segmentation Model.
-                        pred = self.model_seg(patch)
-                        
-                        # Destination Coordinates in the Stitched Output Maps.
-                        out_y = r * out_patch_size
-                        out_x = c * out_patch_size
-                        
-                        # Insert Patch Predictions into Global Prediction Maps.
-                        mask_grid[:, :, out_y : out_y + out_patch_size, out_x : out_x + out_patch_size]          = pred["mask"]
-                        offset_grid[:, :, out_y : out_y + out_patch_size, out_x : out_x + out_patch_size]        = pred["offset"]
-                        size_grid[:, :, out_y : out_y + out_patch_size, out_x : out_x + out_patch_size]          = pred["size"]
-                        tracking_grid[:, :, out_y : out_y + out_patch_size, out_x : out_x + out_patch_size]      = pred["tracking"]
-                        distance_grid[:, :, out_y : out_y + out_patch_size, out_x : out_x + out_patch_size]      = pred["distance"]
-                        above_horizon_grid[:, :, out_y : out_y + out_patch_size, out_x : out_x + out_patch_size] = pred["above_horizon"]
-        
-        # Crop Stitched Output Grids Back Down to the Original Unpadded Dimensions.
-        orig_out_h = curr_h // out_scale
-        orig_out_w = curr_w // out_scale
+                # Patch-Based Inference Size Expected by the Segmentation Model.
+                pred = self.model_seg(X_t)
         
         # Extract Model Outputs.
-        mask          = torch.sigmoid(mask_grid[0, 0, :orig_out_h, :orig_out_w].float()).cpu().numpy()
-        offset        = offset_grid[0, :, :orig_out_h, :orig_out_w].float().cpu().numpy()
-        size          = size_grid[0, :, :orig_out_h, :orig_out_w].float().cpu().numpy()
-        tracking_out  = tracking_grid[0, :, :orig_out_h, :orig_out_w].float().cpu().numpy()
-        distance      = distance_grid[0, 0, :orig_out_h, :orig_out_w].float().cpu().numpy()
-        above_horizon = above_horizon_grid[0, 0, :orig_out_h, :orig_out_w].float().cpu().numpy()
+        mask = torch.sigmoid(pred["mask"][0, 0].float()).cpu().numpy()
+        offset = pred["offset"][0].float().cpu().numpy()
+        size = pred["size"][0].float().cpu().numpy()
+        tracking_out = pred["tracking"][0].float().cpu().numpy()
+        distance = pred["distance"][0, 0].float().cpu().numpy()
+        above_horizon= pred["above_horizon"][0, 0].float().cpu().numpy()
 
         # Remove Border Artefacts.
         border_x = padding // 8 + 4

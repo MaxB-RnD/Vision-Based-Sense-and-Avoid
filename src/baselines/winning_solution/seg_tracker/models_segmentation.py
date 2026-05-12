@@ -1068,53 +1068,97 @@ class EfficientViTSegmentation(nn.Module):
         for p in self.base_model.parameters():
             p.requires_grad_(True)
 
-    def forward(self, inputs):
+    # Native Input Size the Backbone Was Built For.
+    # Inputs Larger than this are Automatically Tiled in forward().
+    PATCH_SIZE = 512
+
+    def _forward_patch(self, patch: torch.Tensor) -> dict:
         # Clear the capture buffer before each forward pass.
         self._feature_maps.clear()
 
         # Trigger backbone forward — hooks populate self._feature_maps.
-        self.base_model(inputs)
+        self.base_model(patch)
 
-        # stages_output: [stage_0, stage_1, stage_2]
-        #   stage_0: stride 16  (reference for pred_scale=8 after avg_pool)
-        #   stage_1: stride 32
-        #   stage_2: stride 64
+        # stages_output: [stage_0, stage_1, stage_2].
         stages_output = list(self._feature_maps)
 
         # Calculate target dimensions based on input resolution / pred_scale
-        # e.g., if input is 1024 and pred_scale is 8, target is 128
-        target_h, target_w = inputs.shape[2] // self.pred_scale, inputs.shape[3] // self.pred_scale
+        target_h = patch.shape[2] // self.pred_scale
+        target_w = patch.shape[3] // self.pred_scale
 
         # Upsample all stages to pred_scale resolution.
         x = [
-            F.interpolate(stages_output[0], size=(target_h, target_w), mode='bilinear', align_corners=False),
-            F.interpolate(stages_output[1], size=(target_h, target_w), mode='bilinear', align_corners=False),
-            F.interpolate(stages_output[2], size=(target_h, target_w), mode='bilinear', align_corners=False),
+            F.interpolate(stages_output[0], size=(target_h, target_w),
+                          mode='bilinear', align_corners=False),
+            F.interpolate(stages_output[1], size=(target_h, target_w),
+                          mode='bilinear', align_corners=False),
+            F.interpolate(stages_output[2], size=(target_h, target_w),
+                          mode='bilinear', align_corners=False),
         ]
-
         x = torch.cat(x, dim=1)
         x = F.relu(self.fc_comb(x))
-
-        cls      = self.fc_cls(x)
-        size     = self.fc_size(x)
-        offset   = self.fc_offset(x)
-        distance = self.fc_distance(x)
-        tracking = self.fc_tracking(x)
-
+ 
         res = dict(
-            cls      = cls,
-            size     = size,
-            offset   = offset,
-            distance = distance,
-            tracking = tracking,
+            cls      = self.fc_cls(x),
+            size     = self.fc_size(x),
+            offset   = self.fc_offset(x),
+            distance = self.fc_distance(x),
+            tracking = self.fc_tracking(x),
         )
-
         if self.output_binary_mask:
             res['mask'] = self.fc_mask(x)
         if self.output_above_horizon:
             res['above_horizon'] = self.fc_horizon(x)
-
         return res
+
+    def forward(self, inputs):
+        B, C, H, W = inputs.shape
+        ps = self.PATCH_SIZE
+        out_scale = self.pred_scale
+ 
+        # Fast path: input fits in one patch — no tiling overhead.
+        if H <= ps and W <= ps:
+            return self._forward_patch(inputs)
+ 
+        # Tiled path: pad to multiple of patch_size, tile, stitch.
+        pad_h = (ps - H % ps) % ps
+        pad_w = (ps - W % ps) % ps
+        if pad_h > 0 or pad_w > 0:
+            x_pad = F.pad(inputs, (0, pad_w, 0, pad_h))
+        else:
+            x_pad = inputs
+ 
+        pH, pW   = x_pad.shape[2], x_pad.shape[3]
+        rows, cols = pH // ps, pW // ps
+        ops = ps // out_scale           # output patch size
+ 
+        # Pre-allocate output grids on the same device as inputs.
+        def _alloc(ch):
+            return torch.zeros(B, ch, rows * ops, cols * ops,
+                               device=inputs.device, dtype=inputs.dtype)
+ 
+        # Run one patch to discover output channel counts.
+        _probe = self._forward_patch(x_pad[:, :, :ps, :ps])
+        grids = {k: _alloc(v.shape[1]) for k, v in _probe.items()}
+ 
+        # Fill in the probe result for the first patch.
+        for k, v in _probe.items():
+            grids[k][:, :, :ops, :ops] = v
+ 
+        # Process remaining patches.
+        for r in range(rows):
+            for c in range(cols):
+                if r == 0 and c == 0:
+                    continue   # already filled from probe
+                patch = x_pad[:, :, r*ps:(r+1)*ps, c*ps:(c+1)*ps]
+                pred  = self._forward_patch(patch)
+                for k, v in pred.items():
+                    grids[k][:, :, r*ops:(r+1)*ops, c*ops:(c+1)*ops] = v
+ 
+        # Crop back to the original (unpadded) output dimensions.
+        orig_oh = H // out_scale
+        orig_ow = W // out_scale
+        return {k: v[:, :, :orig_oh, :orig_ow] for k, v in grids.items()}
 
 
 def print_summary():

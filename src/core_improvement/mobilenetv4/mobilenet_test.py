@@ -340,7 +340,7 @@ class MobileNetV4Predictor(AirbornePredictor):
             detected_items, prev_tr
         )
 
-          # Stop Frame Processing Timer.
+        # Stop Frame Processing Timer.
         if torch.cuda.is_available():
             torch.cuda.synchronize()
         self.frame_times.append(time.perf_counter() - t0)
