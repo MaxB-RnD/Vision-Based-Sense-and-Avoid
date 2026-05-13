@@ -202,6 +202,7 @@ def main() -> None:
     # Import Baseline Classes.
     from src.baselines.winning_solution.seg_test import SegPredictor
     from src.baselines.drone_detector.drone_test import DronePredictor
+    from src.core_improvement.resnet34.resnet34_test import ResNet34Predictor
     from src.core_improvement.mobilenetv4.mobilenet_test import MobileNetV4Predictor
     from src.baselines.transformer_detector.transformer_test import TransformerPredictor
     from src.core_improvement.efficientvitm2.efficientvit_m2_test import EfficientViTM2Predictor
@@ -222,9 +223,9 @@ def main() -> None:
         2: DronePredictor,          # YOLOv11.
         3: MobileNetV4Predictor,    # MobileNet v4.
         4: EfficientViTM2Predictor, # EfficientVit m2.
-    #    5: ResNet34Predictor,       # ResNet34.
+        5: ResNet34Predictor,       # ResNet34.
         6: EfficientViTB2Predictor  # EfficientVit b2.
-}
+    }
 
     # Validate Selection.
     if SELECTED_MODEL not in MODEL_MAP:
