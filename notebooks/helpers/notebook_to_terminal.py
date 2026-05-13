@@ -84,7 +84,7 @@ def main() -> None:
     # 2 -> YOLOv11 (UAV Detection Model).
     # 3 -> MobileNetV4 (Lightweight Detection Backbone).
     # 4 -> EfficientVit-M2 (Medium-Weight Detection Backbone).
-    SELECTED_MODEL = 4
+    SELECTED_MODEL = 3
     model_list = ["winning_solution","transformer_detector","drone_detector","mobilenetv4", "efficientvitm2"]
 
     # Evaluation Filtering.
