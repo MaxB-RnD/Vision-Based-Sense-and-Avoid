@@ -61,7 +61,7 @@ MIN_TRACK_LEN = int(os.getenv("MIN_TRACK_LEN", 30))
 # Minimum Confidence Score Required for a Detection to Be Committed to Results.
 MIN_SCORE = float(os.getenv("MIN_SCORE", 0.6))
 
-# Detection Confidence Threshold Passed Directly to the YOLO Model.
+# Detection Confidence Threshold Passed Directly to the Model.
 # NOTE: Set Equal to or Lower than MIN_SCORE.
 DETECTION_THRESHOLD = float(os.getenv("DETECTION_THRESHOLD", 0.6))
 # ------------------------------------------------------------------------------
@@ -239,7 +239,7 @@ class MobileNetV4Predictor(AirbornePredictor):
             List[Dict]: A list of detections, where each detection contains:
                 - track_id: Unique identifier for the object.
                 - bbox: Bounding box coordinates.
-                - confidence: Detection confidence score (0–1).
+                - confidence: Detection confidence score (0-1).
                 - class_name: Label of the detected object.
         """
         # Cannot Estimate Motion or Perform Temporal Inference Without a Previous Frame.

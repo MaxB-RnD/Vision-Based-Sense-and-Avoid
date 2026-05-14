@@ -86,8 +86,9 @@ def main() -> None:
     # 4 -> EfficientVit-M2 (Medium-Weight Detection Backbone).
     # 5 -> ResNet34 (Medium-Weight Detection Backbone).
     # 6 -> EfficientVit-B2 (Heavy-Weight Detection Backbone).
-    SELECTED_MODEL = 6
-    model_list = ["winning_solution","transformer_detector","drone_detector","mobilenetv4", "efficientvitm2", "resnet34", "efficientvitb2"]
+    # 6 -> HRNet-W32 (Heavy-Weight Detection Backbone).
+    SELECTED_MODEL = 7
+    model_list = ["winning_solution","transformer_detector","drone_detector","mobilenetv4", "efficientvitm2", "resnet34", "efficientvitb2", "hrnetw32"]
 
     # Evaluation Filtering.
     MIN_SCORE = 0.60
@@ -203,6 +204,7 @@ def main() -> None:
     from src.baselines.winning_solution.seg_test import SegPredictor
     from src.baselines.drone_detector.drone_test import DronePredictor
     from src.core_improvement.resnet34.resnet34_test import ResNet34Predictor
+    from src.core_improvement.hrnetw32.hrnet_w32_test import HRNetW32Predictor
     from src.core_improvement.mobilenetv4.mobilenet_test import MobileNetV4Predictor
     from src.baselines.transformer_detector.transformer_test import TransformerPredictor
     from src.core_improvement.efficientvitm2.efficientvit_m2_test import EfficientViTM2Predictor
@@ -224,7 +226,8 @@ def main() -> None:
         3: MobileNetV4Predictor,    # MobileNet v4.
         4: EfficientViTM2Predictor, # EfficientVit m2.
         5: ResNet34Predictor,       # ResNet34.
-        6: EfficientViTB2Predictor  # EfficientVit b2.
+        6: EfficientViTB2Predictor, # EfficientVit b2.
+        7: HRNetW32Predictor        # HRNet-W32.
     }
 
     # Validate Selection.
