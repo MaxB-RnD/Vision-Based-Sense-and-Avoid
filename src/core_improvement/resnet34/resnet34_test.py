@@ -53,7 +53,7 @@ from src.baselines.winning_solution.evaluator.airborne_detection import Airborne
 #                           CONFIGURATION VARIABLES
 # ------------------------------------------------------------------------------
 # Path to the Fine-Tuned Model Checkpoint Directory.
-MODEL_PATH = os.getenv("MODEL_PATH", "configs/models/core_improvement/resnet34/resnet34.pt")
+MODEL_PATH = os.getenv("MODEL_PATH", "configs/models/core_improvement/resnet34/resnet34_500.pt")
 
 # Minimum Number of Frames a Track Must Span Before Being Committed to Results.
 MIN_TRACK_LEN = int(os.getenv("MIN_TRACK_LEN", 30))
