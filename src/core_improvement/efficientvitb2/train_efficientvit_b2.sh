@@ -13,7 +13,7 @@
 # Trains the EfficientViT-B2 model backbone for the winning solution.
 #
 # USAGE:
-#   1. Run: chmod +x src/core_improvement/efficientvit_b2/train_efficientvit_b2.sh
+#   1. Run: chmod +x src/core_improvement/efficientvitb2/train_efficientvit_b2.sh
 #   2. nohup src/core_improvement/efficientvitb2/train_efficientvit_b2.sh > outputs/logs/model_training/train_EfficientViT_B2.log 2>&1 &
 #   3. Then monitor from terminal with:
 #            tail -f logs/train_EfficientViT_B2.log OR watch W&B directly.
