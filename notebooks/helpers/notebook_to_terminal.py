@@ -86,8 +86,8 @@ def main() -> None:
     # 4 -> EfficientVit-M2 (Medium-Weight Detection Backbone).
     # 5 -> ResNet34 (Medium-Weight Detection Backbone).
     # 6 -> EfficientVit-B2 (Heavy-Weight Detection Backbone).
-    # 6 -> HRNet-W32 (Heavy-Weight Detection Backbone).
-    SELECTED_MODEL = 7
+    # 7 -> HRNet-W32 (Heavy-Weight Detection Backbone).
+    SELECTED_MODEL = 5
     model_list = ["winning_solution","transformer_detector","drone_detector","mobilenetv4", "efficientvitm2", "resnet34", "efficientvitb2", "hrnetw32"]
 
     # Evaluation Filtering.
