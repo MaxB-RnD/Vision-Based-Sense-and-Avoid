@@ -131,6 +131,11 @@ class SegPredictor(AirbornePredictor):
                 "label"       : "HRNet48 (model_seg3)",
             },
             {
+                "model"       : self.detector.model_dla,
+                "input_shape" : (1, 2, 2048, 2432),
+                "label"       : "DLA60-Res2Next (model_dla)",
+            },
+            {
                 "model"       : self.detector.model_transform,
                 "input_shape"    : None,
                 "input_override" : (
