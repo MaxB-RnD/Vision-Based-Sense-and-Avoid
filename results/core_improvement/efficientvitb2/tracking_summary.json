@@ -1,0 +1,75 @@
+{
+    "gt_encounters": "outputs/results/baselines/efficientvitb2/run2/gt/groundtruth_with_encounters_maxRange700_maxGap3_minEncLen30.csv",
+    "gt_det_matches": "outputs/results/baselines/efficientvitb2/run2/result/result_metrics_min_track_len_30/gt_det_matches_extended_iou_minObjArea_100_matchThresh_0_2_noMatchThresh_0_02.csv",
+    "target_metrics": null,
+    "target_value": null,
+    "min_det_score": 0.6005398035049438,
+    "fppi": 0.0369546229671838,
+    "far": 4.230769230769231,
+    "num_planned_intruders": 36755,
+    "num_non_planned_intruders": 24125,
+    "num_non_planned_aircraft": 11404,
+    "max_range": 699.9811862165178,
+    "tot_aircraft_in_range": 36755,
+    "det_aircraft_in_range": 21538,
+    "fl_dr_in_range": 0.5859883009114406,
+    "thresh_area": 200.0,
+    "tot_aircraft_above_area": 21767,
+    "det_aircraft_above_area": 40975,
+    "fl_dr_above_area": 0.5312263575350824,
+    "tot_aircraft_below_area": 100,
+    "det_aircraft_below_area": 7184,
+    "fl_dr_below_area": 0.013919821826280624,
+    "Detection": {
+        "Encounters": {
+            "300": {
+                "Below Horizon": {
+                    "detected": 15,
+                    "total": 116,
+                    "dr": 0.12931034482758622
+                },
+                "Mixed": {
+                    "detected": 7,
+                    "total": 29,
+                    "dr": 0.2413793103448276
+                },
+                "Above Horizon": {
+                    "detected": 12,
+                    "total": 63,
+                    "dr": 0.19047619047619047
+                },
+                "All": {
+                    "detected": 34,
+                    "total": 208,
+                    "dr": 0.16346153846153846
+                }
+            }
+        }
+    },
+    "Tracking": {
+        "Encounters": {
+            "300": {
+                "Below Horizon": {
+                    "detected": 15,
+                    "total": 116,
+                    "dr": 0.12931034482758622
+                },
+                "Mixed": {
+                    "detected": 7,
+                    "total": 29,
+                    "dr": 0.2413793103448276
+                },
+                "Above Horizon": {
+                    "detected": 12,
+                    "total": 63,
+                    "dr": 0.19047619047619047
+                },
+                "All": {
+                    "detected": 34,
+                    "total": 208,
+                    "dr": 0.16346153846153846
+                }
+            }
+        }
+    }
+}
