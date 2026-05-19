@@ -4,7 +4,7 @@
 # File:                    %name: resnet34_test.py %
 # Date Created:            %date_created: Tue May 12 12:58:32 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 1 %
+# CM Instance              %instance: 2 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -18,6 +18,23 @@
 # USAGE INSTRUCTIONS:
 #   1. Run the Script from the Project Root:
 #       - python -m src.core_improvement.resnet34.resnet34_test
+#
+#   2. Optional Environment Variables:
+#       - DEBUG_MODEL_INIT=1
+#           Enables verbose/debug logging during model initialisation.
+#
+#       - MODEL_PATH=/path/to/checkpoint.pt
+#           Overrides the default segmentation model checkpoint path.
+#
+#       - MIN_TRACK_LEN=30
+#           Minimum track length before detections are committed to results.
+#
+#       - MIN_SCORE=0.6
+#           Minimum confidence score required for final output detections.
+#
+#       - DETECTION_THRESHOLD=0.6
+#           Detection threshold passed directly to the segmentation model.
+#           Should generally be <= MIN_SCORE.
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
@@ -41,9 +58,12 @@ import time
 import torch
 import numpy as np
 
+import logging
+import warnings
+
 from tqdm import tqdm
 from typing import List, Dict, Any
-from logging_module import LogLevel, log
+from logging_module import LogLevel, log, set_level
 
 sys.path.insert(0, os.path.dirname(__file__))
 from notebooks.helpers.notebook_helpers import record_fps_stats
@@ -100,9 +120,26 @@ class ResNet34Predictor(AirbornePredictor):
             tracking,
         )
 
+        # Suppress torch.compile / inductor verbosity:
+        #   - TypedStorage deprecation warning from select_algorithm.py.
+        #   - AUTOTUNE addmm benchmarking tables.
+        #   - Autotune Choices Stats JSON lines.
+        logging.getLogger("torch._inductor").setLevel(logging.ERROR)
+        logging.getLogger("torch._inductor.select_algorithm").setLevel(logging.ERROR)
+        logging.getLogger("torch._dynamo").setLevel(logging.ERROR)
+        warnings.filterwarnings(
+            "ignore",
+            message="TypedStorage is deprecated",
+            category=UserWarning,
+        )
+
+        # Check if the Code Has Been Called in Debug Mode.
+        if os.getenv("DEBUG_MODEL_INIT"):
+            set_level(log_level=LogLevel.DEBUG)
+
         # Set the Device to GPU if Available.
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        log(LogLevel.INFO, "resnet34:inference_setup", "Device: %s", self.device)
+        log(LogLevel.DEBUG, "resnet34:inference_setup", "Device: %s", self.device)
 
         # Configuration Dictionary for the ResNet34 Segmentation Model.
         seg_cfg = {
@@ -146,16 +183,22 @@ class ResNet34Predictor(AirbornePredictor):
         # Set Model to Evaluation Mode.
         self.model_seg.eval()
 
+        # Keep a Raw Model Reference for FLOPs Measurement. Avoids the Dynamo Object Conflict.
+        self._model_seg_raw = self.model_seg
+
+        # Compile for Faster Repeated Inference.
+        self.model_seg = torch.compile(self.model_seg, mode="max-autotune")
+
         # Directory Containing Transformation Model Weights.
         models_dir = "configs/models/baselines/winning_solution"
 
         # Create Transform Estimation Model.
-        self.model_transform = models_transformation.TrEstimatorTsm(
+        self._model_transform_raw = models_transformation.TrEstimatorTsmCached(
             cfg=dict(base_model_name="resnet34", weight_scale=3), pretrained=False
         )
 
         # Load Pretrained Transformation Model Weights.
-        self.model_transform.load_state_dict(
+        self._model_transform_raw.load_state_dict(
             torch.load(
                 f"{models_dir}/030_tr_tsn_rn34_w3_crop_borders_255_0.pth",
                 map_location=self.device, weights_only=False
@@ -163,10 +206,13 @@ class ResNet34Predictor(AirbornePredictor):
         )
 
         # Move Transform Model to Inference Device.
-        self.model_transform = self.model_transform.to(self.device)
+        self._model_transform_raw = self._model_transform_raw.to(self.device)
 
         # Set Transform Model to Evaluation Mode.
-        self.model_transform.eval()
+        self._model_transform_raw.eval()
+
+        # TrEstimatorTsmCached Compiles _encode_impl & _run_head_impl Internally.
+        self.model_transform = self._model_transform_raw
         log(LogLevel.INFO, "resnet34:inference_setup", "Transform Model Loaded.")
 
         # Tracker Used to Maintain Object Identities Between Frames.
@@ -203,12 +249,12 @@ class ResNet34Predictor(AirbornePredictor):
         """
         return [
             {
-                "model"       : self.model_seg,
+                "model"       : self._model_seg_raw,
                 "input_shape" : (1, 2, 2048, 2432),
                 "label"       : "ResNet34 (segmentation)",
             },
             {
-                "model"       : self.model_transform,
+                "model"          : self._model_transform_raw.flops_model,
                 "input_shape"    : None,
                 "input_override" : (
                     torch.zeros(1, 1024, 1024),  # prev_frame.
@@ -263,7 +309,9 @@ class ResNet34Predictor(AirbornePredictor):
         padding = (16 + 32 + 64) // 2   # = 56
 
         # Allocate Input Tensor.
-        X = np.zeros((1, 2, h, w + padding * 2), dtype=np.uint8)
+        if not hasattr(self, "_input_buffer"):
+            self._input_buffer = np.zeros((1, 2, h, w + padding * 2), dtype=np.uint8)
+        X = self._input_buffer
 
         # Warp the Previous Frame into Alignment with the Current Frame.
         prev_aligned = cv2.warpAffine(prev_gray, prev_tr[:2, :], dsize=(w, h),
@@ -276,7 +324,7 @@ class ResNet34Predictor(AirbornePredictor):
         X[0, 1, :, padding:-padding] = frame_gray
 
         # Convert Input Array into Normalised PyTorch Tensor.
-        X_t = torch.from_numpy(X).float().to(self.device) / 255.0
+        X_t = torch.from_numpy(X).float().to(self.device, dtype=torch.float16).mul_(1.0 / 255.0)
 
         # Disable Gradients During Inference for Efficiency.
         with torch.no_grad():
@@ -284,13 +332,17 @@ class ResNet34Predictor(AirbornePredictor):
                 # Run Segmentation Model Forward Pass.
                 pred = self.model_seg(X_t)
 
+        # Pull All Outputs in One Shot (Avoids 5 PCIe Round-Trips).
+        out_keys = ["mask", "offset", "size", "tracking", "distance", "above_horizon"]
+        cpu_preds = {k: pred[k][0].cpu() for k in out_keys}
+
         # Extract Model Outputs.
-        mask = torch.sigmoid(pred["mask"][0, 0].float()).cpu().numpy()
-        offset = pred["offset"][0].float().cpu().numpy()
-        size = pred["size"][0].float().cpu().numpy()
-        tracking_out = pred["tracking"][0].float().cpu().numpy()
-        distance = pred["distance"][0, 0].float().cpu().numpy()
-        above_horizon = pred["above_horizon"][0, 0].float().cpu().numpy()
+        mask          = torch.sigmoid(cpu_preds["mask"][0].float()).numpy()
+        offset        = cpu_preds["offset"].float().numpy()
+        size          = cpu_preds["size"].float().numpy()
+        tracking_out  = cpu_preds["tracking"].float().numpy()
+        distance      = cpu_preds["distance"][0].float().numpy()
+        above_horizon = cpu_preds["above_horizon"][0].float().numpy()
 
         # Remove Border Artefacts.
         border_x = padding // 8 + 4
@@ -304,30 +356,30 @@ class ResNet34Predictor(AirbornePredictor):
 
         # Convert Heatmaps into Detection Candidates.
         detected = self._seg_prediction_to_items.pred_to_items(
-            comb_pred   = mask,
-            offset = offset,
-            size = size,
-            tracking = tracking_out,
-            distance = distance,
-            above_horizon  = above_horizon,
+            comb_pred     = mask,
+            offset        = offset,
+            size          = size,
+            tracking      = tracking_out,
+            distance      = distance,
+            above_horizon = above_horizon,
             conf_threshold = DETECTION_THRESHOLD,
-            pred_scale = 8,
-            x_offset = -padding,
+            pred_scale    = 8,
+            x_offset      = -padding,
         )
 
         # Multi-Frame Object Tracking.
         detected_items = [
             self._DetectedItem(
-                cx = it["cx"] + it["offset"][0],
-                cy = it["cy"] + it["offset"][1],
-                w = it["w"],
-                h = it["h"],
-                distance = it["distance"],
+                cx         = it["cx"] + it["offset"][0],
+                cy         = it["cy"] + it["offset"][1],
+                w          = it["w"],
+                h          = it["h"],
+                distance   = it["distance"],
                 confidence = it["conf"],
-                track_id = -1,
-                dx = it["tracking"][0],
-                dy = it["tracking"][1],
-                item_id = "",
+                track_id   = -1,
+                dx         = it["tracking"][0],
+                dy         = it["tracking"][1],
+                item_id    = "",
             )
 
             # Only Keep Sufficiently Confident Detections.
@@ -376,15 +428,13 @@ class ResNet34Predictor(AirbornePredictor):
                 previous frame into the current frame coordinate system.
         """
         # Define the Fixed Crop Size Used for Motion Estimation.
-        crop_w, crop_h = 2048, 1280
+        crop_w, crop_h = 1024, 1024
 
         # Get Image Dimensions.
         h, w = img.shape
 
-        # Fixed Vertical Crop Start.
-        y0 = 512
-
-        # Centre the Crop Horizontally.
+        # Centre the Crop Vertically and Horizontally.
+        y0 = (h - crop_h) // 2
         x0 = (w - crop_w) // 2
 
         # Number of Tracking Points in the Model Output Grid.
@@ -392,7 +442,7 @@ class ResNet34Predictor(AirbornePredictor):
         ch_pts = crop_h // 32
 
         # Extract Matching Crops from the Current & Previous Frames.
-        crop      = img[y0:y0+crop_h, x0:x0+crop_w]
+        crop = img[y0:y0+crop_h,      x0:x0+crop_w]
         crop_prev = prev_img[y0:y0+crop_h, x0:x0+crop_w]
 
         # Convert Cropped Images into PyTorch Tensors & Normalise to [0, 1].
@@ -456,6 +506,10 @@ class ResNet34Predictor(AirbornePredictor):
         if hasattr(self, "_offset_tracker"):
             self._offset_tracker.prev_frames_items = [[]]
             self._offset_tracker.track_ids_in_use  = set()
+
+        # Reset the Transform Model's Feature Cache.
+        if hasattr(self, "_model_transform_raw"):
+            self._model_transform_raw.reset_cache()
 
 
     def get_all_frame_images(self, flight_id: str) -> List[str]:
@@ -586,10 +640,10 @@ class ResNet34Predictor(AirbornePredictor):
             for det in detections:
                 self._proxy_register(
                     class_name = det.get("class_name", "airborne"),
-                    track_id = int(det["track_id"]),
-                    bbox = det["bbox"],
+                    track_id   = int(det["track_id"]),
+                    bbox       = det["bbox"],
                     confidence = float(det["confidence"]),
-                    img_name = frame_name
+                    img_name   = frame_name
                 )
 
 
