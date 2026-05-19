@@ -87,8 +87,13 @@ def main() -> None:
     # 5 -> ResNet34 (Medium-Weight Detection Backbone).
     # 6 -> EfficientVit-B2 (Heavy-Weight Detection Backbone).
     # 7 -> HRNet-W32 (Heavy-Weight Detection Backbone).
-    SELECTED_MODEL = 5
     model_list = ["winning_solution","transformer_detector","drone_detector","mobilenetv4", "efficientvitm2", "resnet34", "efficientvitb2", "hrnetw32"]
+
+    # Allow Model Selection from Command Line.
+    if len(sys.argv) > 1:
+        SELECTED_MODEL = int(sys.argv[1])
+    else:
+        SELECTED_MODEL = 0
 
     # Evaluation Filtering.
     MIN_SCORE = 0.60
@@ -100,7 +105,7 @@ def main() -> None:
     DATASET_PARTS = ["part1", "part2", "part3"]
 
     # Set Results Variables (Auto-Incrementing Run Directory).
-    RESULTS_DIR = "outputs/results/baselines/" + model_list[SELECTED_MODEL]
+    RESULTS_DIR = "outputs/results/core_improvement/" + model_list[SELECTED_MODEL]
     run_name = get_next_run_dir(RESULTS_DIR)
 
     # Evaluation Output Folders.
