@@ -4,7 +4,7 @@
 # File:                    %name: efficientvit_m2_test.py %
 # Date Created:            %date_created: Sun May 10 15:57:45 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 1 %
+# CM Instance              %instance: 2 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -20,18 +20,35 @@
 #   1. Run the Script from the Project Root:
 #       - python -m src.core_improvement.efficientvitm2.efficientvit_m2_test
 #
+#   2. Optional Environment Variables:
+#       - DEBUG_MODEL_INIT=1
+#           Enables verbose/debug logging during model initialisation.
+#
+#       - MODEL_PATH=/path/to/checkpoint.pt
+#           Overrides the default segmentation model checkpoint path.
+#
+#       - MIN_TRACK_LEN=30
+#           Minimum track length before detections are committed to results.
+#
+#       - MIN_SCORE=0.6
+#           Minimum confidence score required for final output detections.
+#
+#       - DETECTION_THRESHOLD=0.6
+#           Detection threshold passed directly to the segmentation model.
+#           Should generally be <= MIN_SCORE.
+#
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
 # ------------------------------------------------------------------------------
-# This software and its contents are the intellectual property of Lockheed 
+# This software and its contents are the intellectual property of Lockheed
 # Martin Australia and are protected under applicable copyright and intellectual
 # property laws.
 #
-# All rights reserved. No part of this software may be reproduced, distributed, 
+# All rights reserved. No part of this software may be reproduced, distributed,
 # modified, or transmitted in any form or by any means without the prior written
 # permission of Lockheed Martin Australia.
 #
-# Unauthorised use, copying, or distribution of this software is strictly 
+# Unauthorised use, copying, or distribution of this software is strictly
 # prohibited.
 # ------------------------------------------------------------------------------
 
@@ -42,9 +59,12 @@ import time
 import torch
 import numpy as np
 
+import logging
+import warnings
+
 from tqdm import tqdm
 from typing import List, Dict, Any
-from logging_module import LogLevel, log
+from logging_module import LogLevel, log, set_level
 
 sys.path.insert(0, os.path.dirname(__file__))
 from notebooks.helpers.notebook_helpers import record_fps_stats
@@ -101,9 +121,26 @@ class EfficientViTM2Predictor(AirbornePredictor):
             tracking,
         )
 
-        # Set the Device to GPU if Available. 
+        # Suppress torch.compile / inductor verbosity:
+        #   - TypedStorage deprecation warning from select_algorithm.py.
+        #   - AUTOTUNE addmm benchmarking tables.
+        #   - Autotune Choices Stats JSON lines.
+        logging.getLogger("torch._inductor").setLevel(logging.ERROR)
+        logging.getLogger("torch._inductor.select_algorithm").setLevel(logging.ERROR)
+        logging.getLogger("torch._dynamo").setLevel(logging.ERROR)
+        warnings.filterwarnings(
+            "ignore",
+            message="TypedStorage is deprecated",
+            category=UserWarning,
+        )
+
+        # Check if the Code Has Been Called in Debug Mode.
+        if os.getenv("DEBUG_MODEL_INIT"):
+            set_level(log_level=LogLevel.DEBUG)
+
+        # Set the Device to GPU if Available.
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        log(LogLevel.INFO, "efficientvit_m2:inference_setup", "Device: %s", self.device)
+        log(LogLevel.DEBUG, "efficientvit_m2:inference_setup", "Device: %s", self.device)
 
         # Configuration Dictionary for the EfficientViT-M2 Segmentation Model.
         seg_cfg = {
@@ -126,8 +163,8 @@ class EfficientViTM2Predictor(AirbornePredictor):
             # Load Checkpoint Onto the Selected Device.
             ckpt  = torch.load(MODEL_PATH, map_location=self.device,
                                weights_only=False)
-            
-            # Extract State Dictionary.         
+
+            # Extract State Dictionary.
             state = ckpt.get("model_state_dict", ckpt)
             state = {k.replace("_orig_mod.", ""): v for k, v in state.items()}
 
@@ -135,7 +172,7 @@ class EfficientViTM2Predictor(AirbornePredictor):
             self.model_seg.load_state_dict(state)
             log(LogLevel.INFO, "efficientvit_m2:inference_setup",
                 "Segmentation Weights Loaded: %s", MODEL_PATH)
-        
+
         else:
             # Warn if Checkpoint is Missing. Model Will Run with Random/Untrained Weights.
             log(LogLevel.WARNING, "efficientvit_m2:inference_setup",
@@ -147,16 +184,19 @@ class EfficientViTM2Predictor(AirbornePredictor):
         # Set Model to Evaluation Mode.
         self.model_seg.eval()
 
+        # Keep a Raw Model Reference for FLOPs Measurement. Avoids the Dynamo Object Conflict.
+        self._model_seg_raw = self.model_seg
+
         # Directory Containing Transformation Model Weights.
         models_dir = "configs/models/baselines/winning_solution"
 
         # Create Transform Estimation Model.
-        self.model_transform = models_transformation.TrEstimatorTsm(
+        self._model_transform_raw = models_transformation.TrEstimatorTsmCached(
             cfg=dict(base_model_name="resnet34", weight_scale=3), pretrained=False
         )
 
         # Load Pretrained Transformation Model Weights.
-        self.model_transform.load_state_dict(
+        self._model_transform_raw.load_state_dict(
             torch.load(
                 f"{models_dir}/030_tr_tsn_rn34_w3_crop_borders_255_0.pth",
                 map_location=self.device, weights_only=False
@@ -164,10 +204,13 @@ class EfficientViTM2Predictor(AirbornePredictor):
         )
 
         # Move Transform Model to Inference Device.
-        self.model_transform = self.model_transform.to(self.device)
+        self._model_transform_raw = self._model_transform_raw.to(self.device)
 
         # Set Transform Model to Evaluation Mode.
-        self.model_transform.eval()
+        self._model_transform_raw.eval()
+
+        # Prevent Adding Cache Branch into Compiled Graph & Breaking CUDA Graph Capture.
+        self.model_transform = self._model_transform_raw
         log(LogLevel.INFO, "efficientvit_m2:inference_setup", "Transform Model Loaded.")
 
         # Tracker Used to Maintain Object Identities Between Frames.
@@ -188,14 +231,14 @@ class EfficientViTM2Predictor(AirbornePredictor):
         self._seg_prediction_to_items  = seg_prediction_to_items
         self._tracking                 = tracking
         self._DetectedItem             = DetectedItem
-    
+
 
     def get_complexity_targets(self) -> List[dict]:
         """
-        Declares the models and input shapes to be measured by 
-        measure_predictor_complexity() in notebook_helpers.py. Returns one 
+        Declares the models and input shapes to be measured by
+        measure_predictor_complexity() in notebook_helpers.py. Returns one
         entry per model.
- 
+
         Returns:
             List[dict]: Each entry has keys:
                 model        : torch.nn.Module to profile.
@@ -204,12 +247,12 @@ class EfficientViTM2Predictor(AirbornePredictor):
         """
         return [
             {
-                "model"       : self.model_seg,
+                "model"       : self._model_seg_raw,
                 "input_shape" : (1, 2, 512, 512),
                 "label"       : "EfficientViT-M2 (segmentation)",
             },
             {
-                "model"       : self.model_transform,
+                "model"          : self._model_transform_raw.flops_model,
                 "input_shape"    : None,
                 "input_override" : (
                     torch.zeros(1, 1024, 1024),  # prev_frame.
@@ -222,9 +265,9 @@ class EfficientViTM2Predictor(AirbornePredictor):
 
     def run_model_on_frame(
         self,
-        frame     : Any,       
-        prev_frame: Any,       
-        frame_name: str,       
+        frame     : Any,
+        prev_frame: Any,
+        frame_name: str,
         flight_id : str
     ) -> List[Dict]:
         """
@@ -240,7 +283,7 @@ class EfficientViTM2Predictor(AirbornePredictor):
             List[Dict]: A list of detections, where each detection contains:
                 - track_id: Unique identifier for the object.
                 - bbox: Bounding box coordinates.
-                - confidence: Detection confidence score (0–1).
+                - confidence: Detection confidence score (0-1).
                 - class_name: Label of the detected object.
         """
         # Cannot Estimate Motion or Perform Temporal Inference Without a Previous Frame.
@@ -264,12 +307,14 @@ class EfficientViTM2Predictor(AirbornePredictor):
         padding = (16 + 32 + 64) // 2   # = 56
 
         # Allocate Input Tensor.
-        X = np.zeros((1, 2, h, w + padding * 2), dtype=np.uint8)
+        if not hasattr(self, "_input_buffer"):
+            self._input_buffer = np.zeros((1, 2, h, w + padding * 2), dtype=np.uint8)
+        X = self._input_buffer
 
         # Warp the Previous Frame into Alignment with the Current Frame.
         prev_aligned = cv2.warpAffine(prev_gray, prev_tr[:2, :], dsize=(w, h),
                                        flags=cv2.INTER_LINEAR)
-        
+
         # Insert Aligned Previous Frame into Model Input.
         X[0, 0, :, padding:-padding] = prev_aligned
 
@@ -277,21 +322,25 @@ class EfficientViTM2Predictor(AirbornePredictor):
         X[0, 1, :, padding:-padding] = frame_gray
 
         # Convert Input Array into Normalised PyTorch Tensor.
-        X_t = torch.from_numpy(X).float().to(self.device) / 255.0
-        
+        X_t = torch.from_numpy(X).float().to(self.device, dtype=torch.float16).mul_(1.0 / 255.0)
+
         # Disable Gradients During Inference for Efficiency.
         with torch.no_grad():
             with torch.amp.autocast(self.device.type):
-                # Patch-Based Inference Size Expected by the Segmentation Model.
+                # Run Segmentation Model Forward Pass.
                 pred = self.model_seg(X_t)
-        
+
+        # Pull All Outputs in One Shot (Avoids 5 PCIe Round-Trips).
+        out_keys = ["mask", "offset", "size", "tracking", "distance", "above_horizon"]
+        cpu_preds = {k: pred[k][0].cpu() for k in out_keys}
+
         # Extract Model Outputs.
-        mask = torch.sigmoid(pred["mask"][0, 0].float()).cpu().numpy()
-        offset = pred["offset"][0].float().cpu().numpy()
-        size = pred["size"][0].float().cpu().numpy()
-        tracking_out = pred["tracking"][0].float().cpu().numpy()
-        distance = pred["distance"][0, 0].float().cpu().numpy()
-        above_horizon= pred["above_horizon"][0, 0].float().cpu().numpy()
+        mask          = torch.sigmoid(cpu_preds["mask"][0].float()).numpy()
+        offset        = cpu_preds["offset"].float().numpy()
+        size          = cpu_preds["size"].float().numpy()
+        tracking_out  = cpu_preds["tracking"].float().numpy()
+        distance      = cpu_preds["distance"][0].float().numpy()
+        above_horizon = cpu_preds["above_horizon"][0].float().numpy()
 
         # Remove Border Artefacts.
         border_x = padding // 8 + 4
@@ -305,30 +354,30 @@ class EfficientViTM2Predictor(AirbornePredictor):
 
         # Convert Heatmaps into Detection Candidates.
         detected = self._seg_prediction_to_items.pred_to_items(
-            comb_pred = mask,
-            offset = offset,
-            size = size,
-            tracking = tracking_out,
-            distance = distance,
-            above_horizon  = above_horizon,
+            comb_pred     = mask,
+            offset        = offset,
+            size          = size,
+            tracking      = tracking_out,
+            distance      = distance,
+            above_horizon = above_horizon,
             conf_threshold = DETECTION_THRESHOLD,
-            pred_scale = 8,
-            x_offset = -padding,
+            pred_scale    = 8,
+            x_offset      = -padding,
         )
 
         # Multi-Frame Object Tracking.
         detected_items = [
             self._DetectedItem(
-                cx = it["cx"] + it["offset"][0],
-                cy = it["cy"] + it["offset"][1],
-                w = it["w"],
-                h = it["h"],
-                distance = it["distance"],
+                cx         = it["cx"] + it["offset"][0],
+                cy         = it["cy"] + it["offset"][1],
+                w          = it["w"],
+                h          = it["h"],
+                distance   = it["distance"],
                 confidence = it["conf"],
-                track_id = -1,
-                dx = it["tracking"][0],
-                dy = it["tracking"][1],
-                item_id = "",
+                track_id   = -1,
+                dx         = it["tracking"][0],
+                dy         = it["tracking"][1],
+                item_id    = "",
             )
 
             # Only Keep Sufficiently Confident Detections.
@@ -361,14 +410,14 @@ class EfficientViTM2Predictor(AirbornePredictor):
 
     def _estimate_transform(self, prev_img: np.ndarray,
                              img: np.ndarray) -> np.ndarray:
-        """    
+        """
         Estimate the affine transform between two consecutive frames using
         the ResNet34-TSM motion estimation model.
 
         Args:
-            prev_img (np.ndarray): 
+            prev_img (np.ndarray):
                 Previous grayscale image/frame as a 2D NumPy array.
-            img (np.ndarray): 
+            img (np.ndarray):
                 Current grayscale image/frame as a 2D NumPy array.
 
         Returns:
@@ -377,27 +426,25 @@ class EfficientViTM2Predictor(AirbornePredictor):
                 previous frame into the current frame coordinate system.
         """
         # Define the Fixed Crop Size Used for Motion Estimation.
-        crop_w, crop_h = 2048, 1280
-    
+        crop_w, crop_h = 1024, 1024
+
         # Get Image Dimensions.
         h, w = img.shape
-    
-        # Fixed Vertical Crop Start.
-        y0 = 512
-    
-        # Centre the Crop Horizontally.
+
+        # Centre the Crop Vertically and Horizontally.
+        y0 = (h - crop_h) // 2
         x0 = (w - crop_w) // 2
-    
+
         # Number of Tracking Points in the Model Output Grid.
         cw_pts = crop_w // 32
         ch_pts = crop_h // 32
 
         # Extract Matching Crops from the Current & Previous Frames.
-        crop = img[y0:y0+crop_h,      x0:x0+crop_w]
+        crop      = img[y0:y0+crop_h,      x0:x0+crop_w]
         crop_prev = prev_img[y0:y0+crop_h, x0:x0+crop_w]
 
         # Convert Cropped Images into PyTorch Tensors & Normalise to [0, 1].
-        t_cur = torch.from_numpy(crop / 255.0).float().to(self.device)
+        t_cur  = torch.from_numpy(crop      / 255.0).float().to(self.device)
         t_prev = torch.from_numpy(crop_prev / 255.0).float().to(self.device)
 
         # Run Inference Without Gradient Tracking for Efficiency.
@@ -405,7 +452,7 @@ class EfficientViTM2Predictor(AirbornePredictor):
             # Enable Automatic Mixed Precision for Faster Inference on GPU.
             with torch.amp.autocast(self.device.type):
                 heatmap, offsets = self.model_transform(t_prev[None], t_cur[None])
-        
+
         # Move Model Outputs Back to CPU NumPy Arrays.
         heatmap = heatmap.detach().float().cpu().numpy()
         offsets = offsets.detach().float().cpu().numpy()
@@ -458,6 +505,12 @@ class EfficientViTM2Predictor(AirbornePredictor):
             self._offset_tracker.prev_frames_items = [[]]
             self._offset_tracker.track_ids_in_use  = set()
 
+        # Reset the Transform Model's Feature Cache.
+        # Without this, the First Frame of a New Flight Would Use Stale Backbone
+        # Features from the Last Frame of the Previous Flight.
+        if hasattr(self, "_model_transform_raw"):
+            self._model_transform_raw.reset_cache()
+
 
     def get_all_frame_images(self, flight_id: str) -> List[str]:
         """
@@ -472,7 +525,7 @@ class EfficientViTM2Predictor(AirbornePredictor):
         Returns:
             List[str]: Sorted list of image filenames within the flight folder.
         """
-        # Import Extra Libraries for this Function. 
+        # Import Extra Libraries for this Function.
         from os import listdir
         from os.path import isfile, join
 
@@ -535,7 +588,7 @@ class EfficientViTM2Predictor(AirbornePredictor):
             )
         self.visited_frame[img_name].append(track_id)
 
-        # Commit the Detection to the Results. 
+        # Commit the Detection to the Results.
         self.register_object_and_location(class_name, track_id, bbox, confidence, img_name)
 
 
@@ -545,9 +598,9 @@ class EfficientViTM2Predictor(AirbornePredictor):
         frames in a single flight.
 
         Iterates frames in order then calls the tracker and registers qualifying
-        detections. Called automatically by AirbornePredictor.evaluation() for 
+        detections. Called automatically by AirbornePredictor.evaluation() for
         each flight.
-        
+
         Do not call manually.
 
         Args:
@@ -567,7 +620,7 @@ class EfficientViTM2Predictor(AirbornePredictor):
 
             # Skip Empty Frames.
             if frame is None:
-                log(LogLevel.WARNING, "format_output:inference", 
+                log(LogLevel.WARNING, "format_output:inference",
                      "Could Not Read Frame '%s', Skipping.", frame_path)
                 prev_frame = frame
                 continue
@@ -580,17 +633,17 @@ class EfficientViTM2Predictor(AirbornePredictor):
                 flight_id=flight_id
             )
 
-            # Update the Frames. 
+            # Update the Frames.
             prev_frame = frame
 
             # Register Each Detection through the Filter/Format Layer.
             for det in detections:
                 self._proxy_register(
                     class_name = det.get("class_name", "airborne"),
-                    track_id = int(det["track_id"]),
-                    bbox = det["bbox"],
+                    track_id   = int(det["track_id"]),
+                    bbox       = det["bbox"],
                     confidence = float(det["confidence"]),
-                    img_name = frame_name
+                    img_name   = frame_name
                 )
 
 
