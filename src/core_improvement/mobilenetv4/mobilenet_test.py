@@ -211,7 +211,7 @@ class MobileNetV4Predictor(AirbornePredictor):
         # Set Transform Model to Evaluation Mode.
         self._model_transform_raw.eval()
 
-        # Set Transform Model to Evaluation Mode.
+        # Prevent Adding Cache Branch into Compiled Graph & Breaking CUDA Graph Capture.
         self.model_transform = self._model_transform_raw
         log(LogLevel.INFO, "mobilenetv4:inference_setup", "Transform Model Loaded.")
 
