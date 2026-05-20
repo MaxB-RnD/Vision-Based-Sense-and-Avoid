@@ -80,7 +80,7 @@ for i in "${!MODEL_NAMES[@]}"; do
 
     # Collect Model Name & Make Log File. 
     MODEL_NAME="${MODEL_NAMES[$i]}"
-    LOG_FILE="$LOG_DIR/${MODEL_NAME}_evaluator.log"
+    LOG_FILE="$LOG_DIR/${MODEL_NAME}_evaluation.log"
 
     echo "============================================================"
     echo "[runner] Starting: $MODEL_NAME"
