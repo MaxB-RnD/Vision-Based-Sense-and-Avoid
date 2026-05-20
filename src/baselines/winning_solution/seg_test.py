@@ -23,6 +23,16 @@
 #   1. Run the Script from Project Root:
 #       - python -m src.baselines.winning_solution.seg_test
 #
+#   2. Optional Environment Variables:
+#       - DEBUG_MODEL_INIT=1
+#           Enables verbose/debug logging during model initialisation.
+#
+#       - MIN_TRACK_LEN=30
+#           Minimum track length before detections are committed to results.
+#
+#       - MIN_SCORE=0.6
+#           Minimum confidence score required for final output detections.
+#
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
 # ------------------------------------------------------------------------------
@@ -116,27 +126,27 @@ class SegPredictor(AirbornePredictor):
         """
         return [
             {
-                "model"       : self.detector.model_seg1,
+                "model"       : self.detector._model_seg1_raw,
                 "input_shape" : (1, 2, 2048, 2432),
                 "label"       : "HRNet32 (model_seg1)",
             },
             {
-                "model"       : self.detector.model_seg2,
+                "model"       : self.detector._model_seg2_raw,
                 "input_shape" : (1, 2, 2048, 2432),
                 "label"       : "GerNet-M BiFPN (model_seg2)",
             },
             {
-                "model"       : self.detector.model_seg3,
+                "model"       : self.detector._model_seg3_raw,
                 "input_shape" : (1, 2, 2048, 2432),
                 "label"       : "HRNet48 (model_seg3)",
             },
             {
-                "model"       : self.detector.model_dla,
+                "model"       : self.detector._model_dla_raw,
                 "input_shape" : (1, 2, 2048, 2432),
                 "label"       : "DLA60-Res2Next (model_dla)",
             },
             {
-                "model"       : self.detector.model_transform,
+                "model"       : self.detector.model_transform.flops_model,
                 "input_shape"    : None,
                 "input_override" : (
                     torch.zeros(1, 1024, 1024),  # prev_frame.

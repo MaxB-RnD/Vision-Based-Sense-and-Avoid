@@ -297,13 +297,16 @@ class EffDetSegmentation(nn.Module):
         if 'custom_backbone' in cfg:
             custom_backbone = cfg['custom_backbone']
             h.update({'backbone_name': custom_backbone})
-            print('Using custom backbone', custom_backbone)
+            if os.getenv("DEBUG_MODEL_INIT"):
+                print('Using custom backbone', custom_backbone)
 
-        print(h)
+        if os.getenv("DEBUG_MODEL_INIT"):
+            print(h)
 
         self.model = EfficientDet(h, pretrained_backbone=pretrained)
         model_outputs = h.fpn_channels
-        print(f'{base_model_name} {model_outputs}')
+        if os.getenv("DEBUG_MODEL_INIT"):
+            print(f'{base_model_name} {model_outputs}')
 
         self.fc_cls = nn.Conv2d(model_outputs, config.NB_CLASSES, kernel_size=1)
         self.fc_size = nn.Conv2d(model_outputs, 2, kernel_size=1)
@@ -367,15 +370,18 @@ class EffDetSegmentation8x(nn.Module):
         if 'custom_backbone' in cfg:
             self.custom_backbone = cfg['custom_backbone']
             h.update({'backbone_name': self.custom_backbone})
-            print('Using custom backbone', self.custom_backbone)
+            if os.getenv("DEBUG_MODEL_INIT"):
+                print('Using custom backbone', self.custom_backbone)
         else:
             self.custom_backbone = None
 
-        print(h)
+        if os.getenv("DEBUG_MODEL_INIT"):
+            print(h)
 
         self.model = EfficientDet(h, pretrained_backbone=pretrained)
         model_outputs = h.fpn_channels
-        print(f'{base_model_name} {model_outputs}')
+        if os.getenv("DEBUG_MODEL_INIT"):
+            print(f'{base_model_name} {model_outputs}')
 
         self.fc_cls = nn.Conv2d(model_outputs, config.NB_CLASSES, kernel_size=1)
         self.fc_size = nn.Conv2d(model_outputs, 2, kernel_size=1)
@@ -453,15 +459,18 @@ class EffDetSegmentation8xSeparateHeads(nn.Module):
         if 'custom_backbone' in cfg:
             self.custom_backbone = cfg['custom_backbone']
             h.update({'backbone_name': self.custom_backbone})
-            print('Using custom backbone', self.custom_backbone)
+            if os.getenv("DEBUG_MODEL_INIT"):
+                print('Using custom backbone', self.custom_backbone)
         else:
             self.custom_backbone = None
 
-        print(h)
+        if os.getenv("DEBUG_MODEL_INIT"):
+            print(h)
 
         self.model = EfficientDet(h, pretrained_backbone=pretrained)
         model_outputs = h.fpn_channels
-        print(f'{base_model_name} {model_outputs} {self.combine_outputs_dim}')
+        if os.getenv("DEBUG_MODEL_INIT"):
+            print(f'{base_model_name} {model_outputs} {self.combine_outputs_dim}')
 
         self.head_cls = HeadConv(model_outputs, self.combine_outputs_dim)
         self.head_reg = HeadConv(model_outputs, self.combine_outputs_dim)
@@ -654,13 +663,16 @@ class EffDetTsmSegmentation(nn.Module):
         if 'custom_backbone' in cfg:
             custom_backbone = cfg['custom_backbone']
             h.update({'backbone_name': custom_backbone})
-            print('Using custom backbone', custom_backbone)
+            if os.getenv("DEBUG_MODEL_INIT"):
+                print('Using custom backbone', custom_backbone)
 
-        print(h)
+        if os.getenv("DEBUG_MODEL_INIT"):
+            print(h)
 
         self.model = EfficientDet(h, pretrained_backbone=pretrained)
         model_outputs = h.fpn_channels
-        print(f'{base_model_name} {model_outputs}')
+        if os.getenv("DEBUG_MODEL_INIT"):
+            print(f'{base_model_name} {model_outputs}')
 
         duration = 1
         if 'resnet' in h['backbone_name']:
