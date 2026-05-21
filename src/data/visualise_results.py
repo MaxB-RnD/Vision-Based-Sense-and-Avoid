@@ -189,7 +189,7 @@ model_handles = [
 
 # Create Legend Entries for Highlighted Operating Regions.
 region_handles = [
-    mpatches.Patch(color='#2ca02c', alpha=0.4, label='Acceptable FPS (9-11 FPS)'),
+    mpatches.Patch(color='#2ca02c', alpha=0.4, label='Optimal FPS (9-11 FPS)'),
     mpatches.Patch(color='#d62728', alpha=0.3, label='Unacceptable FPPI (> 0.0005)'),
 ]
 
