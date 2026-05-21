@@ -1,22 +1,22 @@
 {
-    "gt_encounters": "outputs/results/baselines/hrnetw32/run1/gt/groundtruth_with_encounters_maxRange700_maxGap3_minEncLen30.csv",
-    "gt_det_matches": "outputs/results/baselines/hrnetw32/run1/result/result_metrics_min_track_len_30/gt_det_matches_extended_iou_minObjArea_100_matchThresh_0_2_noMatchThresh_0_02.csv",
+    "gt_encounters": "outputs/results/core_improvement/hrnetw32/run1/gt/groundtruth_with_encounters_maxRange700_maxGap3_minEncLen30.csv",
+    "gt_det_matches": "outputs/results/core_improvement/hrnetw32/run1/result/result_metrics_min_track_len_30/gt_det_matches_extended_iou_minObjArea_100_matchThresh_0_2_noMatchThresh_0_02.csv",
     "target_metrics": null,
     "target_value": null,
-    "min_det_score": 0.6015350222587585,
-    "fppi": 6.238822110385559e-05,
-    "far": 0.25641025641025644,
+    "min_det_score": 0.6004812717437744,
+    "fppi": 2.0796073701285196e-05,
+    "far": 0.12820512820512822,
     "num_planned_intruders": 36755,
     "num_non_planned_intruders": 24125,
     "num_non_planned_aircraft": 11404,
     "max_range": 699.9811862165178,
     "tot_aircraft_in_range": 36755,
-    "det_aircraft_in_range": 22262,
-    "fl_dr_in_range": 0.6056863011835124,
+    "det_aircraft_in_range": 22080,
+    "fl_dr_in_range": 0.6007345939327983,
     "thresh_area": 200.0,
-    "tot_aircraft_above_area": 22311,
+    "tot_aircraft_above_area": 22121,
     "det_aircraft_above_area": 40975,
-    "fl_dr_above_area": 0.5445027455765711,
+    "fl_dr_above_area": 0.5398657718120805,
     "tot_aircraft_below_area": 146,
     "det_aircraft_below_area": 7184,
     "fl_dr_below_area": 0.02032293986636971,
@@ -24,14 +24,14 @@
         "Encounters": {
             "300": {
                 "Below Horizon": {
-                    "detected": 16,
+                    "detected": 14,
                     "total": 116,
-                    "dr": 0.13793103448275862
+                    "dr": 0.1206896551724138
                 },
                 "Mixed": {
-                    "detected": 8,
+                    "detected": 7,
                     "total": 29,
-                    "dr": 0.27586206896551724
+                    "dr": 0.2413793103448276
                 },
                 "Above Horizon": {
                     "detected": 12,
@@ -39,9 +39,9 @@
                     "dr": 0.19047619047619047
                 },
                 "All": {
-                    "detected": 36,
+                    "detected": 33,
                     "total": 208,
-                    "dr": 0.17307692307692307
+                    "dr": 0.15865384615384615
                 }
             }
         }
@@ -50,14 +50,14 @@
         "Encounters": {
             "300": {
                 "Below Horizon": {
-                    "detected": 16,
+                    "detected": 14,
                     "total": 116,
-                    "dr": 0.13793103448275862
+                    "dr": 0.1206896551724138
                 },
                 "Mixed": {
-                    "detected": 8,
+                    "detected": 7,
                     "total": 29,
-                    "dr": 0.27586206896551724
+                    "dr": 0.2413793103448276
                 },
                 "Above Horizon": {
                     "detected": 12,
@@ -65,9 +65,9 @@
                     "dr": 0.19047619047619047
                 },
                 "All": {
-                    "detected": 36,
+                    "detected": 33,
                     "total": 208,
-                    "dr": 0.17307692307692307
+                    "dr": 0.15865384615384615
                 }
             }
         }
