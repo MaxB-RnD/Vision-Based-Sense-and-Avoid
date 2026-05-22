@@ -64,7 +64,7 @@ MODEL_COLOURS = {
     'EfficientViT-B2': '#2ca02c',
     'ResNet34':        '#d62728',
     'HRNet-W32':       '#9467bd',
-    'Winning Sol.':    '#8c564b',
+    '*Winning Sol.':   '#8c564b',
 }
 
 # Acceptable FPS Operating Region Used for Visual Highlighting.
