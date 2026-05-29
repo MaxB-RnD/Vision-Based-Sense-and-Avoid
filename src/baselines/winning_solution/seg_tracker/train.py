@@ -339,6 +339,7 @@ def combine_images(data: dict, input_frames: int) -> torch.Tensor:
 # ------------------------------------------------------------------------------
 def find_fp_samples(model: nn.Module,
                     dataset: dataset_tracking.TrackingDataset,
+                    num_workers: int,
                     step: int,
                     batch_size: int = 8,
                     input_frames: int = 2) -> list:
@@ -351,7 +352,7 @@ def find_fp_samples(model: nn.Module,
     sampler     = SkipNSampler(dataset, step)
 
     # DataLoader Used Only for Inference (No Shuffling, Deterministic Order).
-    data_loader = DataLoader(dataset, num_workers=cfg['train_data_loader']['num_workers'], shuffle=False,
+    data_loader = DataLoader(dataset, num_workers=num_workers, shuffle=False,
                              batch_size=batch_size, sampler=sampler)
     
     # Set Model to Evaluation Mode.
@@ -1023,6 +1024,7 @@ def train(experiment_name: str,
                 print(f"\n  Running FP Mining at Epoch {epoch_num}...")
                 fp_samples = find_fp_samples(
                     model, dataset=dataset_full,
+                    num_workers=cfg['train_data_loader']['num_workers'],
                     step=fpm_epochs[epoch_num],
                     batch_size=fpm_batch_size,
                     input_frames=model_params.input_frames

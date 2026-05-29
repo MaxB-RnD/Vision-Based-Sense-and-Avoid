@@ -99,5 +99,5 @@ val_data_loader:
 dataset_params:
   back_steps:            [1]
   scale:                 1
-  crop_with_plane_ratio: 0.50
+  crop_with_plane_ratio: 0.25
   crop_size:             [512, 512]

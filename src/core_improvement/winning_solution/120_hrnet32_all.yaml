@@ -21,7 +21,7 @@
 
 meta:
   experiment: 120_hrnet32_all
-  version: 2
+  version: 3
   author: MBusato
   model: HRNetSegmentation
   backbone: hrnet_w32
@@ -34,7 +34,7 @@ model_params:
   model_type:             HRNetSegmentation
   model_cls:              HRNetSegmentation
   base_model_name:        hrnet_w32
-  input_frames:           3
+  input_frames:           2
   feature_location:       ''
   combine_outputs_dim:    512
   combine_outputs_kernel: 1
@@ -100,5 +100,5 @@ val_data_loader:
 dataset_params:
   back_steps:            [1]
   scale:                 1
-  crop_with_plane_ratio: 0.50
+  crop_with_plane_ratio: 0.25
   crop_size:             [512, 512]

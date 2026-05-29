@@ -15,8 +15,8 @@
 # independently of the full ensemble.
 #
 # USAGE:
-#   1. Run: chmod +x src/core_improvement/hrnet_w32/train_hrnet_w32.sh
-#   2. nohup src/core_improvement/hrnet_w32/train_hrnet_w32.sh > outputs/logs/model_training/train_HRNet_W32.log 2>&1 &
+#   1. Run: chmod +x src/core_improvement/hrnetw32/train_hrnet_w32.sh
+#   2. nohup src/core_improvement/hrnetw32/train_hrnet_w32.sh > outputs/logs/model_training/train_HRNet_W32.log 2>&1 &
 #   3. Then monitor from terminal with:
 #            tail -f logs/train_HRNet_W32.log OR watch W&B directly.
 #
