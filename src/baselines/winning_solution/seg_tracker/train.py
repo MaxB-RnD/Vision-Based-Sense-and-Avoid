@@ -351,7 +351,7 @@ def find_fp_samples(model: nn.Module,
     sampler     = SkipNSampler(dataset, step)
 
     # DataLoader Used Only for Inference (No Shuffling, Deterministic Order).
-    data_loader = DataLoader(dataset, num_workers=8, shuffle=False,
+    data_loader = DataLoader(dataset, num_workers=cfg['train_data_loader']['num_workers'], shuffle=False,
                              batch_size=batch_size, sampler=sampler)
     
     # Set Model to Evaluation Mode.
@@ -752,8 +752,8 @@ def train(experiment_name: str,
     best_val_epoch = -1
     
     print()
-    log(LogLevel.INFO, "train:train", 
-    "Starting training from epoch %d to %d.", freeze_backbone_steps, grad_clip_value)
+    log(LogLevel.INFO, "train:train",
+    "Starting training from epoch %d to %d.", continue_epoch + 1, nb_epochs)
     print(f"   Backbone Freeze Steps: {freeze_backbone_steps}.")
     print(f"   Grad Clip: {grad_clip_value}.")
  
@@ -803,11 +803,9 @@ def train(experiment_name: str,
                     pred = model(images)
  
                     # Heatmap Loss: Pixel-wise Min of All-Airborne Vs Planned-Only.
-                    loss_cls_all     = mask_loss(pred['mask'], 1.0 - label_cls[:, :1])
                     loss_cls_planned = mask_loss(pred['mask'], 1.0 - label_cls_planned[:, :1])
-                    loss_cls = (torch.minimum(loss_cls_all, loss_cls_planned).mean()
-                                if epoch_num > 75 else loss_cls_all.mean())
- 
+                    loss_cls = loss_cls_planned.mean()
+
                     # Regression Losses.
                     reg_mask_4d = reg_mask[:, None, :, :]
                     mask_size   = reg_mask_4d.sum() + 0.1
@@ -827,7 +825,7 @@ def train(experiment_name: str,
                     ).sum() / (reg_distance_mask.sum() + 0.1)
  
                     reg_tracking_mask_4d = reg_tracking_mask[:, None, :, :]
-                    loss_tracking = cr_mae(
+                    loss_tracking = cr_mse(
                         pred['tracking'] * reg_tracking_mask_4d,
                         reg_tracking * reg_tracking_mask_4d
                     ).sum() / (reg_tracking_mask.sum() + 0.1)
@@ -904,10 +902,8 @@ def train(experiment_name: str,
                     with torch.amp.autocast('cuda'):
                         pred = model(images)
  
-                        loss_cls_all     = mask_loss(pred['mask'], 1.0 - label_cls[:, :1])
                         loss_cls_planned = mask_loss(pred['mask'], 1.0 - label_cls_planned[:, :1])
-                        loss_cls = (torch.minimum(loss_cls_all, loss_cls_planned).mean()
-                                    if epoch_num > 75 else loss_cls_all.mean())
+                        loss_cls = loss_cls_planned.mean()
  
                         reg_mask_4d = reg_mask[:, None, :, :]
                         mask_size   = reg_mask_4d.sum() + 0.1
