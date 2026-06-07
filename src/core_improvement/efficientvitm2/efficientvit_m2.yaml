@@ -3,7 +3,7 @@
 # ------------------------------------------------------------------------------
 # File:                    %name: efficientvit_m2.yaml %
 # Date Created:            %date_created: Sun May 10 15:53:21 2026 %
-# CM Version               %version: 1 %
+# CM Version               %version: 2 %
 # CM Instance              %instance: 1 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
@@ -26,7 +26,7 @@
 
 meta:
   experiment: efficientvit_m2
-  version: 1
+  version: 2
   author: MBusato
   model: EfficientViTSegmentation
   backbone: efficientvit_m2

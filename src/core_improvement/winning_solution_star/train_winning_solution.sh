@@ -5,14 +5,14 @@
 # File:                    %name: train_winning_solution.sh %
 # Date Created:            %date_created: Tue May 05 19:34:12 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 1 %
+# CM Instance              %instance: 2 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
 # ------------------------------------------------------------------------------
 # Trains all four models of the winning solution ensemble sequentially on a
 # single GPU. Each model is trained independently and saves to its own
-# auto-incrementing run directory under outputs/model_training/winning_solution/
+# auto-incrementing run directory under outputs/model_training/winning_solution_star/
 #
 # MODELS TRAINED (in order of increasing training time):
 #   1. HRNet32
@@ -21,10 +21,10 @@
 #   4. HRNet48
 #
 # USAGE:
-#   1. Run: chmod +x src/core_improvement/winning_solution/train_winning_solution.sh
-#   2. nohup src/core_improvement/winning_solution/train_winning_solution.sh > outputs/logs/model_training/train_winning_solution.log 2>&1 &
+#   1. Run: chmod +x src/core_improvement/winning_solution_star/train_winning_solution.sh
+#   2. nohup src/core_improvement/winning_solution_star/train_winning_solution.sh > outputs/logs/model_training/train_winning_solution_star.log 2>&1 &
 #   3. Then monitor from terminal with:
-#            tail -f logs/train_all.log OR watch W&B directly.
+#            tail -f outputs/logs/model_training/train_winning_solution_star.log OR watch W&B directly.
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
@@ -49,17 +49,17 @@ set -e
 # ------------------------------------------------------------------------------
 TRAIN_FLIGHTS="configs/datasets/training_subsets/train.txt"
 VAL_FLIGHTS="configs/datasets/training_subsets/val.txt"
-OUTPUT_DIR="outputs/results/model_training/winning_solution"
+OUTPUT_DIR="outputs/results/model_training/winning_solution_star"
 WANDB_PROJECT="Vision Based Sense & Avoid"
 SEED=42
 LOG_DIR="outputs/logs/model_training"
 
 # Experiment Config Names (Relative to configs/models/ Directory).
 EXPERIMENTS=(
-    "winning_solution/120_hrnet32_all"
-    "winning_solution/120_gernet_m_b2_fpm"
-    "winning_solution/120_dla60_256_sgd_all"
-    "winning_solution/130_hrnet48_all"
+    "winning_solution_star/120_hrnet32_all"
+    "winning_solution_star/120_gernet_m_b2_fpm"
+    "winning_solution_star/120_dla60_256_sgd_all"
+    "winning_solution_star/130_hrnet48_all"
 )
 
 # Human-Readable Names for Logging.
@@ -82,7 +82,7 @@ mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/frame_transforms_train.log"
 
 # Run Data Transforms Script on Training Data (Python Module Entry Point).
-python -m src.baselines.winning_solution.seg_tracker.generate_frame_transforms \
+python -m src.core_improvement.winning_solution_star.seg_tracker.generate_frame_transforms \
     --flights-file "$TRAIN_FLIGHTS" \
     --skip-existing \
     2>&1 | tee "$LOG_FILE"
@@ -101,7 +101,7 @@ fi
 LOG_FILE="$LOG_DIR/frame_transforms_valid.log"
 
 # Run Data Transforms Script on Validation (Python Module Entry Point).
-python -m src.baselines.winning_solution.seg_tracker.generate_frame_transforms \
+python -m src.core_improvement.winning_solution_star.seg_tracker.generate_frame_transforms \
     --flights-file "$VAL_FLIGHTS" \
     --skip-existing \
     2>&1 | tee "$LOG_FILE"
@@ -126,7 +126,7 @@ TOTAL=${#EXPERIMENTS[@]}
 START_TIME=$(date +%s)
 
 echo "========================================================================"
-echo "  Winning Solution — Full Ensemble Retraining"
+echo "  Winning Solution Star — Full Ensemble Retraining"
 echo "  Models    : $TOTAL"
 echo "  Train set : $TRAIN_FLIGHTS"
 echo "  Val set   : $VAL_FLIGHTS"
@@ -151,7 +151,7 @@ for i in "${!EXPERIMENTS[@]}"; do
     echo "------------------------------------------------------------------------"
 
     # Run Training Script (Python Module Entry Point).
-    python -m src.baselines.winning_solution.seg_tracker.train train "$EXP" \
+    python -m src.core_improvement.winning_solution_star.seg_tracker.train train "$EXP" \
         --train-flights "$TRAIN_FLIGHTS" \
         --val-flights   "$VAL_FLIGHTS" \
         --seed          "$SEED" \

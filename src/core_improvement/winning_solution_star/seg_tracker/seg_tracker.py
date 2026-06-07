@@ -33,7 +33,6 @@
 # prohibited.
 # ------------------------------------------------------------------------------
 
-import os
 import logging
 import warnings
 import torch
@@ -43,9 +42,7 @@ import cv2
 from . import models_segmentation
 from . import models_transformation
 from . import offset_grid_to_transform
-from . import seg_prediction_to_items
 from . import predict_ensemble
-from . import common_utils
 
 from .prediction_structure import *
 from . import tracking
@@ -70,7 +67,7 @@ class SegDetector:
         )
 
         # Directory Containing All Ensemble Model Weights.
-        models_dir = 'configs/models/core_improvement/winning_solution'
+        models_dir = 'configs/models/core_improvement/winning_solution_star'
 
         # Set the Device to GPU if Available.
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

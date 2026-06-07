@@ -9,7 +9,7 @@ import yaml
 import skimage.transform
 
 import torch.utils.data
-from typing import Sized, Optional
+from typing import Sized
 
 def argmax2d(x):
     return np.unravel_index(x.argmax(), x.shape)

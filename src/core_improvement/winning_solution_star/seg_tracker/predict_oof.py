@@ -1,37 +1,25 @@
 import argparse
 import os
-import random
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import cv2
 import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from collections import defaultdict
-import madgrad
-import loss_asl
+
 import pickle
 from dataclasses import dataclass
 
-import baseline.winning_solution.seg_tracker.common_utils as common_utils
-import baseline.winning_solution.seg_tracker.dataset_tracking as dataset_tracking
-import baseline.winning_solution.seg_tracker.seg_prediction_to_items as seg_prediction_to_items
-from baseline.winning_solution.seg_tracker.dataset_tracking import Frame, DetectionItem
-import baseline.winning_solution.seg_tracker.models_segmentation as models_segmentation
-from baseline.winning_solution.seg_tracker.common_utils import DotDict, timeit_context
+import core_improvement.winning_solution_star.seg_tracker.common_utils as common_utils
+import core_improvement.winning_solution_star.seg_tracker.seg_prediction_to_items as seg_prediction_to_items
 
-from typing import Iterator, Optional, Sequence, List, TypeVar, Generic, Sized
+from typing import List
 
-from baseline.winning_solution.seg_tracker.train import seed_everything, build_model, combine_images
-from baseline.winning_solution.seg_tracker.load_images_pipe import *
-import baseline.winning_solution.seg_tracker.config as config
-import scipy.stats.mstats
-import baseline.winning_solution.seg_tracker.check_frame_level_prediction as check_frame_level_prediction
-from baseline.winning_solution.seg_tracker.check_frame_level_prediction import FlightFrames, load_flights_for_part, load_flights_for_time_based_validation
+from core_improvement.winning_solution_star.seg_tracker.train import seed_everything, build_model
+from core_improvement.winning_solution_star.seg_tracker.load_images_pipe import *
+import core_improvement.winning_solution_star.seg_tracker.config as config
+import core_improvement.winning_solution_star.seg_tracker.check_frame_level_prediction as check_frame_level_prediction
+from core_improvement.winning_solution_star.seg_tracker.check_frame_level_prediction import FlightFrames, load_flights_for_part, load_flights_for_time_based_validation
 
 seed_everything(seed=42)
 

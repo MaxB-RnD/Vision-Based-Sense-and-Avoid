@@ -10,8 +10,6 @@ from tqdm import tqdm
 from . import common_utils
 from . import config
 from . import seg_prediction_to_items
-import matplotlib.pyplot as plt
-
 
 @dataclass
 class PredictionCrop:
@@ -138,7 +136,7 @@ def check_predict_ensemble():
     torch.backends.cudnn.deterministic = False
     torch.backends.cudnn.benchmark = True
 
-    from baseline.winning_solution.seg_tracker.train import build_model
+    from core_improvement.winning_solution_star.seg_tracker.train import build_model
 
     models_names = [
         ('100_hrnet32_fpm', 2220),

@@ -143,7 +143,7 @@ def pred_to_items(
 
 
 def test_pred_to_items():
-    from baseline.winning_solution.seg_tracker.dataset_tracking import  DetectionItem, render_y
+    from core_improvement.winning_solution_star.seg_tracker.dataset_tracking import  DetectionItem, render_y
 
     w = 256
     h = 200

@@ -5,7 +5,7 @@
 # File:                    %name: train_efficientvit_b2.sh %
 # Date Created:            %date_created: Tue May 12 17:49:32 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 1 %
+# CM Instance              %instance: 2 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -16,7 +16,7 @@
 #   1. Run: chmod +x src/core_improvement/efficientvitb2/train_efficientvit_b2.sh
 #   2. nohup src/core_improvement/efficientvitb2/train_efficientvit_b2.sh > outputs/logs/model_training/train_EfficientViT_B2.log 2>&1 &
 #   3. Then monitor from terminal with:
-#            tail -f logs/train_EfficientViT_B2.log OR watch W&B directly.
+#            tail -f outputs/logs/model_training/train_EfficientViT_B2.log OR watch W&B directly.
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
@@ -64,7 +64,7 @@ mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/frame_transforms_train.log"
 
 # Run Data Transforms Script on Training Data (Python Module Entry Point).
-python -m src.baselines.winning_solution.seg_tracker.generate_frame_transforms \
+python -m src.core_improvement.winning_solution_star.seg_tracker.generate_frame_transforms \
     --flights-file "$TRAIN_FLIGHTS" \
     --skip-existing \
     2>&1 | tee "$LOG_FILE"
@@ -83,7 +83,7 @@ fi
 LOG_FILE="$LOG_DIR/frame_transforms_valid.log"
 
 # Run Data Transforms Script on Validation (Python Module Entry Point).
-python -m src.baselines.winning_solution.seg_tracker.generate_frame_transforms \
+python -m src.core_improvement.winning_solution_star.seg_tracker.generate_frame_transforms \
     --flights-file "$VAL_FLIGHTS" \
     --skip-existing \
     2>&1 | tee "$LOG_FILE"
@@ -133,7 +133,7 @@ for i in "${!EXPERIMENTS[@]}"; do
     echo "------------------------------------------------------------------------"
 
     # Run Training Script (Python Module Entry Point).
-    python -m src.baselines.winning_solution.seg_tracker.train train "$EXP" \
+    python -m src.core_improvement.winning_solution_star.seg_tracker.train train "$EXP" \
         --train-flights "$TRAIN_FLIGHTS" \
         --val-flights   "$VAL_FLIGHTS" \
         --seed          "$SEED" \

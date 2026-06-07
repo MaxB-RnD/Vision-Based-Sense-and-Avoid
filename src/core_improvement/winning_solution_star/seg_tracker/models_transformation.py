@@ -5,7 +5,8 @@
 # Date Created:            %date_created: Tue May 19 19:51:23 2026 %
 # CM Version               %version: 1 %
 # CM Instance              %instance: 1 %
-# Author:                  %created_by: MBusato %
+# Author:                  %created_by: Dmytro Poplavskiy %
+# Integrated By:           %integrated_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
 # ------------------------------------------------------------------------------

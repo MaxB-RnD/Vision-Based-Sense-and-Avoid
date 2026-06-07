@@ -5,9 +5,9 @@ import numpy as np
 import torch
 import torch.utils.data
 from tqdm import tqdm
-import src.baselines.winning_solution.seg_tracker.config as config
+import src.core_improvement.winning_solution_star.seg_tracker.config as config
 import os
-import src.baselines.winning_solution.seg_tracker.common_utils as common_utils
+import src.core_improvement.winning_solution_star.seg_tracker.common_utils as common_utils
 import matplotlib.pyplot as plt
 import cv2
 import math

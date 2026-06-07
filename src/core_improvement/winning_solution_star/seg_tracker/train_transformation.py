@@ -13,15 +13,13 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from collections import defaultdict
 import madgrad
-import baseline.winning_solution.seg_tracker.config as config
+import core_improvement.winning_solution_star.seg_tracker.config as config
 
-import baseline.winning_solution.seg_tracker.common_utils as common_utils
-import baseline.winning_solution.seg_tracker.dataset_transform as dataset_transform
-import baseline.winning_solution.seg_tracker.models_transformation as models_transformation
-from baseline.winning_solution.seg_tracker.common_utils import DotDict, timeit_context
-import baseline.winning_solution.seg_tracker.offset_grid_to_transform as offset_grid_to_transform
-
-from typing import Iterator, Optional, Sequence, List, TypeVar, Generic, Sized
+import core_improvement.winning_solution_star.seg_tracker.common_utils as common_utils
+import core_improvement.winning_solution_star.seg_tracker.dataset_transform as dataset_transform
+import core_improvement.winning_solution_star.seg_tracker.models_transformation as models_transformation
+from core_improvement.winning_solution_star.seg_tracker.common_utils import DotDict
+import core_improvement.winning_solution_star.seg_tracker.offset_grid_to_transform as offset_grid_to_transform
 
 
 def seed_everything(seed):
@@ -397,7 +395,7 @@ def export_model(experiment_name: str, fold: int, epoch: int):
     # torch.jit.save(traced_model, f'{dst_dir}/{experiment_name}_{epoch}_{fold}jh.pth')
 
 
-from baseline.winning_solution.seg_tracker.load_images_pipe import *
+from core_improvement.winning_solution_star.seg_tracker.load_images_pipe import *
 
 def find_transforms(model, img_crops):
     all_frames = torch.from_numpy(np.stack(img_crops, axis=0) / 255.0).float().cuda()

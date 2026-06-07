@@ -66,8 +66,8 @@ import matplotlib.pyplot as plt
  
 sys.path.insert(0, os.path.dirname(__file__))
 from notebooks.helpers.notebook_helpers import record_fps_stats
-from src.baselines.winning_solution.evaluator.airborne_detection import AirbornePredictor
-from src.baselines.winning_solution.seg_tracker.seg_tracker import SegDetector, SegTrackerFromOffset
+from src.core_improvement.winning_solution_star.evaluator.airborne_detection import AirbornePredictor
+from src.core_improvement.winning_solution_star.seg_tracker.seg_tracker import SegDetector, SegTrackerFromOffset
 
 # ------------------------------------------------------------------------------
 #                           CONFIGURATION VARIABLES
@@ -83,7 +83,7 @@ MIN_SCORE = float(os.getenv("MIN_SCORE", 0.6))
 # ------------------------------------------------------------------------------
 #                           SEG PREDICTOR
 # ------------------------------------------------------------------------------
-class SegPredictor(AirbornePredictor):
+class WinningSolutionPredictor(AirbornePredictor):
     """
     Segmentation-based airborne object predictor.
 
@@ -362,6 +362,6 @@ class SegPredictor(AirbornePredictor):
 #                           STANDALONE ENTRY POINT
 # ------------------------------------------------------------------------------
 if __name__ == "__main__":
-    submission = SegPredictor()
+    submission = WinningSolutionPredictor()
     submission.run()
 # ------------------------------------------------------------------------------

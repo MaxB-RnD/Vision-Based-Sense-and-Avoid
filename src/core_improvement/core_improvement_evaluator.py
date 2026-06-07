@@ -1,27 +1,40 @@
 # ------------------------------------------------------------------------------
 # -               V E R S I O N   I D E N T I F I C A T I O N                  -
 # ------------------------------------------------------------------------------
-# File:                    %name: notebook_to_terminal.py %
+# File:                    %name: core_improvement_evaluator.py %
 # Date Created:            %date_created: Tue Mar 24 15:18:38 2026 %
-# CM Version               %version: 1 %
+# CM Version               %version: 3 %
 # CM Instance              %instance: 1 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
 # ------------------------------------------------------------------------------
-# Executes all code cells in a Jupyter Notebook (.ipynb) sequentially from the
-# terminal, sharing a single execution context across all cells.
+# Backbone evaluation script for the AICrowd Airborne Object Tracking pipeline.
+# This script runs a full evaluation of multiple detection backbones using a
+# shared inference and tracking framework. It is designed to provide a fair
+# comparison between models under identical dataset and evaluation conditions.
 #
-# Each cell's source is printed before execution so progress can be followed.
-# If any cell raises an exception the script halts immediately and reports
-# the failing cell number along with the full traceback.
-#
-# Non-code cells (markdown, raw, etc.) are silently skipped.
+# The pipeline executes dataset resolution and filtering, model initialisation
+# for the selected backbone, inference over all flight sequences, metric
+# computation using official evaluation scripts, and generation of a final
+# benchmark summary including AFDR, FPPI, and EDR scores. The backbone used for 
+# evaluation is selected via a command-line argument.
 #
 # USAGE INSTRUCTIONS:
-#   Run the Script from this Folder:
-#       1. cd notebooks/helpers/ 
-#       2. nohup python notebook_to_terminal.py > ../../outputs/logs/baseline_evaluation.log 2>&1 &
+#   1. Run the Script from this Folder:
+#         nohup python -m src.core_improvement.core_improvement_evaluator select_model > outputs/logs/core_improvement/core_improvement_evaluation.log 2>&1 &
+#
+#   2. Optional Environment Variables:
+#       - SELECTED_MODEL = (0-5)
+#            0 = Winning Solution (Optimised)
+#            1 = MobileNetV4
+#            2 = EfficientViT-M2
+#            3 = ResNet34
+#            4 = EfficientViT-B2
+#            5 = HRNet-W32
+#
+#   3. Then monitor from terminal with:
+#            tail -f outputs/logs/core_improvement/core_improvement_evaluation.log
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
@@ -52,7 +65,6 @@ from glob import glob
 random.seed(42)
 
 # Set Working Directory to Project Root.
-os.chdir("../..") 
 PROJECT_ROOT = os.getcwd()
 
 # Add Project Root to Path.
@@ -70,7 +82,7 @@ from notebooks.helpers.notebook_helpers import (
 )
  
 # Confirm Project Root.
-log(LogLevel.INFO, "baseline:imports", "Project Root Set: %s", PROJECT_ROOT)
+log(LogLevel.INFO, "core_improvement_evaluator:imports", "Project Root Set: %s", PROJECT_ROOT)
 
 
 # ------------------------------------------------------------------------------
@@ -79,15 +91,13 @@ log(LogLevel.INFO, "baseline:imports", "Project Root Set: %s", PROJECT_ROOT)
 def main() -> None:
     # Choose Which Model to Run
     # --------------------------------------------------
-    # 0 -> Winning Solution (SegTracker Ensemble: HRNet32, HRNet48, GerNet-M + BiFPN, DLA60).
-    # 1 -> RT-DETR v2 (Transformer-Based Detector).
-    # 2 -> YOLOv11 (UAV Detection Model).
-    # 3 -> MobileNetV4 (Lightweight Detection Backbone).
-    # 4 -> EfficientVit-M2 (Medium-Weight Detection Backbone).
-    # 5 -> ResNet34 (Medium-Weight Detection Backbone).
-    # 6 -> EfficientVit-B2 (Heavy-Weight Detection Backbone).
-    # 7 -> HRNet-W32 (Heavy-Weight Detection Backbone).
-    model_list = ["winning_solution","transformer_detector","drone_detector","mobilenetv4", "efficientvitm2", "resnet34", "efficientvitb2", "hrnetw32"]
+    # 0 -> Winning Solution Optimised (SegTracker Ensemble: HRNet32, HRNet48, GerNet-M + BiFPN, DLA60).
+    # 1 -> MobileNetV4 (Lightweight Detection Backbone).
+    # 2 -> EfficientVit-M2 (Medium-Weight Detection Backbone).
+    # 3 -> ResNet34 (Medium-Weight Detection Backbone).
+    # 4 -> EfficientVit-B2 (Heavy-Weight Detection Backbone).
+    # 5 -> HRNet-W32 (Heavy-Weight Detection Backbone).
+    model_list = ["winning_solution_star","mobilenetv4", "efficientvitm2", "resnet34", "efficientvitb2", "hrnetw32"]
 
     # Allow Model Selection from Command Line.
     if len(sys.argv) > 1:
@@ -114,7 +124,7 @@ def main() -> None:
     EVAL_SUMMARY_DIR = os.path.join(RESULTS_DIR, run_name, "summaries")
 
     # Print Summary Statement.
-    log(LogLevel.INFO, "baseline:config", "Configuration Loaded.")
+    log(LogLevel.INFO, "core_improvement_evaluator:config", "Configuration Loaded.")
     print(f"  Model Selected : {model_list[SELECTED_MODEL]}")
     print(f"  Dataset Path   : {DATASET_PATH}")
     print(f"  Dataset Parts  : {DATASET_PARTS}")
@@ -130,7 +140,7 @@ def main() -> None:
     print()
 
     # Log How Many Flights were Found & are Ready for Inference.
-    log(LogLevel.INFO, "baseline:preprocessing", "Flights Ready for Inference: %d", len(local_flights))
+    log(LogLevel.INFO, "core_improvement_evaluator:preprocessing", "Flights Ready for Inference: %d", len(local_flights))
 
     # Preview the First 5 Flights to Confirm Dataset is Correct.
     for name, info in list(local_flights.items())[:5]:
@@ -142,11 +152,11 @@ def main() -> None:
 
     # If there are More than 5 Flights, Log How Many Additional Ones Exist.
     if len(local_flights) > 5:
-        log(LogLevel.DEBUG, "baseline:preprocessing", " ... and %d more.", len(local_flights) - 5)
+        log(LogLevel.DEBUG, "core_improvement_evaluator:preprocessing", " ... and %d more.", len(local_flights) - 5)
 
     # Load & Filter Ground Truth to Include Local Flights Only. 
     combined_gt = load_combined_gt(DATASET_PARTS, local_flights, PROJECT_ROOT)
-    log(LogLevel.INFO, "baseline:preprocessing", "Flights in Filtered Ground Truth: %d", len(combined_gt['samples']))
+    log(LogLevel.INFO, "core_improvement_evaluator:preprocessing", "Flights in Filtered Ground Truth: %d", len(combined_gt['samples']))
 
     # Build Set of Image Filenames That Physically Exist on Disk.
     all_images = {name for f in local_flights.values() for name in f["image_names"]}
@@ -163,7 +173,7 @@ def main() -> None:
     after = sum(len(flight["entities"]) for flight in combined_gt["samples"].values())
 
     # Report How Many Images were Removed. 
-    log(LogLevel.INFO, "baseline:preprocessing",
+    log(LogLevel.INFO, "core_improvement_evaluator:preprocessing",
         "GT Culled: %d -> %d entities (%d removed for missing images).", before, after, before - after)
 
     # Save the Filtered Ground Truth to the Evaluation Folder.
@@ -175,7 +185,7 @@ def main() -> None:
         json.dump(combined_gt, f)
 
     # Print Success Message.
-    log(LogLevel.INFO, "baseline:preprocessing", "Ground Truth Saved: %s", gt_out_path)
+    log(LogLevel.INFO, "core_improvement_evaluator:preprocessing", "Ground Truth Saved: %s", gt_out_path)
 
     # Create a Directory where all Evaluation Flight Data will be Stored.
     EVAL_DATA_DIR = os.path.join(RESULTS_DIR, run_name, "data")
@@ -199,45 +209,41 @@ def main() -> None:
     os.environ["PARTIAL_RUN_FLIGHTS"] = ",".join(local_flights.keys())
 
     # Print Summary Statement.
-    log(LogLevel.INFO, "baseline:inference", "Environment Configured.")
+    log(LogLevel.INFO, "core_improvement_evaluator:inference", "Environment Configured.")
     print(f"  Test Data Path     : {EVAL_DATA_DIR}")
     print(f"  Flights to Process : {len(local_flights)}")
     print(f"  MIN_SCORE          : {MIN_SCORE}")
     print(f"  MIN_TRACK_LEN      : {MIN_TRACK_LEN}")
 
     # Import Baseline Classes.
-    from src.baselines.winning_solution.seg_test import SegPredictor
-    from src.baselines.drone_detector.drone_test import DronePredictor
     from src.core_improvement.resnet34.resnet34_test import ResNet34Predictor
     from src.core_improvement.hrnetw32.hrnet_w32_test import HRNetW32Predictor
     from src.core_improvement.mobilenetv4.mobilenet_test import MobileNetV4Predictor
-    from src.baselines.transformer_detector.transformer_test import TransformerPredictor
+    from src.core_improvement.winning_solution_star.seg_test import WinningSolutionPredictor
     from src.core_improvement.efficientvitm2.efficientvit_m2_test import EfficientViTM2Predictor
     from src.core_improvement.efficientvitb2.efficientvit_b2_test import EfficientViTB2Predictor
 
     # Check GPU is CUDA Enabled.
     if torch.cuda.is_available():
-        log(LogLevel.INFO, "baseline:device_check", "CUDA-Enabled GPU is Available.")
+        log(LogLevel.INFO, "core_improvement_evaluator:device_check", "CUDA-Enabled GPU is Available.")
         print(f"  GPU Name: {torch.cuda.get_device_name(0)}.")
         print(f"  CUDA Version: {torch.version.cuda}.")
     else:
-        log(LogLevel.WARNING, "baseline:device_check", "No CUDA-Enabled GPU Found, Using CPU Instead.")
+        log(LogLevel.WARNING, "core_improvement_evaluator:device_check", "No CUDA-Enabled GPU Found, Using CPU Instead.")
 
     # Map Model Selection to Predictor Classes.
     MODEL_MAP = {
-        0: SegPredictor,            # SegTracker Baseline.
-        1: TransformerPredictor,    # RT-DETR v2.
-        2: DronePredictor,          # YOLOv11.
-        3: MobileNetV4Predictor,    # MobileNet v4.
-        4: EfficientViTM2Predictor, # EfficientVit m2.
-        5: ResNet34Predictor,       # ResNet34.
-        6: EfficientViTB2Predictor, # EfficientVit b2.
-        7: HRNetW32Predictor        # HRNet-W32.
+        0: WinningSolutionPredictor, # Optimised Baseline.
+        1: MobileNetV4Predictor,     # MobileNet v4.
+        2: EfficientViTM2Predictor,  # EfficientVit m2.
+        3: ResNet34Predictor,        # ResNet34.
+        4: EfficientViTB2Predictor,  # EfficientVit b2.
+        5: HRNetW32Predictor         # HRNet-W32.
     }
 
     # Validate Selection.
     if SELECTED_MODEL not in MODEL_MAP:
-        log(LogLevel.ERROR, "baseline:inference", "Invalid SELECTED_MODEL: %s.", SELECTED_MODEL)
+        log(LogLevel.ERROR, "core_improvement:inference", "Invalid SELECTED_MODEL: %s.", SELECTED_MODEL)
         raise ValueError("Please Select a Valid Model Index.")
 
     # Initialise Predictor.
@@ -247,13 +253,15 @@ def main() -> None:
     predictor.inference_setup()
 
     # Measure the Current Model's Complexity.
+    print()
     complexity = measure_predictor_complexity(predictor)
 
     # Run Inference Over all Flights.
+    print()
     predictor.run()
 
     # Print Summary Statement.
-    log(LogLevel.INFO, "baseline:inference", "Inference Complete.")
+    log(LogLevel.INFO, "core_improvement:inference", "Inference Complete.")
     print(f"  Raw Results Saved to: {os.path.join(RESULTS_DIR, run_name)}\n")
 
     # Set Results Directories. 
@@ -267,7 +275,7 @@ def main() -> None:
     convert_results_to_metrics_format(RAW_RESULTS_PATH, METRICS_RESULTS_PATH)
 
     # Print Summary Statement.
-    log(LogLevel.INFO, "baseline:inference", "Results Copied to Metrics Directory.")
+    log(LogLevel.INFO, "core_improvement:inference", "Results Copied to Metrics Directory.")
     print(f"  Metrics-Ready Results Stored at : {METRICS_RESULTS_PATH}")
 
     # Locate the Competition Metrics Script.
@@ -287,26 +295,26 @@ def main() -> None:
     )
 
     # Print Message on Completion. 
-    log(LogLevel.INFO, "baseline:evaluation", "Metrics Complete.")
+    log(LogLevel.INFO, "core_improvement_evaluator:evaluation", "Metrics Complete.")
 
     # Find the Summary JSON in the Summaries Directory.
     summary_files = glob(os.path.join(EVAL_SUMMARY_DIR, "*.json"))
 
     # Check that the Summary Files Exist.
     if not summary_files:
-        log(LogLevel.ERROR, "baseline:summary", "No Summary Files Found! Run Inference First.")
+        log(LogLevel.ERROR, "core_improvement_evaluator:summary", "No Summary Files Found! Run Inference First.")
     else:
         # Build Summary DataFrame.
         summary_df = build_extended_summary(
             summary_json_path = summary_files[0],
             run_dir           = os.path.join(RESULTS_DIR, run_name),
             complexity        = complexity,
-            output_csv_path   = os.path.join(EVAL_SUMMARY_DIR, "baseline_benchmark_summary.csv"),
+            output_csv_path   = os.path.join(EVAL_SUMMARY_DIR, "core_improvement_evaluator_benchmark_summary.csv"),
         )
     
         # Print Summary to Console.
         print("\n" + "=" * 60)
-        print(" BASELINE MODEL - FULL HARD DATASET BENCHMARK SUMMARY")
+        print(" NEW BACKBONE MODEL - FULL HARD DATASET BENCHMARK SUMMARY")
         print("=" * 60)
         print(summary_df.set_index("Metric").to_string())
 # ------------------------------------------------------------------------------

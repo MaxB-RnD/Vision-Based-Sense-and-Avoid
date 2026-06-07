@@ -1,23 +1,18 @@
-import argparse
 import os
-import random
 import matplotlib.pyplot as plt
 import matplotlib.patches
 import numpy as np
 import pandas as pd
 import cv2
 from tqdm import tqdm
-from collections import defaultdict
 import pickle
-import re
 
-import src.baselines.winning_solution.seg_tracker.common_utils as common_utils
-from src.baselines.winning_solution.seg_tracker.common_utils import DotDict, timeit_context
-from typing import Iterator, Optional, Sequence, List, Dict, TypeVar, Generic, Sized
+import src.core_improvement.winning_solution_star.seg_tracker.common_utils as common_utils
+from typing import List, Dict
 from dataclasses import dataclass
-from src.baselines.winning_solution.seg_tracker.load_images_pipe import *
-import src.baselines.winning_solution.seg_tracker.config as config
-from src.baselines.winning_solution.seg_tracker.config import MIN_OBJECT_AREA
+from src.core_improvement.winning_solution_star.seg_tracker.load_images_pipe import *
+import src.core_improvement.winning_solution_star.seg_tracker.config as config
+from src.core_improvement.winning_solution_star.seg_tracker.config import MIN_OBJECT_AREA
 
 enable_visualisation = False
 

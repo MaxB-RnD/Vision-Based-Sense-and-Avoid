@@ -1,47 +1,45 @@
 # ------------------------------------------------------------------------------
 # -               V E R S I O N   I D E N T I F I C A T I O N                  -
 # ------------------------------------------------------------------------------
-# File:                    %name: 120_hrnet32_all.yaml %
+# File:                    %name: 120_gernet_m_b2_fpm.yaml %
 # Date Created:            %date_created: Tue May 05 19:19:19 2026 %
-# CM Version               %version: 2 %
+# CM Version               %version: 3 %
 # CM Instance              %instance: 1 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
 # ------------------------------------------------------------------------------
-# Experiment:   120_hrnet32_all
-# Model:        HRNetSegmentation (hrnet_w32)
-# Role:         Segmentation model (model_seg1)
-# Reference:    Winning Solution Table 2 - AFDR 81.2% @ 0.0002 FPPI
+# Experiment:   120_gernet_m_b2_fpm
+# Model:        EffDetSegmentation8x (tf_efficientdet_d2 + gernet_m backbone)
+# Role:         Segmentation model (model_seg2)
+# Reference:    Winning Solution Table 2 - AFDR 77.8% @ 0.0002 FPPI
 # Notes:
-#   - CosineAnnealingWarmRestarts (T_0=16, T_mult=1.42).
-#   - False positive mining at epochs: 250, 370, 535, 770, 1100, 1535.
-#   - Final checkpoint at epoch 2220.
+#   - Uses EfficientDet D2 BiFPN (fpn_channels=112).
+#   - Custom backbone gernet_m overrides default EfficientDet backbone.
+#   - Used as ablation study base model.
 # ------------------------------------------------------------------------------
 
 meta:
-  experiment: 120_hrnet32_all
+  experiment: 120_gernet_m_b2_fpm
   version: 3
   author: MBusato
-  model: HRNetSegmentation
-  backbone: hrnet_w32
+  model: EffDetSegmentation8x
+  backbone: tf_efficientdet_d2
   role: segmentation
   input_resolution: [512, 512]
   optimizer: sgd
   scheduler: CosineAnnealingWarmRestarts
 
 model_params:
-  model_type:             HRNetSegmentation
-  model_cls:              HRNetSegmentation
-  base_model_name:        hrnet_w32
-  input_frames:           2
-  feature_location:       ''
-  combine_outputs_dim:    512
-  combine_outputs_kernel: 1
-  upscale_mode:           nearest
-  output_binary_mask:     true
-  output_above_horizon:   true
-  pred_scale:             8
+  model_type:           EffDetSegmentation8x
+  model_cls:            EffDetSegmentation8x
+  base_model_name:      tf_efficientdet_d2
+  custom_backbone:      gernet_m
+  input_frames:         2
+  combine_outputs_dim:  256
+  output_binary_mask:   true
+  output_above_horizon: true
+  pred_scale:           8
 
 train_params:
   # --- Duration ---

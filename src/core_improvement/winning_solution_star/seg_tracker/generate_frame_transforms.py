@@ -5,7 +5,8 @@
 # Date Created:            %date_created: Wed May 6 15:35:45 2026 %
 # CM Version               %version: 1 %
 # CM Instance              %instance: 1 %
-# Author:                  %created_by: MBusato %
+# Author:                  %created_by: Dmytro Poplavskiy %
+# Integrated By:           %integrated_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
 # ------------------------------------------------------------------------------
@@ -58,12 +59,11 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-import src.baselines.winning_solution.seg_tracker.config as config
-import src.baselines.winning_solution.seg_tracker.common_utils as common_utils
-import src.baselines.winning_solution.seg_tracker.models_transformation as models_transformation
+import src.core_improvement.winning_solution_star.seg_tracker.config as config
+import src.core_improvement.winning_solution_star.seg_tracker.models_transformation as models_transformation
 
-from src.baselines.winning_solution.seg_tracker.load_images_pipe import load_img, decode_img, limited_pipe
-from src.baselines.winning_solution.seg_tracker.offset_grid_to_transform import offset_grid_to_transform_params
+from src.core_improvement.winning_solution_star.seg_tracker.load_images_pipe import load_img, decode_img, limited_pipe
+from src.core_improvement.winning_solution_star.seg_tracker.offset_grid_to_transform import offset_grid_to_transform_params
 
 # ------------------------------------------------------------------------------
 #                           TRANSFORM ESTIMATION

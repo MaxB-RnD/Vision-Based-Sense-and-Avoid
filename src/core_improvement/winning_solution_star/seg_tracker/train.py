@@ -5,7 +5,8 @@
 # Date Created:            %date_created: Tue May 05 16:21:12 2026 %
 # CM Version               %version: 1 %
 # CM Instance              %instance: 1 %
-# Author:                  %created_by: MBusato %
+# Author:                  %created_by: Dmytro Poplavskiy %
+# Integrated By:           %integrated_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
 # ------------------------------------------------------------------------------
@@ -73,21 +74,17 @@ from torch.utils.tensorboard import SummaryWriter
 
 # ------------------------------------------------------------------------------
 # PROJECT-SPECIFIC IMPORTS
-# ------------------------------------------------------------------------------\
+# ------------------------------------------------------------------------------
 from logging_module import LogLevel, log
-import src.baselines.winning_solution.seg_tracker.focal_loss as focal_loss
-import src.baselines.winning_solution.seg_tracker.common_utils as common_utils
-import src.baselines.winning_solution.seg_tracker.dataset_tracking as dataset_tracking
-import src.baselines.winning_solution.seg_tracker.models_segmentation as models_segmentation
-import src.baselines.winning_solution.seg_tracker.seg_prediction_to_items as seg_prediction_to_items
+import src.core_improvement.winning_solution_star.seg_tracker.focal_loss as focal_loss
+import src.core_improvement.winning_solution_star.seg_tracker.common_utils as common_utils
+import src.core_improvement.winning_solution_star.seg_tracker.dataset_tracking as dataset_tracking
+import src.core_improvement.winning_solution_star.seg_tracker.models_segmentation as models_segmentation
+import src.core_improvement.winning_solution_star.seg_tracker.seg_prediction_to_items as seg_prediction_to_items
 
-from src.baselines.winning_solution.seg_tracker.common_utils import (
-    DotDict,
-    timeit_context
-)
+from src.core_improvement.winning_solution_star.seg_tracker.common_utils import DotDict
 
-from src.baselines.winning_solution.seg_tracker.check_frame_level_prediction import (
-    Box,
+from src.core_improvement.winning_solution_star.seg_tracker.check_frame_level_prediction import (
     DetectedItem,
     extend_bounding_boxes,
     calc_iou

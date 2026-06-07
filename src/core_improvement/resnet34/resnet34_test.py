@@ -67,7 +67,7 @@ from logging_module import LogLevel, log, set_level
 
 sys.path.insert(0, os.path.dirname(__file__))
 from notebooks.helpers.notebook_helpers import record_fps_stats
-from src.baselines.winning_solution.evaluator.airborne_detection import AirbornePredictor
+from src.core_improvement.winning_solution_star.evaluator.airborne_detection import AirbornePredictor
 
 # ------------------------------------------------------------------------------
 #                           CONFIGURATION VARIABLES
@@ -108,11 +108,11 @@ class ResNet34Predictor(AirbornePredictor):
         """
         # Import Modules Required Only During Inference Setup.
         # Keeping these Imports Local can Reduce Startup/Import Overhead.
-        from src.baselines.winning_solution.seg_tracker.prediction_structure import (
+        from src.core_improvement.winning_solution_star.seg_tracker.prediction_structure import (
             DetectedItem
         )
 
-        from src.baselines.winning_solution.seg_tracker import (
+        from src.core_improvement.winning_solution_star.seg_tracker import (
             models_segmentation,
             models_transformation,
             offset_grid_to_transform,
