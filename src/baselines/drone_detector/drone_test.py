@@ -3,7 +3,7 @@
 # ------------------------------------------------------------------------------
 # File:                    %name: drone_test.py %
 # Date Created:            %date_created: Tue Apr 28 12:21:34 2026 %
-# CM Version               %version: 1 %
+# CM Version               %version: 2 %
 # CM Instance              %instance: 1 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
@@ -20,6 +20,24 @@
 # USAGE INSTRUCTIONS:
 #   1. Run the Script from the Project Root:
 #       - python -m src.baselines.drone_detector.drone_test
+#
+#   2. Optional Environment Variables:
+#       - MODEL_PATH=/path/to/checkpoint.pt
+#           Overrides the default segmentation model checkpoint path.
+#
+#       - MIN_TRACK_LEN=0
+#           Minimum track length before detections are committed to results.
+#
+#       - MIN_SCORE=0.4
+#           Minimum confidence score required for final output detections.
+#
+#       - DETECTION_THRESHOLD=0.4
+#           Detection threshold passed directly to the segmentation model.
+#           Should generally be <= MIN_SCORE.
+#
+#       - INFERENCE_IMG_SIZE=1280
+#           Image size passed to the YOLO model for inference. This must match 
+#           the resolution used during training.
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
@@ -39,12 +57,15 @@
 import os
 import sys
 import cv2
+import time
+import torch
 
 from tqdm import tqdm
 from typing import List, Dict, Any
 from logging_module import LogLevel, log
 
 sys.path.insert(0, os.path.dirname(__file__))
+from notebooks.helpers.notebook_helpers import record_fps_stats
 from src.baselines.winning_solution.evaluator.airborne_detection import AirbornePredictor
 
 # ------------------------------------------------------------------------------
@@ -113,9 +134,32 @@ class DronePredictor(AirbornePredictor):
         # Load YOLOv11 Weights. Ultralytics Handles Device Placement.
         self.model = YOLO(MODEL_PATH)
 
+        # Accumulates Per-Frame Wall-Clock Inference Times Across All Flights.
+        self.frame_times: List[float] = []
+
         # Print Success Message. 
         log(LogLevel.INFO, "drone_test:inference_setup",
             "Model Loaded Successfully.")
+    
+
+    def get_complexity_targets(self) -> List[dict]:
+        """
+        Declares the YOLO model and input shape to be measured by
+        measure_predictor_complexity().
+
+        Returns:
+            List[dict]: Each entry has keys:
+            model        : torch.nn.Module to profile.
+            input_shape  : (B, C, H, W) dummy input shape.
+            label        : Human-readable name for logging.
+        """
+        return [
+            {
+                "model": self.model.model,
+                "input_shape": (1, 3, INFERENCE_IMG_SIZE, INFERENCE_IMG_SIZE),
+                "label": "YOLOv11",
+            }
+        ]
 
 
     def run_model_on_frame(
@@ -144,6 +188,11 @@ class DronePredictor(AirbornePredictor):
                 - "confidence" (float): Score in range (0, 1).
                 - "class_name" (str)  : Always "airborne".
         """
+        # Start Timing FPS.
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        _t0 = time.perf_counter()
+
         # Run YOLO Inference on the Current Frame.
         # verbose=False Suppresses Per-Frame Console Output from Ultralytics.
         results = self.model(
@@ -152,6 +201,11 @@ class DronePredictor(AirbornePredictor):
             conf=DETECTION_THRESHOLD,
             verbose=False
         )
+
+        # End Timing FPS.
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        self.frame_times.append(time.perf_counter() - _t0)
 
         # Create Detection List.
         detections = []
@@ -327,6 +381,25 @@ class DronePredictor(AirbornePredictor):
                     confidence = float(det["confidence"]),
                     img_name = frame_name
                 )
+
+    def run(self) -> None:
+        """
+        Extends the parent run() to save FPS statistics to fps_stats.json
+        inside the run directory after all flights have been processed.
+ 
+        This ensures record_fps_stats() is called exactly once, after the
+        full frame_times list has been populated across every flight.
+        """
+        # Run the Standard Evaluation Pipeline.
+        super().run()
+ 
+        # Save FPS Stats if any Frames were Timed.
+        if self.frame_times:
+            record_fps_stats(
+                frame_times_sec = self.frame_times,
+                run_dir         = self.get_results_directory(),
+                warmup_frames   = 10,
+            )
 # ------------------------------------------------------------------------------
 
 
