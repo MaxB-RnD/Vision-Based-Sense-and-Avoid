@@ -21,12 +21,17 @@ For background on the dataset and benchmarks, see the
 
 ## 2. Project Details
 
-| Field            | Details                                                                                                |
-|------------------|--------------------------------------------------------------------------------------------------------|
-| **Sponsor**      | Lockheed Martin Australia – Advanced Systems & Technology Group                                        |
-| **Supervisor**   | Dr Feras Dayoub ([feras.dayoub@adelaide.edu.au](mailto:feras.dayoub@adelaide.edu.au))                  |
-| **Co-Supervisor**| Ms Kendall Louise Jenner ([kendall.l.jenner@global.lmco.com](mailto:kendall.l.jenner@global.lmco.com)) |
-| **Second Marker**| Dr Lei Chen ([lei.chen@adelaide.edu.au](mailto:lei.chen@adelaide.edu.au))                              |
+<div align="center">
+
+<table>
+  <tr><th>Field</th><th>Details</th></tr>
+  <tr><td><b>Sponsor</b></td><td>Lockheed Martin Australia – Advanced Systems & Technology Group</td></tr>
+  <tr><td><b>Supervisor</b></td><td>Dr Feras Dayoub (<a href="mailto:feras.dayoub@adelaide.edu.au">email</a>)</td></tr>
+  <tr><td><b>Co-Supervisor</b></td><td>Ms Kendall Louise Jenner (<a href="mailto:kendall.l.jenner@global.lmco.com">email</a>)</td></tr>
+  <tr><td><b>Second Marker</b></td><td>Dr Lei Chen (<a href="mailto:lei.chen@adelaide.edu.au">email</a>)</td></tr>
+</table>
+
+</div>
 
 ---
 
