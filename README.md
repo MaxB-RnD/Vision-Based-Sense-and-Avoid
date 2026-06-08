@@ -17,6 +17,8 @@ For background on the dataset and benchmarks, see the
 
 ---
 
+<br/>
+
 ## 2. Project Details
 
 | Field            | Details                                                                                                |
@@ -27,6 +29,8 @@ For background on the dataset and benchmarks, see the
 | **Second Marker**| Dr Lei Chen ([lei.chen@adelaide.edu.au](mailto:lei.chen@adelaide.edu.au))                              |
 
 ---
+
+<br/>
 
 ## 3. Project Structure
 
@@ -65,6 +69,8 @@ Vision-Based-Sense-and-Avoid/
 
 ---
 
+<br/>
+
 ## 4. Requirements
 
 - Python 3.11.
@@ -74,6 +80,8 @@ Vision-Based-Sense-and-Avoid/
 - See `requirements.txt` for full package dependencies.
 
 ---
+
+<br/>
 
 ## 5. Setup
 
@@ -115,6 +123,8 @@ Vision-Based-Sense-and-Avoid/
    > *This installs all dependencies from `requirements.txt` and the airborne metrics evaluation package from `core/metrics`.*
 
 ---
+
+<br/>
 
 ## 6. Dataset
 
@@ -197,6 +207,8 @@ Several utility scripts are provided to support dataset exploration, preparation
    ```
 
 ---
+
+<br/>
 
 ## 7. Baseline Evaluation
 
