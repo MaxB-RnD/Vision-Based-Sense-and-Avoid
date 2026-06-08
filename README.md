@@ -211,6 +211,24 @@ Several utility scripts are provided to support dataset exploration, preparation
    python -m src.data.visualise_results
    ```
 
+### 6.4 Running Inference & Evaluation
+
+To reproduce the results shown in this README, inference and evaluation are provided through two main workflows:
+
+- **Notebook-based workflow:** Full inference and analysis can be run using the notebooks in the `notebooks/` directory. These provide an interactive workflow for both baseline evaluation and core improvement experiments.
+- **Script-based workflow (recommended):** Automated evaluation scripts are provided for reproducible benchmarking:
+
+   ```bash
+   src/baselines/baslines_evaluator.py
+   ```
+   ```bash
+   src/core_improvement/
+   ```
+
+Each script includes its own internal documentation and can be executed directly from the terminal. 
+
+> *The script-based workflow is the recommended approach for reproducible evaluation, while notebooks are primarily*
+
 ---
 
 <br/>
@@ -221,10 +239,17 @@ Several utility scripts are provided to support dataset exploration, preparation
 
 The baseline for this project is the [Winning Solution](https://github.com/pdima/airborne_tracking_winning_solution.git) from the AIcrowd Airborne Object Tracking Challenge, which achieved top performance on both the public and private leaderboards. The method is based on an ensemble of four detection backbones:
 
-- HRNet-W32  
-- HRNet-W48
-- GerNet-M (with BiFPN from EfficientDet-D2)  
-- DLA-60  
+<div align="center">
+
+<table>
+  <tr><th>Baseline Backbones</th></tr>
+  <tr><td>HRNet-W32</td></tr>
+  <tr><td>HRNet-W48</td></tr>
+  <tr><td>GerNet-M (with BiFPN from EfficientDet-D2)</td></tr>
+  <tr><td>DLA-60</td></tr>
+</table>
+
+</div>
 
 These backbones are combined with a motion-offset-based tracking pipeline for consistent multi-frame association of airborne objects.
 
@@ -233,10 +258,17 @@ These backbones are combined with a motion-offset-based tracking pipeline for co
 
 All baseline evaluations are performed on the **AOT Hard Dataset (1,618 flights)**. This dataset is a curated subset of the full AOT benchmark designed to focus on challenging operational scenarios, including:
 
-- Small object encounters  
-- Multi-object scenes  
-- Below-horizon targets  
-- Flights with no visible objects  
+<div align="center">
+
+<table>
+  <tr><th>Evaluation Scenarios</th></tr>
+  <tr><td>Small object encounters</td></tr>
+  <tr><td>Multi-object scenes</td></tr>
+  <tr><td>Below-horizon targets</td></tr>
+  <tr><td>Flights with no visible objects</td></tr>
+</table>
+
+</div>
 
 This subset provides a more challenging evaluation environment compared to the original full competition dataset.
 
