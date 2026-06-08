@@ -1,19 +1,6 @@
 # Vision-Based Sense and Avoid: Monocular Airborne Object Tracking for Safe Drone Flight
 
-## 📑 Contents
-
-- [🗃️ Dataset](#️-dataset)  
-  - [Data Tools](#data-tools)  
-  - [Visualisation](#visualisation)  
-- [📊 Baseline](#-baseline)  
-  - [Winning Solution](#winning-solution)  
-  - [Competition Results (Full AOT Dataset)](#competition-results-full-aot-dataset)  
-  - [Hard Dataset Results](#hard-dataset-results)
-- [🚀 Proposed Improvement](#-proposed-improvement)
-
----
-
-## Overview
+## 1. Overview
 
 This project tackles the challenge of detecting and tracking tiny airborne objects using only a
 single monocular camera onboard a drone. Working with the Airborne Object Tracking (AOT) dataset,
@@ -30,7 +17,7 @@ For background on the dataset and benchmarks, see the
 
 ---
 
-## Project Details
+## 2. Project Details
 
 | Field            | Details                                                                                                |
 |------------------|--------------------------------------------------------------------------------------------------------|
@@ -41,7 +28,7 @@ For background on the dataset and benchmarks, see the
 
 ---
 
-## Project Structure
+## 3. Project Structure
 
 ```text
 Vision-Based-Sense-and-Avoid/
@@ -78,7 +65,7 @@ Vision-Based-Sense-and-Avoid/
 
 ---
 
-## Requirements
+## 4. Requirements
 
 - Python 3.11.
 - Virtual Environment (recommended).
@@ -88,7 +75,7 @@ Vision-Based-Sense-and-Avoid/
 
 ---
 
-## Setup
+## 5. Setup
 
 **1. Install Git LFS (one-time setup):**
 
@@ -122,14 +109,14 @@ Vision-Based-Sense-and-Avoid/
 **5. Install Dependencies:**
 
    ```bash
-      bash setup.sh
+   bash setup.sh
    ```
 
    > *This installs all dependencies from `requirements.txt` and the airborne metrics evaluation package from `core/metrics`.*
 
 ---
 
-## Dataset
+## 6. Dataset
 
 The [Airborne Object Tracking (AOT) Dataset](https://www.aicrowd.com/challenges/airborne-object-tracking-challenge#dataset) is a large-scale benchmark for airborne object detection and tracking. It contains high-resolution flight sequences captured from onboard aircraft cameras under diverse environmental and operational conditions. A key challenge of the dataset is that target aircraft often occupy only a few pixels in each frame, with airborne objects averaging approximately **0.01% of the image area**. This makes early detection particularly difficult and provides a realistic benchmark for vision-based Sense-and-Avoid (SAA) systems.
 
@@ -146,32 +133,22 @@ The [Airborne Object Tracking (AOT) Dataset](https://www.aicrowd.com/challenges/
 
 </div>
 
-### Example Airborne Encounter
+### 6.1 Evaluation Metrics
 
-The images below illustrate a typical airborne encounter. The target aircraft initially occupies only a handful of pixels and gradually becomes more visible as range decreases.
+Performance is evaluated using the official Airborne Object Tracking Challenge metrics, which balance early detection capability against false alarm generation.
 
 <div align="center">
 
-<table>
-<tr>
-<td align="center">
-<img src="docs/Images/Data_Viewer_Picture_1.png" width="300"><br/>
-<b>Early Detection</b>
-</td>
-<td align="center">
-<img src="docs/Images/Data_Viewer_Picture_2.png" width="300"><br/>
-<b>Closing Distance</b>
-</td>
-<td align="center">
-<img src="docs/Images/Data_Viewer_Picture_3.png" width="300"><br/>
-<b>Near Range</b>
-</td>
-</tr>
-</table>
+| Metric | Description |
+|---------|-------------|
+| **AFDR** (Average Frame-level Detection Rate) | Percentage of airborne objects successfully detected at the frame level, considering planned aircraft within 700 m. |
+| **EDR** (Encounter Detection Rate) | Percentage of encounters successfully detected. An encounter is considered detected when the target is tracked for at least 3 seconds before reaching 300 m, or within the first 3 seconds of the encounter. |
+| **FPPI** (False Positives Per Image) | Average number of false positive detections generated per image. Lower values indicate fewer false alarms. |
+| **HFAR** (False Alarm Rate per Hour) | Number of unique false-positive tracks reported per hour of flight data. Lower values indicate greater operational reliability. |
 
 </div>
 
-### Annotated Flight Sequence
+### 6.2 Example Flight Visualisation
 
 The example below shows a complete annotated flight sequence with object detections, identifiers, and range information overlaid on each frame.
 
@@ -179,7 +156,7 @@ The example below shows a complete annotated flight sequence with object detecti
     <img src="docs/Images/Data_Viewer_Video.gif" width="900">
 </div>
 
-### Data Tools
+### 6.3 Data Tools
 
 Several utility scripts are provided to support dataset exploration, preparation, visualisation, and results analysis. All scripts are executed from the project root.
 
@@ -221,67 +198,116 @@ Several utility scripts are provided to support dataset exploration, preparation
 
 ---
 
+## 7. Baseline Evaluation
+
+### 7.1 Baseline Model
+
+The baseline for this project is the [Winning Solution](https://github.com/pdima/airborne_tracking_winning_solution.git) from the AIcrowd Airborne Object Tracking Challenge, which achieved top performance on both the public and private leaderboards. The method is based on an ensemble of four detection backbones:
+
+- HRNet-W32  
+- HRNet-W48
+- GerNet-M (with BiFPN from EfficientDet-D2)  
+- DLA-60  
+
+These backbones are combined with a motion-offset-based tracking pipeline for consistent multi-frame association of airborne objects.
 
 
+### 7.2 Evaluation Dataset
 
+All baseline evaluations are performed on the **AOT Hard Dataset (1,618 flights)**. This dataset is a curated subset of the full AOT benchmark designed to focus on challenging operational scenarios, including:
 
+- Small object encounters  
+- Multi-object scenes  
+- Below-horizon targets  
+- Flights with no visible objects  
 
+This subset provides a more challenging evaluation environment compared to the original full competition dataset.
 
+### 7.3 Baseline Results
 
+Performance of the baseline model on the **AOT Hard Dataset (1,618 flights)**, broken down by scenario type.
 
+<div align="center">
 
+<table>
+<tr>
+<th>Scenario</th>
+<th>Flights</th>
+<th>FPPI</th>
+<th>AFDR</th>
+<th>HFAR</th>
+<th>EDR (Total)</th>
+<th>EDR (Above)</th>
+<th>EDR (Mixed)</th>
+<th>EDR (Below)</th>
+</tr>
 
+<tr>
+<td><b>Overall (All Criteria)</b></td>
+<td>1,618</td>
+<td>0.000016</td>
+<td>0.7374</td>
+<td>0.0887</td>
+<td>0.6948</td>
+<td>0.6366</td>
+<td>0.5724</td>
+<td>0.7605</td>
+</tr>
 
+<tr>
+<td>Small Object (bbox ≤ 36 px²)</td>
+<td>662</td>
+<td>0.00</td>
+<td>0.7212</td>
+<td>0.00</td>
+<td>0.6318</td>
+<td>0.6364</td>
+<td>0.4118</td>
+<td>0.6761</td>
+</tr>
 
+<tr>
+<td>Below Horizon</td>
+<td>1,053</td>
+<td>0.00</td>
+<td>0.7572</td>
+<td>0.00</td>
+<td>0.7028</td>
+<td>0.3158</td>
+<td>0.5333</td>
+<td>0.7746</td>
+</tr>
 
+<tr>
+<td>Multi-Object</td>
+<td>627</td>
+<td>0.00</td>
+<td>0.7082</td>
+<td>0.00</td>
+<td>0.6990</td>
+<td>0.6970</td>
+<td>0.4444</td>
+<td>0.7385</td>
+</tr>
 
-## 📊 Baseline
+<tr>
+<td>No Visible Object</td>
+<td>354</td>
+<td>0.000042</td>
+<td>0.6026</td>
+<td>0.2400</td>
+<td>0.2297</td>
+<td>0.2727</td>
+<td>0.1667</td>
+<td>0.1667</td>
+</tr>
 
-### Winning Solution
+</table>
 
-The baseline used in this project is the [Winning Solution](https://github.com/pdima/airborne_tracking_winning_solution.git)
-from the AIcrowd Airborne Object Tracking Challenge, achieving the highest scores
-on both the public and private leaderboards. The solution uses an ensemble of
-three detection backbones, HRNet32, gernet_m (with BiFPN from EfficientDet D2),
-and DLA60, combined with a predicted offset-based tracking algorithm.
+</div>
 
-### Competition Results (Full AOT Dataset)
-
-Performance of the winning solution (Submission 22) on the AIcrowd competition leaderboards:
-
-| Leaderboard | Score Threshold | FPPI    | AFDR     | HFAR | EDR      |
-|-------------|-----------------|---------|----------|------|----------|
-| Public      | 0.60            | 5.0e-05 | **0.91** | 0.38 | **0.99** |
-| Private     | 0.60            | 7.8e-05 | 0.89     | 0.38 |  0.96    |
-
-**Metric Definitions:**
-
-- **AFDR** *(Average Frame-level Detection Rate)*: Ratio of detected airborne objects to all objects that should be detected, considering all planned aircraft within 700m.
-- **FPPI** *(False Positives Per Image)*: Ratio of false positive airborne reports to the total number of images in the dataset.
-- **EDR** *(Encounter-level Detection Rate)*: Ratio of successfully detected encounters to total encounters, where an encounter is successfully detected if the object is tracked for at least 3 seconds before reaching 300m or within the first 3 seconds of the encounter.
-- **HFAR** *(False Alarm Rate per Hour)*: Number of unique reported track IDs containing at least one false positive, divided by total dataset hours.
-
-### Hard Dataset Results
-
-The table below reports baseline performance broken down by scenario category across the custom
-hard dataset (1,618 flights). Flights were selected from the full AOT dataset using configurable
-filter criteria to isolate the most challenging sequences, providing a more targeted benchmark
-than the full competition dataset.
-
-| Scenario                     | Flights | FPPI      | AFDR   | HFAR   | EDR (Total) | EDR (Above) | EDR (Mixed) | EDR (Below) |
-|------------------------------|---------|-----------|--------|--------|-------------|-------------|-------------|-------------|
-| **Overall (All Criteria)**   | 1,618   | 0.000016  | 0.7374 | 0.0887 | 0.6948      | 0.6366      | 0.5724      | 0.7605      |
-| Small Object (bbox ≤ 36 px²) | 662     | 0.00      | 0.7212 | 0.00   | 0.6318      | 0.6364      | 0.4118      | 0.6761      |
-| Below Horizon                | 1,053   | 0.00      | 0.7572 | 0.00   | 0.7028      | 0.3158      | 0.5333      | 0.7746      |
-| Multi-Object                 | 627     | 0.00      | 0.7082 | 0.00   | 0.6990      | 0.6970      | 0.4444      | 0.7385      |
-| No Visible Object            | 354     | 0.000042  | 0.6026 | 0.2400 | 0.2297      | 0.2727      | 0.1667      | 0.1667      |
-
-*Results evaluated at a minimum detection confidence of 0.60 and a minimum track length of 30 frames (≈ 3 seconds at 10 fps).*
-
----
-
-## 🚀 Proposed Improvement
-
-Beyond the main baseline, a range of additional models were tested for comparison. Based on their performance on the hard dataset, the most promising direction for improvement was...
+<p align="center">
+  <em>Results are evaluated at a minimum detection confidence of 0.60 and a minimum track length of 30 frames (≈ 3 seconds at 10 fps).</em>
+</p>
 
 ---
