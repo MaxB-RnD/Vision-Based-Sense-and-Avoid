@@ -232,7 +232,7 @@ Each script includes its own internal documentation and can be executed directly
 
 <br/>
 
-## 7. Baseline Evaluation
+## 7. Baseline Evaluation (Competition-Winning Model)
 
 ### 7.1 Baseline Model
 
@@ -357,5 +357,113 @@ Performance of the baseline model on the **AOT Hard Dataset (1,618 flights)**, b
 <p align="center">
   <em>Results are evaluated at a minimum detection confidence of 0.60 and a minimum track length of 30 frames (≈ 3 seconds at 10 fps).</em>
 </p>
+
+---
+
+<br/>
+
+## 8. Backbone Model Evaluation (Core Improvement)
+
+The evaluation in this section is conducted using a modified version of the original competition-winning SegTracker-based pipeline. The Optimised Winning Solution retains the pretrained weights from the original system but introduces two key modifications to improve inference efficiency and temporal consistency. The first is a corrected implementation of temporal feature propagation using a [Temporal Shift Module (TSM)](https://github.com/mit-han-lab/temporal-shift-module), which replaces redundant per-frame recomputation with structured temporal feature reuse across successive frames. The second is inference acceleration using PyTorch [`torch.compile`](https://docs.pytorch.org/docs/2.12/generated/torch.compile.html) in `max-autotune` mode, enabling CUDA graph capture and kernel-level optimisation to reduce runtime overhead without altering model outputs.
+
+As a result, this implementation is not equivalent to the original 2021 competition-winning system. Instead, it serves as the reference Optimised Winning Solution used for all backbone replacement experiments presented in this section.
+
+All experiments are conducted on the AOT Hard Dataset, which is partitioned into a stratified 70/15/15 train/validation/test split. This split preserves the distribution of key difficulty factors across all subsets, ensuring consistent representation of challenging scenarios such as small objects, below-horizon targets, multi-object encounters, and frames with no visible objects.
+
+The primary objective of the backbone model evaluation is to determine whether the original SegTracker-based ensemble can be replaced with smaller, more computationally efficient single-backbone architectures while maintaining reliable airborne object detection and tracking performance under real-time constraints.
+
+### 8.1 Evaluated Backbone Architectures
+
+The following backbone models were tested within the optimised detection and tracking framework:
+
+<div align="center">
+
+<table>
+  <tr><th>Backbone Models</th></tr>
+  <tr><td>MobileNetV4-S</td></tr>
+  <tr><td>EfficientViT-M2</td></tr>
+  <tr><td>EfficientViT-B2</td></tr>
+  <tr><td>ResNet34</td></tr>
+  <tr><td>HRNet-W32</td></tr>
+</table>
+
+</div>
+
+These architectures span a range of computational budgets, from ultra-lightweight mobile models to high-capacity vision backbones.
+
+### 8.2 Optimised Pipeline Comparison
+
+The table below summarises performance across all evaluated backbone models under the optimised inference pipeline introduced in Section 8.1.
+
+<div align="center">
+
+<table>
+<tr>
+<th>Model</th>
+<th>Params (M)</th>
+<th>GFLOPs</th>
+<th>FPS</th>
+<th>AFDR</th>
+<th>FPPI</th>
+<th>EDR</th>
+</tr>
+
+<tr>
+<td>MobileNetV4-S</td>
+<td>1.56</td>
+<td>41.60</td>
+<td>26.75</td>
+<td>53.58</td>
+<td>2.08×10<sup>-5</sup></td>
+<td>12.98</td>
+</tr>
+
+<tr>
+<td>EfficientViT-M2</td>
+<td>4.11</td>
+<td>33.72</td>
+<td>3.60</td>
+<td>5.93</td>
+<td>0</td>
+<td>3.37</td>
+</tr>
+
+<tr>
+<td>EfficientViT-B2</td>
+<td>15.17</td>
+<td>168.36</td>
+<td>16.49</td>
+<td>57.64</td>
+<td>3.59×10<sup>-2</sup></td>
+<td>14.90</td>
+</tr>
+
+<tr>
+<td>ResNet34</td>
+<td>21.55</td>
+<td>381.25</td>
+<td>20.75</td>
+<td>51.88</td>
+<td>3.03×10<sup>-2</sup></td>
+<td>12.02</td>
+</tr>
+
+<tr>
+<td>HRNet-W32</td>
+<td>29.56</td>
+<td>42.45</td>
+<td>11.00</td>
+<td>60.07</td>
+<td>2.10×10<sup>-5</sup></td>
+<td>15.87</td>
+</tr>
+
+</table>
+
+</div>
+
+### 8.3 Summary of Findings
+
+The results demonstrate a clear trade-off between computational efficiency and detection performance. Lightweight models such as MobileNetV4-S achieve high inference speeds suitable for real-time deployment but exhibit reduced detection robustness compared to larger architectures. Conversely, EfficientViT-M2 demonstrates severe performance degradation under full-resolution inference, indicating limitations in spatial representation capacity for high-resolution aerial imagery. Among all evaluated architectures, HRNet-W32 provides the most balanced performance, achieving strong detection stability while maintaining real-time inference capability under the optimised pipeline constraints.
 
 ---
