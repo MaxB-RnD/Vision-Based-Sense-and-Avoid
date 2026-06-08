@@ -366,9 +366,9 @@ Performance of the baseline model on the **AOT Hard Dataset (1,618 flights)**, b
 
 The evaluation in this section is conducted using a modified version of the original competition-winning SegTracker-based pipeline. The Optimised Winning Solution retains the pretrained weights from the original system but introduces two key modifications to improve inference efficiency and temporal consistency. 
 
-1. A corrected implementation of temporal feature propagation using a [Temporal Shift Module (TSM)](https://github.com/mit-han-lab/temporal-shift-module), which replaces redundant per-frame recomputation with structured temporal feature reuse across successive frames.
+1. **Temporal Shift Modules (TSM):** A corrected implementation of temporal feature propagation using a [Temporal Shift Module (TSM)](https://github.com/mit-han-lab/temporal-shift-module), which replaces redundant per-frame recomputation with structured temporal feature reuse across successive frames.
 
-2. Inference acceleration using PyTorch [`torch.compile`](https://docs.pytorch.org/docs/2.12/generated/torch.compile.html) in `max-autotune` mode, enabling CUDA graph capture and kernel-level optimisation to reduce runtime overhead without altering model outputs.
+2. **Optimised Pipline:** Inference acceleration using PyTorch [`torch.compile`](https://docs.pytorch.org/docs/2.12/generated/torch.compile.html) in `max-autotune` mode, enabling CUDA graph capture and kernel-level optimisation to reduce runtime overhead without altering model outputs.
 
 As a result, this implementation is not equivalent to the original 2021 competition-winning system. Instead, it serves as the reference Optimised Winning Solution used for all backbone replacement experiments presented in this section.
 
@@ -463,7 +463,7 @@ These architectures span a range of computational budgets, from ultra-lightweigh
 </table>
 
 <p><em>
-Backbone comparison under the optimised inference pipeline introduced in Section 8.1. The optimised pipeline is based on the original Winning Solution architecture with corrected Temporal Shift Module (TSM) implementation and MAX-AUTOTUNE CUDA Graph compilation for accelerated inference. This setup is used as the reference evaluation framework for all backbone experiments.
+Backbone comparison under the optimised pipeline.
 </em></p>
 
 </div>
@@ -473,7 +473,7 @@ Backbone comparison under the optimised inference pipeline introduced in Section
 <img src="docs/Images/SAA_Backbone_Tradeoffs.png" width="900">
 
 <p><em>
-Comparative visualisation of backbone performance trade-offs under the optimised inference pipeline (Section 8.1). Results highlight the relationship between computational efficiency (FPS, GFLOPs, parameter count) and tracking performance (AFDR, FPPI, EDR) across evaluated architectures.
+Performance trade-offs across backbone models.
 </em></p>
 
 </div>
