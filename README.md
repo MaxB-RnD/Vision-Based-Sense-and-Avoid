@@ -2,11 +2,6 @@
 
 ## 📑 Contents
 
-- [🛸 Overview](#-overview)  
-- [📋 Project Details](#-project-details)  
-- [🗂️ Project Structure](#️-project-structure)  
-- [⚙️ Requirements](#️-requirements)  
-- [🛠️ Setup](#️-setup)  
 - [🗃️ Dataset](#️-dataset)  
   - [Data Tools](#data-tools)  
   - [Visualisation](#visualisation)  
@@ -18,7 +13,7 @@
 
 ---
 
-## 🛸 Overview
+## Overview
 
 This project tackles the challenge of detecting and tracking tiny airborne objects using only a
 single monocular camera onboard a drone. Working with the Airborne Object Tracking (AOT) dataset,
@@ -35,7 +30,7 @@ For background on the dataset and benchmarks, see the
 
 ---
 
-## 📋 Project Details
+## Project Details
 
 | Field            | Details                                                                                                |
 |------------------|--------------------------------------------------------------------------------------------------------|
@@ -46,27 +41,44 @@ For background on the dataset and benchmarks, see the
 
 ---
 
-## 🗂️ Project Structure
+## Project Structure
 
 ```text
 Vision-Based-Sense-and-Avoid/
-├── configs/ 
-│   ├── datasets/     # Flight ID sets for different custom libraries.
-│   ├── dependencies/ # Version specifications for project required software.
-│   ├── models/       # Trained model weights (.pth files).
-├── core/             # Competition helper library (AOT dataset access).
-├── docs/             # Research documentation and additional resources.
-├── notebooks/        # End-to-end model evaluation notebooks.
+├── configs/
+│   ├── datasets/          # Flight selections and evaluation subsets.
+│   ├── dependencies/      # Python and PyTorch requirements.
+│   └── models/            # Pretrained model weights and checkpoints.
+│
+├── core/                  # AICrowd helper library and evaluation metrics.
+├── data/                  # Local AOT dataset (external symlink).
+├── docs/
+│   └── Images/            # Documentation figures and visual assets.
+│
+├── notebooks/
+│   ├── baselines.ipynb    
+│   ├── core_improvement.ipynb
+│   ├── demo.ipynb
+│   └── helpers/           # Notebook utilities and visualisation tools.
+│
+├── outputs/
+│   ├── logs/              # Evaluation and training logs.
+│   └── results/           # Generated inference & training outputs.
+│
+├── results/               # Processed benchmarking results and summaries.
+│
 ├── src/
-│   ├── data/         # Dataset selection, cleaning, and visualisation scripts.
-│   └── baselines/    # Baseline solution scripts and models for evaluation.
+│   ├── baselines/         # SegTracker, RT-DETR v2, and YOLOv11 pipelines.
+│   ├── core_improvement/  # Backbone replacement experiments.
+│   └── data/              # Dataset preparation and visualisation utilities.
+|
 ├── README.md
 └── setup.sh
 ```
 
 ---
 
-## ⚙️ Requirements
+## Requirements
 
 - Python 3.11.
 - Virtual Environment (recommended).
@@ -76,7 +88,7 @@ Vision-Based-Sense-and-Avoid/
 
 ---
 
-## 🛠️ Setup
+## Setup
 
 **1. Install Git LFS (one-time setup):**
 
@@ -117,21 +129,59 @@ Vision-Based-Sense-and-Avoid/
 
 ---
 
-## 🗃️ Dataset
+## Dataset
 
-The [Airborne Object Tracking (AOT) Dataset](https://www.aicrowd.com/challenges/airborne-object-tracking-challenge#dataset) is a collection of high-resolution flight sequences captured onboard aerial vehicles. Airborne objects average just 0.01% of the image size (down to a few pixels) making it a challenging benchmark for real-world sense-and-avoid detection.
+The [Airborne Object Tracking (AOT) Dataset](https://www.aicrowd.com/challenges/airborne-object-tracking-challenge#dataset) is a large-scale benchmark for airborne object detection and tracking. It contains high-resolution flight sequences captured from onboard aircraft cameras under diverse environmental and operational conditions. A key challenge of the dataset is that target aircraft often occupy only a few pixels in each frame, with airborne objects averaging approximately **0.01% of the image area**. This makes early detection particularly difficult and provides a realistic benchmark for vision-based Sense-and-Avoid (SAA) systems.
 
-|                       |                                                                  |
-|-----------------------|------------------------------------------------------------------|
-| **Full Dataset**      | ~11TB via `s3://airborne-obj-detection-challenge-training/`.     |
-| **Partial Dataset**   | ~500GB containing valid planned encounters only (`partial=True`).|
-| **Flights**           | ~2,332 sequences across 3 parts.                                 |
-| **Frames per Flight** | ~120s at 10 fps (~4–5GB per flight).                             |
-| **Resolution**        | 2448 × 2048 px.                                                  |
+<div align="center">
+
+| Dataset Property     | Description                                                  |
+| -------------------- | ------------------------------------------------------------ |
+| **Full Dataset**     | ~11 TB stored in the public AOT S3 bucket                    |
+| **Partial Dataset**  | ~500 GB containing valid planned encounters (`partial=True`) |
+| **Flights**          | ~2,332 flight sequences                                      |
+| **Frame Rate**       | 10 FPS                                                       |
+| **Typical Duration** | ~120 seconds per flight                                      |
+| **Resolution**       | 2448 × 2048 pixels                                           |
+
+</div>
+
+### Example Airborne Encounter
+
+The images below illustrate a typical airborne encounter. The target aircraft initially occupies only a handful of pixels and gradually becomes more visible as range decreases.
+
+<div align="center">
+
+<table>
+<tr>
+<td align="center">
+<img src="docs/Images/Data_Viewer_Picture_1.png" width="300"><br/>
+<b>Early Detection</b>
+</td>
+<td align="center">
+<img src="docs/Images/Data_Viewer_Picture_2.png" width="300"><br/>
+<b>Closing Distance</b>
+</td>
+<td align="center">
+<img src="docs/Images/Data_Viewer_Picture_3.png" width="300"><br/>
+<b>Near Range</b>
+</td>
+</tr>
+</table>
+
+</div>
+
+### Annotated Flight Sequence
+
+The example below shows a complete annotated flight sequence with object detections, identifiers, and range information overlaid on each frame.
+
+<div align="center">
+    <img src="docs/Images/Data_Viewer_Video.gif" width="900">
+</div>
 
 ### Data Tools
 
-Three scripts are provided to **browse, select, download,** and visualise flights from the dataset. All scripts are run from the project root.
+Several utility scripts are provided to support dataset exploration, preparation, visualisation, and results analysis. All scripts are executed from the project root.
 
 1. **`browse_data.py`:** Browses dataset ground truth metadata entry by entry without downloading any images. Use this to explore object distances, bounding box sizes, and horizon classifications to decide which flights are worth downloading.
 
@@ -157,21 +207,33 @@ Three scripts are provided to **browse, select, download,** and visualise flight
    python -m src.data.view_data
    ```
 
-### Visualisation
+5. **`split_dataset.py`:** Generate reproducible train, validation, and test splits from a flight list. The script ensures there is no overlap between splits and records metadata required for reproducibility.
 
-| **Frame 1**                                                          | **Frame 2**                                                     | **Frame 3**                                                      |
-|:--------------------------------------------------------------------:|:---------------------------------------------------------------:|:----------------------------------------------------------------:|
-| ![Frame 1: Object at Distance](docs/Images/Data_Viewer_Picture_1.png)| ![Frame 2: Object Closer](docs/Images/Data_Viewer_Picture_2.png)| ![Frame 3: Object Closest](docs/Images/Data_Viewer_Picture_3.png)|
-| Early Detection                                                      | Closing Distance                                                | Near Range                                                       |
+   ```bash
+   python -m src.data.split_dataset
+   ```
 
-<br/>
+6. **`visualise_results.py`:** Generate comparative performance visualisations from evaluation results. The script creates a grid of scatter plots showing the trade-offs between detection performance, model complexity, and inference speed, and exports the resulting figure as a high-resolution PNG suitable for reports and technical documentation.
 
-| **Annotated Video**                                          |
-|:------------------------------------------------------------:|
-| ![Annotated Flight Video](docs/Images/Data_Viewer_Video.gif) |
-| Full Sequence                                                |
+   ```bash
+   python -m src.data.visualise_results
+   ```
 
 ---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ## 📊 Baseline
 
