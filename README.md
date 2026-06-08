@@ -215,19 +215,18 @@ Several utility scripts are provided to support dataset exploration, preparation
 
 To reproduce the results shown in this README, inference and evaluation are provided through two main workflows:
 
-- **Notebook-based workflow:** Full inference and analysis can be run using the notebooks in the `notebooks/` directory. These provide an interactive workflow for both baseline evaluation and core improvement experiments.
-- **Script-based workflow (recommended):** Automated evaluation scripts are provided for reproducible benchmarking:
+1. **Notebook-Based Workflow:** Full inference and analysis can be run using the notebooks in the `notebooks/` directory. These provide an interactive workflow for both baseline evaluation and core improvement experiments.
+
+2. **Script-Based Workflow (Recommended):** Automated evaluation scripts are provided for reproducible benchmarking:
 
    ```bash
    src/baselines/baslines_evaluator.py
    ```
    ```bash
-   src/core_improvement/
+   src/core_improvement/core_improvement_evaluator.py
    ```
 
-Each script includes its own internal documentation and can be executed directly from the terminal. 
-
-> *The script-based workflow is the recommended approach for reproducible evaluation, while notebooks are primarily*
+Each script includes its own internal documentation and can be executed directly from the terminal. The script-based workflow is the recommended approach for reproducible evaluation, while notebooks are primarily intended for experimentation, debugging, and visual analysis.
 
 ---
 
