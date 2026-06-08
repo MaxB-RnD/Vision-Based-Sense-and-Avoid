@@ -468,6 +468,8 @@ Backbone comparison under the optimised pipeline.
 
 </div>
 
+<br/>
+
 <div align="center">
 
 <img src="docs/Images/SAA_Backbone_Tradeoffs.png" width="900">
