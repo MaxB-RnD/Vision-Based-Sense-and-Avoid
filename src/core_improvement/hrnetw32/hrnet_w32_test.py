@@ -72,7 +72,7 @@ from src.core_improvement.winning_solution_star.evaluator.airborne_detection imp
 #                           CONFIGURATION VARIABLES
 # ------------------------------------------------------------------------------
 # Path to the Fine-Tuned Model Checkpoint Directory.
-MODEL_PATH = os.getenv("MODEL_PATH", "configs/models/core_improvement/hrnetw32/120_hrnet32_all.pt")
+MODEL_PATH = os.getenv("MODEL_PATH", "configs/models/core_improvement/hrnetw32/HRNetW32_2220.pt")
 
 # Minimum Number of Frames a Track Must Span Before Being Committed to Results.
 MIN_TRACK_LEN = int(os.getenv("MIN_TRACK_LEN", 30))
