@@ -56,10 +56,10 @@ LOG_DIR="outputs/logs/model_training"
 
 # Experiment Config Names (Relative to configs/models/ Directory).
 EXPERIMENTS=(
-    "winning_solution_star/120_hrnet32_all"
-    "winning_solution_star/120_gernet_m_b2_fpm"
-    "winning_solution_star/120_dla60_256_sgd_all"
-    "winning_solution_star/130_hrnet48_all"
+    "winning_solution_star/HRNetW32_Complete"
+    "winning_solution_star/GerNetB2_Complete"
+    "winning_solution_star/DLA60_Complete"
+    "winning_solution_star/HRNetW48_Complete"
 )
 
 # Human-Readable Names for Logging.
