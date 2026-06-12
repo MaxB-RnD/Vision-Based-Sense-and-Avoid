@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------
 # -               V E R S I O N   I D E N T I F I C A T I O N                  -
 # ------------------------------------------------------------------------------
-# File:                    %name: 120_gernet_m_b2_fpm.yaml %
+# File:                    %name: GerNetB2_FPM_Complete.yaml %
 # Date Created:            %date_created: Tue May 05 19:19:19 2026 %
 # CM Version               %version: 3 %
 # CM Instance              %instance: 1 %
@@ -9,7 +9,7 @@
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
 # ------------------------------------------------------------------------------
-# Experiment:   120_gernet_m_b2_fpm
+# Experiment:   GerNetB2_FPM_Complete
 # Model:        EffDetSegmentation8x (tf_efficientdet_d2 + gernet_m backbone)
 # Role:         Segmentation model (model_seg2)
 # Reference:    Winning Solution Table 2 - AFDR 77.8% @ 0.0002 FPPI
@@ -20,7 +20,7 @@
 # ------------------------------------------------------------------------------
 
 meta:
-  experiment: 120_gernet_m_b2_fpm
+  experiment: GerNetB2_FPM_Complete
   version: 3
   author: MBusato
   model: EffDetSegmentation8x

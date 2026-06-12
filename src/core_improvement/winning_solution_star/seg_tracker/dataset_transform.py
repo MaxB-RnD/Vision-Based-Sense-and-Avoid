@@ -2,9 +2,9 @@ import pandas as pd
 import numpy as np
 import torch
 import torch.utils.data
-import core_improvement.winning_solution_star.seg_tracker.config as config
+import src.core_improvement.winning_solution_star.seg_tracker.config as config
 import os
-import core_improvement.winning_solution_star.seg_tracker.common_utils as common_utils
+import src.core_improvement.winning_solution_star.seg_tracker.common_utils as common_utils
 import matplotlib.pyplot as plt
 import cv2
 import math
@@ -88,6 +88,7 @@ class DatasetTransform(torch.utils.data.Dataset):
             return_torch_tensors=False,
             small_subset=False,
             always_return_synth_img=False,
+            cache_dir=None
     ):
         self.stage = stage
         self.fold = fold
@@ -96,6 +97,7 @@ class DatasetTransform(torch.utils.data.Dataset):
         self.dataset_params = cfg_data
         self.synthetic_img_ratio = self.dataset_params['synthetic_img_ratio']
         self.always_return_synth_img = always_return_synth_img
+        self.cache_dir = cache_dir
 
         self.downscale = self.dataset_params['downscale']
         self.crop_w, self.crop_h = self.dataset_params['crop_size']
@@ -120,13 +122,26 @@ class DatasetTransform(torch.utils.data.Dataset):
         print(stage, len(self.frames))
 
     def img_fn(self, part, flight_id, img_name):
-        return f'{config.DATA_DIR}/part{part}/Images/{flight_id}/{img_name}.{config.IMG_FORMAT}'
+        return os.path.join(
+            config.DATA_DIR,
+            f"part{part}",
+            "Images",
+            f"part{part}{flight_id}",
+            f"{img_name}.{config.IMG_FORMAT}"
+        )
 
     def load_ds(self, part, small_subset=False) -> pd.DataFrame:
-        if small_subset:
-            cache_fn = f'{config.DATA_DIR}/ds_transform_{part}_small.pkl'
+        if self.cache_dir is None:
+            cache_root = config.DATA_DIR
         else:
-            cache_fn = f'{config.DATA_DIR}/ds_transform_{part}.pkl'
+            cache_root = self.cache_dir
+
+        os.makedirs(cache_root, exist_ok=True)
+
+        if small_subset:
+            cache_fn = os.path.join(cache_root, f'ds_transform_{part}_small.pkl')
+        else:
+            cache_fn = os.path.join(cache_root, f'ds_transform_{part}.pkl')
 
         if not os.path.exists(cache_fn):
             frames_dict = {}

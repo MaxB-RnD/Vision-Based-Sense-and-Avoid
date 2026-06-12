@@ -1,82 +1,29 @@
 # ------------------------------------------------------------------------------
 # -               V E R S I O N   I D E N T I F I C A T I O N                  -
 # ------------------------------------------------------------------------------
-# File:                    030_tr_tsn_rn34_w3_crop_borders.yaml
-# Date Created:            Fri Jun 13 00:00:00 2026
-# CM Version               1
-# CM Instance              1
-# Author:                  MBusato
+# File:                    %name: ResNet34_Transforms_Adjusted.yaml %
+# Date Created:            %date_created: Fri Jun 12 20:44:23 2026 %
+# CM Version               %version: 1 %
+# CM Instance              %instance: 1 %
+# Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
 # ------------------------------------------------------------------------------
-# Experiment:   030_tr_tsn_rn34_w3_crop_borders
-# Model:        TrEstimatorTsm (ResNet34 + Temporal Shift Module)
-# Role:         Frame-to-frame transformation estimation (dx, dy, angle)
-#               Used as preprocessing for the detection/tracking pipeline.
-#               Output alignment matrix is fed into SegDetector before
-#               the detection model sees any frame pairs.
-#
-# Dataset:      ~1000 flights, avg 260 frames, all within 700m range.
-#               Scenes are predominantly water/coastline with low ground
-#               texture. Motion magnitudes are small (dx/dy mostly ±12px).
-#
-# Key differences from original author config:
-#   [sigma_offset]
-#     Original: ~30.0px  ->  This config: 15.0px
-#     Reason: Diagnostic showed real dx/dy range is mostly ±12px.
-#             Training on ±30px synthetic offsets causes the model to
-#             over-allocate capacity to large motions it never sees,
-#             degrading accuracy on the small motions that actually occur.
-#
-#   [sigma_angle]
-#     Original: ~5.0deg  ->  This config: 3.0deg
-#     Reason: Low-altitude stable platform, minimal roll/yaw between frames.
-#             Reduced to match observed motion characteristics.
-#
-#   [sigma_scale]
-#     Original: ~0.02    ->  This config: 0.02 (unchanged)
-#     Reason: Scale change between frames is minimal regardless of dataset.
-#
-#   [synthetic_img_ratio]
-#     Original: 0.75     ->  This config: 0.50
-#     Reason: Your dataset has real frame pairs available for all flights.
-#             Reducing synthetic ratio forces the model to learn from your
-#             actual water/coastline/cloud motion patterns rather than
-#             synthetic transforms applied to arbitrary frames.
-#             25% real pairs is the author's original split; 50% is safe
-#             given your dataset size (~260k frames available).
-#
-#   [nb_epochs]
-#     Original: 255      ->  This config: 255 (unchanged)
-#     Reason: Author states "a few hours of training up to 255th epoch".
-#             With your dataset size this is appropriate.
-#
-#   [nb_samples_per_epoch]
-#     Original: 4096     ->  This config: 2048
-#     Reason: Transformation model is simpler than detection model.
-#             2048 gives ~8 full cycles through your data at 255 epochs
-#             which is sufficient. Avoids overfitting on repeated samples.
-#
-#   [crop_size / downscale]
-#     Both unchanged at 1024x1024 / downscale=1.
-#     The model architecture and point grids are hardcoded around this.
-#     Do NOT change these values.
-#
-# Training command:
-#   python train_transformation.py train \
-#     experiments/030_tr_tsn_rn34_w3_crop_borders.yaml
-#
-# Export command (after training completes at epoch 255):
-#   python train_transformation.py export_model \
-#     experiments/030_tr_tsn_rn34_w3_crop_borders.yaml --epoch 255
-#
-# After export, copy the .pth to:
-#   configs/models/baselines/winning_solution/
-#   030_tr_tsn_rn34_w3_crop_borders_255_0.pth
+# Experiment: ResNet34_Transforms
+# Model:      TrEstimatorTsm (ResNet34 + Temporal Shift Module)
+# Role:       Frame-to-frame transformation estimation (dx, dy, angle).
+#             Output alignment matrix fed into SegDetector before detection.
+# Notes:
+#   - Dataset: ~1000 flights, avg 260 frames, range ≤700m, water/coastline.
+#   - Real dx/dy range mostly ±12px; sigma_offset reduced to 15px accordingly.
+#   - sigma_angle reduced from 5.0 to 3.0 deg; stable low-altitude platform.
+#   - synthetic_img_ratio reduced to 0.30; real pairs preferred for water scenes.
+#   - nb_samples_per_epoch halved to 2048; transformation model is simpler.
+#   - crop_size and downscale must not be changed (hardcoded in architecture).
 # ------------------------------------------------------------------------------
 
 meta:
-  experiment: 030_tr_tsn_rn34_w3_crop_borders
+  experiment: ResNet34_Transforms
   version: 1
   author: MBusato
   model: TrEstimatorTsm
@@ -84,74 +31,47 @@ meta:
   role: transformation_estimation
 
 model_params:
-  model_type:    TrEstimatorTsm
-  model_cls:     TrEstimatorTsm
+  model_type: TrEstimatorTsm
+  model_cls:  TrEstimatorTsm
   base_model_name: resnet34
-  # Weight scale controls the sharpness of the confidence heatmap.
-  # exp(3 * sigmoid(x)) as per the paper's Global Weighted Average Pooling.
-  # Do not change — matched to inference code in seg_tracker.py.
-  weight_scale:  3
+  weight_scale: 3            
 
 train_params:
-  nb_epochs:              255
-  nb_samples_per_epoch:   2048
-  nb_samples_valid:       512
-  initial_lr:             1.0e-3
-  optimizer:              sgd
-  scheduler:              CosineAnnealingWarmRestarts
-  scheduler_period:       16
-  scheduler_t_mult:       1.42
-  grad_clip:              8.0
-  # Save a checkpoint every N epochs.
-  save_period:            5
+  # --- Duration ---
+  nb_epochs: 255
+  nb_samples_per_epoch: 2048
+  nb_samples_valid: 512
+
+  # --- Optimiser ---
+  initial_lr: 1.0e-3
+  optimizer: sgd
+  grad_clip: 8.0
+
+  # --- Scheduler: CosineAnnealingWarmRestarts ---
+  scheduler: CosineAnnealingWarmRestarts
+  scheduler_period: 16    # T_0
+  scheduler_t_mult: 1.42  # T_mult
+
+  # --- Checkpointing ---
+  save_period: 5   # Save Every N Epochs.
 
 train_data_loader:
-  batch_size:   8
-  num_workers:  8
+  batch_size:  8
+  num_workers: 8
 
 val_data_loader:
-  batch_size:   4
-  num_workers:  8
+  batch_size:  4
+  num_workers: 8
 
 dataset_params:
   # --- Input dimensions ---
-  # CRITICAL: Do not change crop_size or downscale.
-  # The ResNet34 backbone, point grids (32x32 at 32px spacing),
-  # and inference code in seg_tracker.py all assume 1024x1024 input.
-  crop_size:   [1024, 1024]
-  downscale:   1
+  crop_size:  [1024, 1024]
+  downscale:  1
 
   # --- Synthetic vs real frame pair ratio ---
-  # 0.50 = 50% synthetic transforms, 50% real frame pairs from your dataset.
-  # The real pairs use OpenCV optical flow to estimate the ground truth
-  # transform, which is then used as the training target.
-  # Original author used 0.75 synthetic. Reduced here because your real
-  # data has distinctive motion patterns (water scenes) that synthetic
-  # transforms won't replicate.
-  synthetic_img_ratio: 0.50
+  synthetic_img_ratio: 0.30  # 0.30 = 30% Synthetic, 70% Real Pairs.
 
   # --- Synthetic transform parameter ranges ---
-  # These define the std dev of Gaussian distributions used to generate
-  # random synthetic transforms during training. Must match the range of
-  # real motions observed in your data.
-  #
-  # From alignment diagnostic: real dx/dy range is approximately ±12px,
-  # angles are small, scale is near-constant.
-  #
-  # sigma_offset: std dev in pixels for dx and dy synthetic offsets.
-  #   Diagnostic showed 95% of real offsets fall within ±12px.
-  #   Set to 15px to cover this range with a small margin.
-  #   Note: dataset_transform.py multiplies sigma by 2 for synthetic
-  #   generation (sigma_offset*2), so effective range is ±30px at 3-sigma.
   sigma_offset: 15.0
-
-  # sigma_angle: std dev in degrees for synthetic rotation.
-  #   Your platform is stable, minimal roll between frames.
-  #   Reduced from original ~5.0 to 3.0 degrees.
-  #   Effective range at 3-sigma after *2 multiplier: ±18 degrees.
   sigma_angle:  3.0
-
-  # sigma_scale: std dev for synthetic scale change.
-  #   Near-constant altitude flights, scale barely changes frame to frame.
-  #   Kept at original value.
   sigma_scale:  0.02

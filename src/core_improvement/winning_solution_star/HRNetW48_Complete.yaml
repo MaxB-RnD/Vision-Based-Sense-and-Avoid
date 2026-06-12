@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------
 # -               V E R S I O N   I D E N T I F I C A T I O N                  -
 # ------------------------------------------------------------------------------
-# File:                    %name: 130_hrnet48_all.yaml %
+# File:                    %name: HRNetW48_Complete.yaml %
 # Date Created:            %date_created: Tue May 05 19:19:19 2026 %
 # CM Version               %version: 3 %
 # CM Instance              %instance: 1 %
@@ -9,7 +9,7 @@
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
 # ------------------------------------------------------------------------------
-# Experiment:   130_hrnet48_all
+# Experiment:   HRNetW48_Complete
 # Model:        HRNetSegmentation (hrnet_w48)
 # Role:         Crop refinement model (model_seg3)
 # Reference:    Winning Solution Table 2 - AFDR 81.7% @ 0.0002 FPPI
@@ -21,7 +21,7 @@
 # ------------------------------------------------------------------------------
 
 meta:
-  experiment: 130_hrnet48_all
+  experiment: HRNetW48_Complete
   version: 3
   author: MBusato
   model: HRNetSegmentation
