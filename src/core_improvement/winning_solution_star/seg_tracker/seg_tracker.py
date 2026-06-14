@@ -81,7 +81,7 @@ class SegDetector:
         # Load Pretrained Frame-Alignment Model Weights.
         self._model_transform_raw.load_state_dict(
             torch.load(
-                f'{models_dir}/ReseNet34_Transforms_Original.pth',
+                f'{models_dir}/ResNet34_Transforms_Original.pth',
                 map_location=self.device,
                 weights_only=False,
             )["model_state_dict"]
