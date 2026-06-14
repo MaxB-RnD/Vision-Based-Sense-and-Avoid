@@ -12,20 +12,37 @@
 # Training, validation, export, and diagnostic entrypoint for the ResNet34-TSM
 # frame-to-frame transformation estimation model.
 #
-# USAGE:
-#   1. Train using the command:
+# USAGE INSTRUCTIONS:
+#   1. Train the transformation model:
 #        nohup python -m src.core_improvement.winning_solution_star.seg_tracker.train_transformation \
-#            train winning_solution_star/ResNet34_Transforms_Adjusted \
+#            train src/core_improvement/winning_solution_star/ResNet34_Transforms_Adjusted.yaml \
 #            > outputs/logs/model_training/train_transformation.log 2>&1 &
 #
-#   2. Then monitor from terminal with:
+#   2. Monitor training progress:
 #        tail -f outputs/logs/model_training/train_transformation.log
 #
-#   3. Optional Environment Variables:
-#        --fold   INT    Dataset fold index (default: 0).
-#        --epoch  INT    Epoch to continue from or export (default: -1).
-#        --sample INT    Reserved for future use.
-#        --part   STR    Dataset partition for offset prediction (e.g. 'part1').
+#   3. Generate frame transforms for each dataset partition (run after training):
+#        nohup python -m src.core_improvement.winning_solution_star.seg_tracker.train_transformation \
+#            predict_dataset_offsets src/core_improvement/winning_solution_star/ResNet34_Transforms_Adjusted.yaml \
+#            --part part1 > outputs/logs/model_training/frame_transforms_part1.log 2>&1 &
+#
+#        nohup python -m src.core_improvement.winning_solution_star.seg_tracker.train_transformation \
+#            predict_dataset_offsets src/core_improvement/winning_solution_star/ResNet34_Transforms_Adjusted.yaml \
+#            --part part2 > outputs/logs/model_training/frame_transforms_part2.log 2>&1 &
+#
+#        nohup python -m src.core_improvement.winning_solution_star.seg_tracker.train_transformation \
+#            predict_dataset_offsets src/core_improvement/winning_solution_star/ResNet34_Transforms_Adjusted.yaml \
+#            --part part3 > outputs/logs/model_training/frame_transforms_part3.log 2>&1 &
+#
+#   4. Monitor transform generation:
+#        echo && tail -f outputs/logs/model_training/frame_transforms_part1.log
+#        echo && tail -f outputs/logs/model_training/frame_transforms_part2.log
+#        echo && tail -f outputs/logs/model_training/frame_transforms_part3.log
+#
+#   Optional Arguments:
+#       --fold   INT    Dataset fold index (default: 0).
+#       --epoch  INT    Epoch to continue from or export (default: -1).
+#       --part   STR    Dataset partition for offset prediction (e.g. 'part1').
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
