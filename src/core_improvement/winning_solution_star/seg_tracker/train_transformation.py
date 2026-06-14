@@ -709,7 +709,7 @@ def find_transforms(model: nn.Module, img_crops: list) -> list:
         cur_points = prev_points + offsets[i]
 
         # Fit dx, dy, angle Using Squared Heatmap Weights for Robustness.
-        dx, dy, angle, err = dataset_transform.offset_grid_to_transform_params(
+        dx, dy, angle, err = offset_grid_to_transform.offset_grid_to_transform_params(
             prev_frame_points=prev_points.reshape(2, -1) - center_offset,
             cur_frame_points=cur_points.reshape(2, -1) - center_offset,
             points_weight=heatmap[i].reshape(-1) ** 2
@@ -738,9 +738,9 @@ def predict_dataset_offsets(part: str = 'part1') -> None:
     """
     # Load the Model from Config.
     experiment_name = config.TRANSFORM_MODEL
-    fold            = config.TRANSFORM_MODEL_FOLD
-    cfg             = common_utils.load_config_data(experiment_name)
-    checkpoints_dir = f"../output/checkpoints/{experiment_name}/{fold}"
+    fold            = config.TRANSFORM_MODEL_RUN
+    cfg             = common_utils.load_config_data(experiment_name, experiments_dir=config.TRANSFORM_MODEL_DIR)
+    checkpoints_dir = f"outputs/results/model_training/transforms/{fold}/checkpoints"
     print("\n", experiment_name, "\n")
 
     # Disable Gradient Computation for Full Inference Pass.
@@ -772,7 +772,7 @@ def predict_dataset_offsets(part: str = 'part1') -> None:
     batch_size     = 4
 
     # Run the Per-Flight Prediction Loop.
-    for flight_id in tqdm(flight_ids):
+    for flight_id in tqdm(flight_ids, position=0, leave=True):
         # Build Ordered List of Frame Paths for this Flight.
         df_flight = df[df.flight_id == flight_id][
             ['img_name', 'frame']
@@ -794,7 +794,7 @@ def predict_dataset_offsets(part: str = 'part1') -> None:
         # Buffer Holding the Current Batch of Crops.
         img_crops = []
 
-        for fn, img in tqdm(limited_pipe(pipe, file_names, 32), total=len(file_names)):
+        for fn, img in tqdm(limited_pipe(pipe, file_names, 32), total=len(file_names), position=1, leave=False):
             # Track Whether This Frame Loaded Successfully.
             load_failed.append(img is None)
 

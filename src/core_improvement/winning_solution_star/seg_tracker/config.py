@@ -1,6 +1,6 @@
 from pathlib import Path
 DATA_DIR = Path(__file__).resolve().parents[4] / "data"
-SRC_DATA_DIR = '../data'
+SRC_DATA_DIR = 'data'
 
 IMG_FORMAT = 'png'
 
@@ -28,7 +28,7 @@ CLASSES = [
 
 NB_CLASSES = len(CLASSES)
 
-
+TRANSFORM_MODEL_DIR = "src/core_improvement/winning_solution_star"
 TRANSFORM_MODEL = 'ResNet34_Transforms_Adjusted'
 TRANSFORM_MODEL_EPOCH = 255
-TRANSFORM_MODEL_FOLD = 0
+TRANSFORM_MODEL_RUN = "run2"

@@ -190,7 +190,7 @@ class HRNetW32Predictor(AirbornePredictor):
         self.model_seg = torch.compile(self.model_seg, mode="max-autotune")
 
         # Directory Containing Transformation Model Weights.
-        models_dir = "configs/models/baselines/winning_solution"
+        models_dir = "configs/models/core_improvement"
 
         # Create Transform Estimation Model.
         self._model_transform_raw = models_transformation.TrEstimatorTsmCached(
@@ -200,7 +200,7 @@ class HRNetW32Predictor(AirbornePredictor):
         # Load Pretrained Transformation Model Weights.
         self._model_transform_raw.load_state_dict(
             torch.load(
-                f"{models_dir}/030_tr_tsn_rn34_w3_crop_borders_255_0.pth",
+                f"{models_dir}/ResNet34_Transforms.pt",
                 map_location=self.device, weights_only=False
             )["model_state_dict"]
         )
