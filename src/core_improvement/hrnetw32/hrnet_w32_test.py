@@ -72,7 +72,7 @@ from src.core_improvement.winning_solution_star.evaluator.airborne_detection imp
 #                           CONFIGURATION VARIABLES
 # ------------------------------------------------------------------------------
 # Path to the Fine-Tuned Model Checkpoint Directory.
-MODEL_PATH = os.getenv("MODEL_PATH", "configs/models/core_improvement/hrnetw32/HRNetW32_Complete.pt")
+MODEL_PATH = os.getenv("MODEL_PATH", "configs/models/core_improvement/hrnetw32/HRNetW32_300.pt")
 
 # Minimum Number of Frames a Track Must Span Before Being Committed to Results.
 MIN_TRACK_LEN = int(os.getenv("MIN_TRACK_LEN", 30))
@@ -200,7 +200,7 @@ class HRNetW32Predictor(AirbornePredictor):
         # Load Pretrained Transformation Model Weights.
         self._model_transform_raw.load_state_dict(
             torch.load(
-                f"{models_dir}/ResNet34_Transforms.pt",
+                f"{models_dir}/ResNet34_Transforms_Original.pth",
                 map_location=self.device, weights_only=False
             )["model_state_dict"]
         )

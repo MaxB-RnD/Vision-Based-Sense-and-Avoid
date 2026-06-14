@@ -67,7 +67,7 @@ class SegDetector:
         )
 
         # Directory Containing All Ensemble Model Weights.
-        models_dir = 'configs/models/core_improvement/winning_solution_star'
+        models_dir = 'configs/models/core_improvement'
 
         # Set the Device to GPU if Available.
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -81,7 +81,7 @@ class SegDetector:
         # Load Pretrained Frame-Alignment Model Weights.
         self._model_transform_raw.load_state_dict(
             torch.load(
-                f'{models_dir}/030_tr_tsn_rn34_w3_crop_borders_255_0.pth',
+                f'{models_dir}/ReseNet34_Transforms_Original.pth',
                 map_location=self.device,
                 weights_only=False,
             )["model_state_dict"]
@@ -114,7 +114,7 @@ class SegDetector:
         # Load Pretrained HRNet-W32 Weights.
         self.model_seg1.load_state_dict(
             torch.load(
-                f'{models_dir}/120_hrnet32_all.pt',
+                f'{models_dir}/winning_solution_star/HRNetW32_300.pt',
                 map_location=self.device,
                 weights_only=False,
             )['model_state_dict'],
@@ -147,7 +147,7 @@ class SegDetector:
         # Load Pretrained EfficientDet-D2 Weights.
         self.model_seg2.load_state_dict(
             torch.load(
-                f'{models_dir}/120_gernet_m_b2_fpm.pt',
+                f'{models_dir}/winning_solution_star/GerNet_B2_FPM_300.pt',
                 map_location=self.device,
                 weights_only=False,
             )['model_state_dict'],
@@ -182,7 +182,7 @@ class SegDetector:
         # Load Pretrained DLA-60 Weights.
         self.model_dla.load_state_dict(
             torch.load(
-                f'{models_dir}/120_dla60_256_sgd_all.pt',
+                f'{models_dir}/DLA60_300.pt',
                 map_location=self.device,
                 weights_only=False,
             )['model_state_dict'],
@@ -217,7 +217,7 @@ class SegDetector:
         # Load Pretrained HRNet-W48 Weights.
         self.model_seg3.load_state_dict(
             torch.load(
-                f'{models_dir}/130_hrnet48_all.pt',
+                f'{models_dir}/HRNetW48_300.pt',
                 map_location=self.device,
                 weights_only=False,
             )['model_state_dict'],

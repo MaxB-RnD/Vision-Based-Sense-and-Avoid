@@ -73,7 +73,7 @@ from src.core_improvement.winning_solution_star.evaluator.airborne_detection imp
 #                           CONFIGURATION VARIABLES
 # ------------------------------------------------------------------------------
 # Path to the Fine-Tuned Model Checkpoint Directory.
-MODEL_PATH = os.getenv("MODEL_PATH", "configs/models/core_improvement/resnet34/resnet34_500.pt")
+MODEL_PATH = os.getenv("MODEL_PATH", "configs/models/core_improvement/resnet34/ResNet34_500.pt")
 
 # Minimum Number of Frames a Track Must Span Before Being Committed to Results.
 MIN_TRACK_LEN = int(os.getenv("MIN_TRACK_LEN", 30))
@@ -190,7 +190,7 @@ class ResNet34Predictor(AirbornePredictor):
         self.model_seg = torch.compile(self.model_seg, mode="max-autotune")
 
         # Directory Containing Transformation Model Weights.
-        models_dir = "configs/models/baselines/winning_solution"
+        models_dir = "configs/models/core_improvement"
 
         # Create Transform Estimation Model.
         self._model_transform_raw = models_transformation.TrEstimatorTsmCached(
@@ -200,7 +200,7 @@ class ResNet34Predictor(AirbornePredictor):
         # Load Pretrained Transformation Model Weights.
         self._model_transform_raw.load_state_dict(
             torch.load(
-                f"{models_dir}/030_tr_tsn_rn34_w3_crop_borders_255_0.pth",
+                f"{models_dir}/ReseNet34_Transforms_Original.pth",
                 map_location=self.device, weights_only=False
             )["model_state_dict"]
         )
