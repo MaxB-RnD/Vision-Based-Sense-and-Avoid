@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -5,14 +6,10 @@ from . import config
 import timm
 import numpy as np
 
-import effdet
-from effdet import get_efficientdet_config, EfficientDet, DetBenchTrain, DetBenchPredict
-from effdet.efficientdet import HeadNet, BiFpn, get_feature_info
+from effdet import get_efficientdet_config, EfficientDet
 from omegaconf import OmegaConf
 from . import models_dla_conv
 
-from collections import OrderedDict
-from typing import List, Callable, Optional, Union, Tuple
 
 
 class HRNetSegmentation(nn.Module):
@@ -34,15 +31,12 @@ class HRNetSegmentation(nn.Module):
                                             in_chans=input_depth,
                                             pretrained=pretrained)
         self.backbone_depths = list(self.base_model.feature_info.channels())
-        print(f'{base_model_name} upscale: {self.upscale_mode} comb outputs: {self.combine_outputs_dim}')
-        print(f"Feature channels: {self.backbone_depths}")
-        # self.backbone_depths = {
-        #     "hrnet_w32": [32, 64, 128, 256],
-        #     "hrnet_w48": [48, 96, 192, 384],
-        #     "hrnet_w64": [64, 128, 256, 512],
-        #     "hrnet_w18": [18, 36, 72, 144],
-        #     "hrnet_w18_small_v2": [18, 36, 72, 144],
-        # }[base_model_name]
+
+        # Verbose Logging During Model Initialisation if DEBUG_MODEL_INIT is Set.
+        if os.getenv("DEBUG_MODEL_INIT"):
+            print(f'{base_model_name} upscale: {self.upscale_mode} comb outputs: {self.combine_outputs_dim}')
+            print(f"Feature channels: {self.backbone_depths}")
+
         hrnet_outputs = sum(self.backbone_depths)
 
         if self.combine_outputs_dim > 0:
@@ -70,7 +64,6 @@ class HRNetSegmentation(nn.Module):
 
     def forward(self, inputs):
         stages_output = self.base_model(inputs)
-        # print([xi.shape for xi in stages_output])
 
         if self.pred_scale == 4:
             if self.upscale_mode == 'linear':
@@ -98,12 +91,9 @@ class HRNetSegmentation(nn.Module):
             raise RuntimeError('Invalid pred_scale')
 
         x = torch.cat(x, dim=1)
-        # print(x.shape)
 
         if self.combine_outputs_dim > 0:
-            # print(x.shape)
             x = F.relu(self.fc_comb(x))
-            # print(x.shape)
 
         cls = self.fc_cls(x)
         size = self.fc_size(x)
@@ -194,15 +184,12 @@ class HRNetSegmentationSeparateHeads(nn.Module):
                                             in_chans=input_depth,
                                             pretrained=pretrained)
         self.backbone_depths = list(self.base_model.feature_info.channels())
-        print(f'{base_model_name} upscale: {self.upscale_mode} comb outputs: {self.combine_outputs_dim}')
-        print(f"Feature channels: {self.backbone_depths}")
-        # self.backbone_depths = {
-        #     "hrnet_w32": [32, 64, 128, 256],
-        #     "hrnet_w48": [48, 96, 192, 384],
-        #     "hrnet_w64": [64, 128, 256, 512],
-        #     "hrnet_w18": [18, 36, 72, 144],
-        #     "hrnet_w18_small_v2": [18, 36, 72, 144],
-        # }[base_model_name]
+
+        # Verbose Logging During Model Initialisation if DEBUG_MODEL_INIT is Set.
+        if os.getenv("DEBUG_MODEL_INIT"):
+            print(f'{base_model_name} upscale: {self.upscale_mode} comb outputs: {self.combine_outputs_dim}')
+            print(f"Feature channels: {self.backbone_depths}")
+
         hrnet_outputs = sum(self.backbone_depths)
 
         self.head_cls = HeadConv(hrnet_outputs, self.combine_outputs_dim)
@@ -225,7 +212,6 @@ class HRNetSegmentationSeparateHeads(nn.Module):
 
     def forward(self, inputs):
         stages_output = self.base_model(inputs)
-        # print([xi.shape for xi in stages_output])
 
         if self.pred_scale == 4:
             if self.upscale_mode == 'linear':
@@ -253,7 +239,6 @@ class HRNetSegmentationSeparateHeads(nn.Module):
             raise RuntimeError('Invalid pred_scale')
 
         x = torch.cat(x, dim=1)
-        # print(x.shape)
 
         x_cls = self.head_cls(x)
         x_reg = self.head_reg(x)
@@ -306,13 +291,19 @@ class EffDetSegmentation(nn.Module):
         if 'custom_backbone' in cfg:
             custom_backbone = cfg['custom_backbone']
             h.update({'backbone_name': custom_backbone})
-            print('Using custom backbone', custom_backbone)
+            if os.getenv("DEBUG_MODEL_INIT"):
+                print('Using custom backbone', custom_backbone)
 
-        print(h)
+        # Verbose Logging During Model Initialisation if DEBUG_MODEL_INIT is Set.
+        if os.getenv("DEBUG_MODEL_INIT"):
+            print(h)
 
         self.model = EfficientDet(h, pretrained_backbone=pretrained)
         model_outputs = h.fpn_channels
-        print(f'{base_model_name} {model_outputs}')
+
+        # Verbose Logging During Model Initialisation if DEBUG_MODEL_INIT is Set.
+        if os.getenv("DEBUG_MODEL_INIT"):
+            print(f'{base_model_name} {model_outputs}')
 
         self.fc_cls = nn.Conv2d(model_outputs, config.NB_CLASSES, kernel_size=1)
         self.fc_size = nn.Conv2d(model_outputs, 2, kernel_size=1)
@@ -329,7 +320,6 @@ class EffDetSegmentation(nn.Module):
     def forward(self, inputs):
         x = self.model.backbone(inputs)
         x = self.model.fpn(x)
-        # print([xi.shape for xi in x])
         x = x[0]
 
         cls = self.fc_cls(x*0.1)
@@ -377,15 +367,21 @@ class EffDetSegmentation8x(nn.Module):
         if 'custom_backbone' in cfg:
             self.custom_backbone = cfg['custom_backbone']
             h.update({'backbone_name': self.custom_backbone})
-            print('Using custom backbone', self.custom_backbone)
+            if os.getenv("DEBUG_MODEL_INIT"):
+                print('Using custom backbone', self.custom_backbone)
         else:
             self.custom_backbone = None
 
-        print(h)
+        # Verbose Logging During Model Initialisation if DEBUG_MODEL_INIT is Set.
+        if os.getenv("DEBUG_MODEL_INIT"):
+            print(h)
 
         self.model = EfficientDet(h, pretrained_backbone=pretrained)
         model_outputs = h.fpn_channels
-        print(f'{base_model_name} {model_outputs}')
+
+        # Verbose Logging During Model Initialisation if DEBUG_MODEL_INIT is Set.
+        if os.getenv("DEBUG_MODEL_INIT"):
+            print(f'{base_model_name} {model_outputs}')
 
         self.fc_cls = nn.Conv2d(model_outputs, config.NB_CLASSES, kernel_size=1)
         self.fc_size = nn.Conv2d(model_outputs, 2, kernel_size=1)
@@ -421,10 +417,8 @@ class EffDetSegmentation8x(nn.Module):
     def forward(self, inputs):
         x = self.model.backbone(inputs)
         x = self.model.fpn(x)
-        # print([xi.shape for xi in x])
         x = x[0]
 
-        # cls = self.fc_cls(x*0.1)
         size = self.fc_size(x)
         offset = self.fc_offset(x)
         distance = self.fc_distance(x)
@@ -465,15 +459,21 @@ class EffDetSegmentation8xSeparateHeads(nn.Module):
         if 'custom_backbone' in cfg:
             self.custom_backbone = cfg['custom_backbone']
             h.update({'backbone_name': self.custom_backbone})
-            print('Using custom backbone', self.custom_backbone)
+            if os.getenv("DEBUG_MODEL_INIT"):
+                print('Using custom backbone', self.custom_backbone)
         else:
             self.custom_backbone = None
 
-        print(h)
+        # Verbose Logging During Model Initialisation if DEBUG_MODEL_INIT is Set.
+        if os.getenv("DEBUG_MODEL_INIT"):
+            print(h)
 
         self.model = EfficientDet(h, pretrained_backbone=pretrained)
         model_outputs = h.fpn_channels
-        print(f'{base_model_name} {model_outputs} {self.combine_outputs_dim}')
+
+        # Verbose Logging During Model Initialisation if DEBUG_MODEL_INIT is Set.
+        if os.getenv("DEBUG_MODEL_INIT"):
+            print(f'{base_model_name} {model_outputs} {self.combine_outputs_dim}')
 
         self.head_cls = HeadConv(model_outputs, self.combine_outputs_dim)
         self.head_reg = HeadConv(model_outputs, self.combine_outputs_dim)
@@ -513,7 +513,6 @@ class EffDetSegmentation8xSeparateHeads(nn.Module):
     def forward(self, inputs):
         x = self.model.backbone(inputs)
         x = self.model.fpn(x)
-        # print([xi.shape for xi in x])
         x = x[0]
 
         x_cls = self.head_cls(x)
@@ -556,7 +555,10 @@ class DLA8xSeparateHeads(nn.Module):
         self.backbone_depths = list(self.backbone.feature_info.channels())
 
         model_outputs = sum(self.backbone_depths)
-        print(f'{base_model_name} {self.backbone_depths}')
+
+        # Verbose Logging During Model Initialisation if DEBUG_MODEL_INIT is Set.
+        if os.getenv("DEBUG_MODEL_INIT"):
+            print(f'{base_model_name} {self.backbone_depths}')
 
         self.head_cls = HeadConv(model_outputs, self.combine_outputs_dim)
         self.head_reg = HeadConv(model_outputs, self.combine_outputs_dim)
@@ -575,8 +577,6 @@ class DLA8xSeparateHeads(nn.Module):
 
     def forward(self, inputs):
         stages_output = self.backbone(inputs)
-        # print([xi.shape for xi in stages_output])
-        # x = x[-1]
 
         x = [
             F.avg_pool2d(stages_output[0], 4),
@@ -658,13 +658,19 @@ class EffDetTsmSegmentation(nn.Module):
         if 'custom_backbone' in cfg:
             custom_backbone = cfg['custom_backbone']
             h.update({'backbone_name': custom_backbone})
-            print('Using custom backbone', custom_backbone)
+            if os.getenv("DEBUG_MODEL_INIT"):
+                print('Using custom backbone', custom_backbone)
 
-        print(h)
+        # Verbose Logging During Model Initialisation if DEBUG_MODEL_INIT is Set.
+        if os.getenv("DEBUG_MODEL_INIT"):
+            print(h)
 
         self.model = EfficientDet(h, pretrained_backbone=pretrained)
         model_outputs = h.fpn_channels
-        print(f'{base_model_name} {model_outputs}')
+
+        # Verbose Logging During Model Initialisation if DEBUG_MODEL_INIT is Set.
+        if os.getenv("DEBUG_MODEL_INIT"):
+            print(f'{base_model_name} {model_outputs}')
 
         duration = 1
         if 'resnet' in h['backbone_name']:
@@ -693,10 +699,8 @@ class EffDetTsmSegmentation(nn.Module):
         x = inputs.view(B * T, 1, H, W)
         x = self.model.backbone(x)
         x = self.model.fpn(x)
-        # print([xi.shape for xi in x])
         x = x[0]
 
-        # x: B*T x C x H x W
         x = x.view(B, -1, x.shape[1], x.shape[2], x.shape[3])
         x = x[:, 1]  # only the current frame
 
@@ -750,7 +754,10 @@ class DLASegmentation(nn.Module):
                             [2 ** i for i in range(self.last_level - self.first_level)])
 
         model_outputs = channels[self.first_level]
-        print(f'DLASegmentation8x {model_outputs}')
+
+        # Verbose Logging During Model Initialisation if DEBUG_MODEL_INIT is Set.
+        if os.getenv("DEBUG_MODEL_INIT"):
+            print(f'DLASegmentation8x {model_outputs}')
 
         if self.combine_outputs_dim > 0:
             self.combine_outputs_kernel = cfg.get('combine_outputs_kernel', 1)
@@ -786,17 +793,10 @@ class DLASegmentation(nn.Module):
         self.ida_up(y, 0, len(y))
 
         x = y[-1]
-        #
-        # x = self.dla_up(x)
-        # print([xi.shape for xi in x])
-        # x = x[0]
 
         if self.combine_outputs_dim > 0:
-            # print(x.shape)
             x = F.relu(self.fc_comb(x))
-            # print(x.shape)
 
-        #cls = self.fc_cls(x*0.1)
         size = self.fc_size(x)
         offset = self.fc_offset(x)
         distance = self.fc_distance(x)
@@ -816,23 +816,3 @@ class DLASegmentation(nn.Module):
             res['above_horizon'] = self.fc_horizon(x)
 
         return res
-
-
-def print_summary():
-    import pytorch_model_summary
-    # model = HRNetSegmentation(cfg={'base_model_name': 'hrnet_w32', 'input_frames': 2, 'feature_location': '', 'upscale_mode': 'nearest', 'combine_outputs_dim': 512})
-    # model = EffDetSegmentation(cfg={'base_model_name': 'tf_efficientdet_d3', 'input_frames': 2})
-    # model = EffDetTsmSegmentation(cfg={'base_model_name': 'tf_efficientdet_d2', 'input_frames': 2, 'custom_backbone': 'dpn68b'})
-    # model = DLASegmentation(cfg={'input_frames': 2})
-
-    # model = EffDetSegmentation8x(cfg={'base_model_name': 'tf_efficientdet_d2', 'input_frames': 2, 'custom_backbone': 'halonet_h1_c4c5'})
-    # model = PANSegmentation(cfg={'input_frames': 2, 'custom_backbone': 'resnet50', 'decoder_channels': 128})
-    # model = UNetSegmentation(cfg={'input_frames': 2, 'custom_backbone': 'efficientnet-b5', 'decoder_channels': [512, 256, 4, 4, 4]})
-    model = DLA8xSeparateHeads(cfg={'base_model_name': 'dla60_res2next', 'input_frames': 2, 'combine_outputs_dim': 256})
-    model(torch.zeros((2, 2, 512, 512)))
-
-    print(pytorch_model_summary.summary(model, torch.zeros((2, 2, 512, 512)), max_depth=2, show_hierarchical=False))
-
-
-if __name__ == "__main__":
-    print_summary()

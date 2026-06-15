@@ -31,16 +31,23 @@
 # ------------------------------------------------------------------------------
 
 import os
+import sys
 import re
 import json
+
+import torch
+import numpy as np
 import pandas as pd
 
 from glob import glob
+from fvcore.nn import FlopCountAnalysis, parameter_count
 
 from pathlib import Path
 from typing import Optional
 from logging_module import LogLevel, log
 
+sys.path.insert(0, os.path.dirname(__file__))
+from src.baselines.winning_solution.evaluator.airborne_detection import AirbornePredictor
 
 # ------------------------------------------------------------------------------
 #                           FLIGHT ID PARSING
@@ -323,7 +330,6 @@ def convert_results_to_metrics_format(raw_path: str, out_path: str, input_format
     Returns:
         None: Writes the converted results to disk.
     """
-
     # Load Raw Inference Results from Disk.
     with open(raw_path) as f:
         data = json.load(f)
@@ -359,6 +365,386 @@ def convert_results_to_metrics_format(raw_path: str, out_path: str, input_format
     # Log Completion of Conversion Step.
     log(LogLevel.INFO, "notebook_helpers:convert_results",
         f"Centre-Formated Result Conversion Complete.")
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
+#                       MODEL COMPLEXITY MEASUREMENT
+# ------------------------------------------------------------------------------
+def measure_model_complexity(
+    model        : "torch.nn.Module",
+    input_shape  : "tuple | None" = (1, 2, 2048, 2448),
+    input_override: "tuple | None" = None,
+    device       : str = "cuda",
+    label        : str = "",
+) -> dict:
+    """
+    Measures the parameter count and FLOPs (GFLOPs) for a given model.
+
+    Uses fvcore's FlopCountAnalysis for FLOPs. This counts multiply-add
+    operations (MACs) and reports them as FLOPs (1 MAC = 2 FLOPs), which
+    is the standard convention for comparing model complexity in the
+    literature.
+
+    Args:
+        model (torch.nn.Module): A torch.nn.Module to profile.
+        input_shape (tuple): The (B, C, H, W) input tensor shape to use for the
+                             FLOPs analysis.
+        input_override (tuple): Optional tuple of tensors to pass directly as the
+                                model's forward arguments. Use for models that take
+                                more than one input tensor. Overrides input_shape.
+        device (str): "cuda" or "cpu". FLOPs analysis runs on CPU regardless
+                       but model is moved for the dummy forward pass.
+        label (str): Optional name for logging output.
+
+    Returns:
+        dict with keys:
+            total_params (int): Total number of parameters.
+            trainable_params (int): Number of trainable parameters.
+            gflops (float): GFLOPs for one forward pass at input_shape.
+            gmacs (float): GMACs (= gflops / 2).
+    """
+    # Set Model to Evaluation Mode (Disables Dropout, etc.).
+    model.eval()
+
+    # Count Parameters.
+    param_counts = parameter_count(model)
+    total_params = int(param_counts[""])
+
+    # Count Only Trainable Parameters.
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+    # Set fallback value for GFLOPs & GMACs.
+    gflops = -1.0
+    gmacs = -1.0
+
+    # Check if an Input Shape OR Input Override is Provided.
+    if input_shape is not None or input_override is not None:
+        try:
+            # Create Dummy Input Tensor.
+            if input_override is not None:
+                # Use Provided Input Override.
+                dummy = input_override
+            else:
+                # Fill with Zeros if Nothing Provided.
+                dummy = torch.zeros(input_shape)
+
+            # Initialise FLOPs Counter Using fvcore.
+            flop_counter = FlopCountAnalysis(model.cpu(), dummy)
+
+            # Disable Warnings for Unsupported Operations & Unused Models.
+            flop_counter.unsupported_ops_warnings(False)
+            flop_counter.uncalled_modules_warnings(False)
+
+            # Compute Total FLOPs (Counts MACs * 2 Internally).
+            total_flops = flop_counter.total()
+            gflops = round(total_flops / 1e9, 3) # Convert FLOPs to GFLOPs.
+            gmacs  = round(gflops / 2.0, 3)      # Convert GFLOPs to GMACs.
+
+        except Exception as e:
+            # Create Tag for Storing the Model Name.
+            tag = f"[{label}] " if label else ""
+
+            # Log Error if FLOPs Computation Fails.
+            log(LogLevel.WARNING, "notebook_helpers:measure_complexity",
+                "%s FLOPs Count Failed (%s). GFLOPS set to -1.", tag, str(e))
+
+    # Move Model Back to Original Device.
+    if device == "cuda" and torch.cuda.is_available():
+        model.cuda()
+
+    # Create Tag for Storing the Model Name.
+    tag = f"[{label}] " if label else ""
+    
+    # Log Summary of Results.
+    log(LogLevel.INFO, "notebook_helpers:measure_complexity",
+        "%sParams: %s total / %s trainable | GFLOPs: %.3f | GMACs: %.3f",
+        tag, f"{total_params:,}", f"{trainable_params:,}", gflops, gmacs)
+
+    # Return Summary Statistics. 
+    return {
+        "total_params"    : total_params,
+        "trainable_params": trainable_params,
+        "gflops"          : gflops,
+        "gmacs"           : gmacs,
+    }
+
+
+def measure_predictor_complexity(predictor: "AirbornePredictor") -> dict:
+    """
+    Measures the total complexity of any predictor by calling its
+    get_complexity_targets() method. This is the function the notebook should 
+    call.
+
+    Args:
+        predictor (AirbornePredictor): Any AirbornePredictor subclass that
+                                       implements get_complexity_targets().
+
+    Returns:
+        dict: Summed total_params, trainable_params, gflops, gmacs across
+              all targets. If any target fails FLOPs counting, gflops and
+              gmacs are set to -1.0 for the whole result.
+    """
+    # Ensure the Predictor Exposes the Required Interface.
+    if not hasattr(predictor, "get_complexity_targets"):
+        raise AttributeError(
+            f"{type(predictor).__name__} Does Not Implement get_complexity_targets(). "
+            f"Add this Method to the Currently Selected Predictor."
+        )
+
+    # Retrieve All Model "targets" (Sub-Models or Components to Evaluate).
+    targets = predictor.get_complexity_targets()
+
+    # Initialise Running Totals for All Complexity Metrics.
+    totals = {
+        "total_params"    : 0,    # All Parameters (trainable + frozen).
+        "trainable_params": 0,    # Only Parameters Updated During Training.
+        "gflops"          : 0.0,  # Floating Point Operations (in Billions).
+        "gmacs"           : 0.0,  # Multiply-Accumulate Ops (in Billions).
+    }
+
+    # Track Whether FLOPs Computation Succeeds for All Targets.
+    flops_valid = True
+
+    # Iterate Over Each Target Model/Component.
+    for target in targets:
+        # Compute Complexity for the Current Target.
+        result = measure_model_complexity(
+            model          = target["model"],               # Required: Model Instance.
+            input_shape    = target.get("input_shape"),     # Optional: Shape-Based Input.
+            input_override = target.get("input_override"),  # Optional: Custom Input Tensor.
+            device         = target.get("device", "cuda"),  # Default to GPU if Unspecified.
+            label          = target.get("label", ""),       # Optional: Logging/Debug Label.
+        )
+
+        # Accumulate Parameter Counts (Always Safe to Sum).
+        totals["total_params"]     += result["total_params"]
+        totals["trainable_params"] += result["trainable_params"]
+
+        # If Any Model Fails FLOPs Calculation, Mark Entire Result as Invalid.
+        if result["gflops"] == -1.0:
+            flops_valid = False
+
+        # Only Accumulate FLOPs/MACs if All Previous Computations are Valid.
+        if flops_valid:
+            totals["gflops"] += result["gflops"]
+            totals["gmacs"]  += result["gmacs"]
+    
+    # Finalise FLOPs/MACs Results.
+    if not flops_valid:
+        # If Any Target Failed, Invalidate the Aggregate FLOPs/MACs.
+        totals["gflops"] = -1.0
+        totals["gmacs"]  = -1.0
+    else:
+        # Otherwise, Round for Cleaner Reporting.
+        totals["gflops"] = round(totals["gflops"], 3)
+        totals["gmacs"]  = round(totals["gmacs"],  3)
+
+    # Log a Summary for Visibility in Notebooks/Logs.
+    log(LogLevel.INFO, "notebook_helpers:measure_predictor_complexity",
+        "Total - Params: %s | GFLOPs: %.3f | GMACs: %.3f",
+        f"{totals['total_params']:,}", totals["gflops"], totals["gmacs"])
+
+    # Return Aggregated Complexity Metrics.
+    return totals
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
+#                           FPS STATS RECORDING
+# ------------------------------------------------------------------------------
+def record_fps_stats(
+    frame_times_sec : list,
+    run_dir         : str,
+    warmup_frames   : int = 10,
+) -> dict:
+    """
+    Computes FPS statistics from a list of per-frame inference times (seconds)
+    and saves them to a JSON file inside run_dir.
+
+    The first `warmup_frames` entries are excluded from all statistics to avoid
+    GPU JIT compilation and CUDA warm-up artefacts skewing results.
+
+    Args:
+        frame_times_sec (list): List of per-frame wall-clock times in seconds.
+                                Measure with time.perf_counter() bracketed by
+                                torch.cuda.synchronize() calls.
+        run_dir (str): Path to the current run directory — fps_stats.json
+                       will be written here.
+        warmup_frames (int): Number of initial frames to discard before computing
+                             statistics. Default 10.
+
+    Returns:
+        dict with keys:
+            fps_mean  (float): Average across all runs.
+            fps_std   (float): Standard deviation across all runs. 
+            fps_min   (float): Slowest sequence recorded.
+            fps_max   (float): Fastest sequence recorded.
+            fps_p95   (float): 95th percentile FPS (robust upper bound).
+            n_frames  (int): Number of frames included after warmup.
+    """
+    # Remove Warmup Frames to Avoid GPU/JIT Bias.
+    times = frame_times_sec[warmup_frames:]
+
+     # Check if Any Valid Frames Remain.
+    if len(times) == 0:
+        # Log Warning if No Usable Data.
+        log(LogLevel.ERROR, "notebook_helpers:record_fps",
+            "No Frames Remaining After Warmup Discard. Returning Zeros.")
+        # Return Zeroed Statistics Safely.
+        return {
+            "fps_mean": 0.0, "fps_std": 0.0, "fps_min":  0.0, 
+            "fps_max": 0.0, "fps_p95":  0.0, "n_frames": 0,
+        }
+
+    # Convert Each Frame Time into FPS.
+    fps_values = [1.0 / t for t in times if t > 0]
+    fps_arr = np.array(fps_values, dtype=np.float64)
+
+    # Build Statistics Dictionary.
+    stats = {
+        "fps_mean" : round(float(np.mean(fps_arr)), 2),
+        "fps_std"  : round(float(np.std(fps_arr)), 2),
+        "fps_min"  : round(float(np.min(fps_arr)), 2),
+        "fps_max"  : round(float(np.max(fps_arr)), 2),
+        "fps_p95"  : round(float(np.percentile(fps_arr, 95)), 2),
+        "n_frames" : len(fps_values),
+    }
+
+    # Ensure Run Directory Exists Before Writing File.
+    os.makedirs(run_dir, exist_ok=True)
+
+    # Define Output JSON File Path.
+    fps_path = os.path.join(run_dir, "fps_stats.json")
+
+    # Open File in Write Mode.
+    with open(fps_path, "w") as f:
+        json.dump(stats, f, indent=2)
+
+    # Log Final Summary Statistics.
+    print()
+    log(LogLevel.INFO, "notebook_helpers:record_fps",
+        "FPS - Mean: %.1f | Std: %.1f | Min: %.1f | Max: %.1f | P95: %.1f (%d frames)\n",
+        stats["fps_mean"], stats["fps_std"],
+        stats["fps_min"],  stats["fps_max"],
+        stats["fps_p95"],  stats["n_frames"])
+    
+    # Return Computed Statistics Dictionary.
+    return stats
+
+
+def load_fps_stats(run_dir: str) -> dict:
+    """
+    Loads the fps_stats.json written by record_fps_stats() for a given run.
+
+    Args:
+        run_dir (str): Path to the run directory containing fps_stats.json.
+
+    Returns:
+        dict with fps_mean, fps_std, fps_min, fps_max, fps_p95, n_frames,
+        or a dict of zeros if the file does not exist.
+    """
+    # Construct Expected File Path.
+    fps_path = os.path.join(run_dir, "fps_stats.json")
+
+    # Check if Stats File Exists.
+    if not os.path.exists(fps_path):
+        log(LogLevel.ERROR, "notebook_helpers:load_fps",
+            "fps_stats.json not found at: %s\n", fps_path)
+        # Return Safe Default Values.
+        return {
+            "fps_mean": 0.0, "fps_std": 0.0, "fps_min":  0.0, 
+            "fps_max": 0.0, "fps_p95":  0.0, "n_frames": 0,
+        }
+    
+    # Open Existing JSON File for Reading.
+    with open(fps_path) as f:
+        return json.load(f)
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
+#                   EXTENDED SUMMARY WITH COMPLEXITY & FPS
+# ------------------------------------------------------------------------------
+def build_extended_summary(
+    summary_json_path : str,
+    run_dir           : str,
+    complexity        : dict,
+    output_csv_path   : str,
+) -> "pd.DataFrame":
+    """
+    Builds the full benchmark summary DataFrame, extending the standard
+    detection metrics with model complexity (params, GFLOPs) and FPS stats.
+
+    Args:
+        summary_json_path (str): Path to the metrics summary JSON produced by
+                                 run_airborne_metrics.py.
+        run_dir (str): Path to the run directory (used to load fps_stats.json).
+        complexity (str): Dict returned by measure_model_complexity().
+        output_csv_path (str): Full path where the CSV should be saved.
+
+    Returns:
+        pd.DataFrame with Metric / Value / Status columns, saved to CSV.
+    """
+    # Load Detection Metrics JSON.
+    with open(summary_json_path) as f:
+        summary = json.load(f)
+
+    # Extract Detection Metrics.
+    score        = summary.get("min_det_score", 0.0)
+    fppi         = summary["fppi"]
+    hfar         = summary["far"]
+    afdr         = summary["fl_dr_in_range"]
+    det_aircraft = summary["det_aircraft_in_range"]
+    tot_aircraft = summary["tot_aircraft_in_range"]
+    edr_all      = summary["Detection"]["Encounters"]["300"]["All"]["dr"]
+    edr_above    = summary["Detection"]["Encounters"]["300"]["Above Horizon"]["dr"]
+    edr_below    = summary["Detection"]["Encounters"]["300"]["Below Horizon"]["dr"]
+
+    # Load FPS Stats (Written by record_fps_stats During Inference).
+    fps = load_fps_stats(run_dir)
+
+    # Compare to the Thresholds to Set Status.
+    fppi_status = "PASS (≤ 0.0005)" if fppi <= 0.0005 else f"FAIL (> 0.0005)"
+    hfar_status = "PASS (≤ 0.5)"    if hfar <= 0.5    else f"FAIL (> 0.5)"
+
+    # Build Unified Rows.
+    rows = [
+        # Detection Metrics
+        {"Metric": "Detection Score",                        "Value": f"{score:.4f}",                         "Status": ""},
+        {"Metric": "AFDR (Airborne Flight Detection Rate)",  "Value": f"{afdr:.4f}",                          "Status": ""},
+        {"Metric": "FPPI (False Positives Per Image)",       "Value": f"{fppi:.6f}",                          "Status": fppi_status},
+        {"Metric": "HFAR (Horizontal False Alarm Rate)",     "Value": f"{hfar:.4f}",                          "Status": hfar_status},
+        {"Metric": "EDR - All Scenarios",                    "Value": f"{edr_all:.4f}",                       "Status": ""},
+        {"Metric": "EDR - Above Horizon",                    "Value": f"{edr_above:.4f}",                     "Status": ""},
+        {"Metric": "EDR - Below Horizon",                    "Value": f"{edr_below:.4f}",                     "Status": ""},
+        {"Metric": "Total Aircraft Detected",                "Value": f"{det_aircraft}",                      "Status": ""},
+        {"Metric": "Total Aircraft in Dataset",              "Value": f"{tot_aircraft}",                      "Status": ""},
+        # Model Complexity
+        {"Metric": "Parameters (Total)",                     "Value": f"{complexity['total_params']:,}",      "Status": ""},
+        {"Metric": "Parameters (Trainable)",                 "Value": f"{complexity['trainable_params']:,}",  "Status": ""},
+        {"Metric": "GFLOPs (per frame)",                     "Value": f"{complexity['gflops']:.3f}",          "Status": ""},
+        {"Metric": "GMACs (per frame)",                      "Value": f"{complexity['gmacs']:.3f}",           "Status": ""},
+        # FPS Statistics
+        {"Metric": "FPS Mean",                               "Value": f"{fps['fps_mean']:.2f}",               "Status": ""},
+        {"Metric": "FPS Std Dev",                            "Value": f"{fps['fps_std']:.2f}",                "Status": ""},
+        {"Metric": "FPS Min",                                "Value": f"{fps['fps_min']:.2f}",                "Status": ""},
+        {"Metric": "FPS Max",                                "Value": f"{fps['fps_max']:.2f}",                "Status": ""},
+        {"Metric": "FPS P95",                                "Value": f"{fps['fps_p95']:.2f}",                "Status": ""},
+        {"Metric": "Frames Measured",                        "Value": f"{fps['n_frames']}",                   "Status": ""},
+    ]
+
+    # Save the Summary to a Dataframe. 
+    summary_df = pd.DataFrame(rows)
+
+    # Save the Summary Statistics to a CSV.
+    os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
+    summary_df.to_csv(output_csv_path, index=False)
+    log(LogLevel.INFO, "notebook_helpers:build_extended_summary",
+        "Extended Summary Saved to: %s", output_csv_path)
+
+    # Return the Dataframe. 
+    return summary_df
 # ------------------------------------------------------------------------------
 
 

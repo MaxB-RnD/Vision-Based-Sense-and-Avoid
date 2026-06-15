@@ -3,7 +3,7 @@
 # ------------------------------------------------------------------------------
 # File:                    %name: transformer_test.py %
 # Date Created:            %date_created: Wed Apr 22 12:53:46 2026 %
-# CM Version               %version: 1 %
+# CM Version               %version: 2 %
 # CM Instance              %instance: 1 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
@@ -17,6 +17,20 @@
 # USAGE INSTRUCTIONS:
 #   1. Run the Script from the Project Root:
 #       - python -m src.baselines.transformer_detector.transformer_test
+#
+#   2. Optional Environment Variables:
+#       - MODEL_PATH=/path/to/checkpoint.pt
+#           Overrides the default segmentation model checkpoint path.
+#
+#       - MIN_TRACK_LEN=0
+#           Minimum track length before detections are committed to results.
+#
+#       - MIN_SCORE=0.4
+#           Minimum confidence score required for final output detections.
+#
+#       - DETECTION_THRESHOLD=0.4
+#           Detection threshold passed directly to the segmentation model.
+#           Should generally be <= MIN_SCORE.
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
@@ -36,12 +50,15 @@
 import os
 import sys
 import cv2
+import time
+import torch
 
 from tqdm import tqdm
 from typing import List, Dict, Any
 from logging_module import LogLevel, log
 
 sys.path.insert(0, os.path.dirname(__file__))
+from notebooks.helpers.notebook_helpers import record_fps_stats
 from src.baselines.winning_solution.evaluator.airborne_detection import AirbornePredictor
 
 # ------------------------------------------------------------------------------
@@ -110,11 +127,34 @@ class TransformerPredictor(AirbornePredictor):
         self.model = self.model.to(self.device)
         self.model.eval()
 
+        # Accumulates Per-Frame Wall-Clock Inference Times Across All Flights.
+        self.frame_times: List[float] = []
+
         # Print Success Message. 
         log(LogLevel.INFO, "transformer_test:inference_setup",
             "Model Loaded Successfully.")
 
 
+    def get_complexity_targets(self) -> List[dict]:
+        """
+        Declares the RT-DETR model and input shape to be measured by
+        measure_predictor_complexity().
+
+        Returns:
+            List[dict]: Each entry has keys:
+            model        : torch.nn.Module to profile.
+            input_shape  : (B, C, H, W) dummy input shape.
+            label        : Human-readable name for logging.
+        """
+        return [
+            {
+                "model": self.model,
+                "input_shape": (1, 3, 640, 640),
+                "label": "RT-DETR v2",
+            }
+        ]
+    
+    
     def run_model_on_frame(
         self,
         frame     : Any,       
@@ -148,6 +188,11 @@ class TransformerPredictor(AirbornePredictor):
         # Convert BGR Frame (cv2) to RGB PIL Image (HuggingFace Processor).
         pil_frame = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 
+        # Start Timing FPS.
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        _t0 = time.perf_counter()
+
         # Preprocess & Run Inference.
         inputs = self.image_processor(images=[pil_frame], return_tensors="pt")
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
@@ -165,6 +210,11 @@ class TransformerPredictor(AirbornePredictor):
             threshold=DETECTION_THRESHOLD,
             target_sizes=target_sizes
         )[0]
+
+        # End Timing FPS.
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        self.frame_times.append(time.perf_counter() - _t0)
 
         # Create Detection List.
         detections = []
@@ -340,6 +390,26 @@ class TransformerPredictor(AirbornePredictor):
                     confidence = float(det["confidence"]),
                     img_name = frame_name
                 )
+
+
+    def run(self) -> None:
+        """
+        Extends the parent run() to save FPS statistics to fps_stats.json
+        inside the run directory after all flights have been processed.
+ 
+        This ensures record_fps_stats() is called exactly once, after the
+        full frame_times list has been populated across every flight.
+        """
+        # Run the Standard Evaluation Pipeline.
+        super().run()
+ 
+        # Save FPS Stats if any Frames were Timed.
+        if self.frame_times:
+            record_fps_stats(
+                frame_times_sec = self.frame_times,
+                run_dir         = self.get_results_directory(),
+                warmup_frames   = 10,
+            )
 # ------------------------------------------------------------------------------
 
 

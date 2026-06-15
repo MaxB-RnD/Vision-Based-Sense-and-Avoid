@@ -1,0 +1,10 @@
+Metric,Value,Status
+Detection Score,0.3000,
+AFDR (Airborne Flight Detection Rate),0.2817,
+FPPI (False Positives Per Image),0.154519,FAIL (> 0.0005)
+HFAR (Horizontal False Alarm Rate),838.3592,FAIL (> 0.0005)
+EDR - All Scenarios,0.3284,
+EDR - Above Horizon,0.6675,
+EDR - Below Horizon,0.0793,
+Total Aircraft Detected,55140,
+Total Aircraft in Dataset,195728,

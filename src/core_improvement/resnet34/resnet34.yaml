@@ -1,0 +1,91 @@
+# ------------------------------------------------------------------------------
+# -               V E R S I O N   I D E N T I F I C A T I O N                  -
+# ------------------------------------------------------------------------------
+# File:                    %name: resnet34.yaml %
+# Date Created:            %date_created: Tue May 12 12:52:26 2026 %
+# CM Version               %version: 2 %
+# CM Instance              %instance: 1 %
+# Author:                  %created_by: MBusato %
+# ------------------------------------------------------------------------------
+# -                          D E S C R I P T I O N                             -
+# ------------------------------------------------------------------------------
+# Experiment: resnet34
+# Model:      ResNet34Segmentation (resnet34)
+# Role:       Classic CNN baseline in the complexity vs AFDR experiment.
+# Hypothesis: ResNet34 is a well-understood convolutional baseline at ~21M
+#             parameters. Expected to sit above the lightweight ViT anchors
+#             (MobileNetV4, EfficientViT-M2) on the complexity curve, providing
+#             a reference point for how a strong pretrained CNN compares to
+#             modern attention-based architectures at similar or lower cost.
+# Notes:
+#   - Uses 512x512 crops around detections.
+#   - All 5 feature stages used in FPN (strides [2,4,8,16,32], 1024ch total).
+#   - combine_outputs_dim kept at 256 / kernel=1 consistent with other models.
+#   - SGD + cosine warm restarts.
+# ------------------------------------------------------------------------------
+
+meta:
+  experiment: resnet34
+  version: 2
+  author: MBusato
+  model: ResNet34Segmentation
+  backbone: resnet34
+  role: crop_refinement
+  input_resolution: [512, 512]
+  optimizer: sgd
+  scheduler: CosineAnnealingWarmRestarts
+
+model_params:
+  model_type:             ResNet34Segmentation
+  model_cls:              ResNet34Segmentation
+  base_model_name:        resnet34
+  input_frames:           2
+  feature_location:       ''
+  combine_outputs_dim:    256
+  combine_outputs_kernel: 1
+  output_binary_mask:     true
+  output_above_horizon:   true
+  pred_scale:             8
+
+train_params:
+  nb_epochs:              300
+  nb_samples_per_epoch:   2048
+  nb_samples_valid:       512
+  initial_lr:             1.0e-3
+  optimizer:              sgd
+  scheduler:              CosineAnnealingWarmRestarts
+  scheduler_period:       16
+  scheduler_t_mult:       1.42
+  grad_clip:              8.0
+  freeze_backbone_steps:  5
+  mask_loss:              fl
+  tracking_samples_share: 0.25
+  fp_samples_share:       0.25
+  fpm_batch_size:         4
+  # Epochs at which to run false positive mining.
+  # Value = step size (every nth frame is evaluated).
+  fpm_epochs:
+    80:   8
+    150:  8
+    230:  8
+  loss_scale:
+    cls:           2000
+    size:          1
+    offset:        0.2
+    distance:      1
+    tracking:      1
+    above_horizon: 1
+
+train_data_loader:
+  batch_size:   8
+  num_workers:  7
+
+val_data_loader:
+  batch_size:   4
+  num_workers:  4
+
+dataset_params:
+  back_steps:            [1]
+  scale:                 1
+  crop_with_plane_ratio: 0.50
+  crop_size:             [512, 512]

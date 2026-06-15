@@ -112,17 +112,3 @@ class TrEstimatorTsm(nn.Module):
         offsets = self.conv_offset(x)
 
         return heatmap, offsets
-
-
-def print_summary():
-    import pytorch_model_summary
-    model = TrEstimatorTsm(cfg={'base_model_name': 'resnet18', 'weight_scale': 2})
-    heatmap, offsets = model(torch.zeros((2, 1024, 1024)), torch.zeros((2, 1024, 1024)))
-    print(heatmap.shape, offsets.shape)
-
-    print(pytorch_model_summary.summary(model, torch.zeros((2, 1024, 1024)), torch.zeros((2, 1024, 1024)),
-                                        max_depth=2, show_hierarchical=False))
-
-
-if __name__ == "__main__":
-    print_summary()

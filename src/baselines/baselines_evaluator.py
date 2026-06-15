@@ -1,27 +1,39 @@
 # ------------------------------------------------------------------------------
 # -               V E R S I O N   I D E N T I F I C A T I O N                  -
 # ------------------------------------------------------------------------------
-# File:                    %name: notebook_to_terminal.py %
+# File:                    %name: baselines_evaluator.py %
 # Date Created:            %date_created: Tue Mar 24 15:18:38 2026 %
-# CM Version               %version: 1 %
+# CM Version               %version: 3 %
 # CM Instance              %instance: 1 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
 # ------------------------------------------------------------------------------
-# Executes all code cells in a Jupyter Notebook (.ipynb) sequentially from the
-# terminal, sharing a single execution context across all cells.
+# Baseline evaluation script for the AICrowd Airborne Object Tracking pipeline.
+# This script evaluates multiple detection models under a shared inference and
+# tracking framework to ensure a fair comparison across architectures.
 #
-# Each cell's source is printed before execution so progress can be followed.
-# If any cell raises an exception the script halts immediately and reports
-# the failing cell number along with the full traceback.
+# The evaluation pipeline performs dataset resolution and filtering, model
+# initialisation for the selected detector, inference over all flight sequences,
+# metric computation using the official AOT evaluation toolkit, and generation of
+# a final benchmark summary including AFDR, FPPI, and EDR scores.
 #
-# Non-code cells (markdown, raw, etc.) are silently skipped.
+# The purpose of this script is to compare different detection approaches under
+# identical dataset and evaluation conditions.The backbone used for 
+# evaluation is selected via a command-line argument.
 #
 # USAGE INSTRUCTIONS:
-#   Run the Script from this Folder:
-#       1. cd notebooks/helpers/ 
-#       2. nohup python notebook_to_terminal.py > ../../outputs/logs/baseline_evaluation.log 2>&1 &
+#   1. Run the Script from this Folder:
+#         nohup python -m src.baselines.baselines_evaluator select_model > outputs/logs/baselines/baseline_evaluation.log 2>&1 &
+#
+#   2. Optional Environment Variables:
+#       - SELECTED_MODEL = (0-5)
+#            0 = Winning Solution (Original)
+#            1 = RT-DETR v2
+#            2 = YOLOv11
+#
+#   3. Then monitor from terminal with:
+#            tail -f outputs/logs/baselines/baseline_evaluation.log
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
@@ -39,22 +51,19 @@
 # ------------------------------------------------------------------------------
 
 # Import Required Libraries.
-import json
 import os
-import random
-import shutil
 import sys
-from glob import glob
 
-import pandas as pd
-import subprocess
+import json
 import torch
+import random
+import subprocess
+from glob import glob
 
 # Because Life, Universe & Everything!
 random.seed(42)
 
 # Set Working Directory to Project Root.
-os.chdir("../..") 
 PROJECT_ROOT = os.getcwd()
 
 # Add Project Root to Path.
@@ -65,10 +74,15 @@ sys.path.insert(0, os.path.join(PROJECT_ROOT, "core"))
 
 # Import Local Project Funtions.
 from logging_module import LogLevel, log
-from notebooks.helpers.notebook_helpers import get_next_run_dir, load_combined_gt, resolve_local_flights, convert_results_to_metrics_format
-
+from notebooks.helpers.notebook_helpers import (
+    get_next_run_dir, load_combined_gt, resolve_local_flights,
+    convert_results_to_metrics_format, measure_predictor_complexity,
+    build_extended_summary
+)
+ 
 # Confirm Project Root.
-log(LogLevel.INFO, "baseline:imports", "Project Root Set: %s", PROJECT_ROOT)
+log(LogLevel.INFO, "baselines_evaluator:imports", "Project Root Set: %s", PROJECT_ROOT)
+
 
 # ------------------------------------------------------------------------------
 #                                   MAIN
@@ -79,13 +93,18 @@ def main() -> None:
     # 0 -> Winning Solution (SegTracker Ensemble: HRNet32, HRNet48, GerNet-M + BiFPN, DLA60).
     # 1 -> RT-DETR v2 (Transformer-Based Detector).
     # 2 -> YOLOv11 (UAV Detection Model).
-    SELECTED_MODEL = 2
     model_list = ["winning_solution","transformer_detector","drone_detector"]
 
+    # Allow Model Selection from Command Line.
+    if len(sys.argv) > 1:
+        SELECTED_MODEL = int(sys.argv[1])
+    else:
+        SELECTED_MODEL = 0
+
     # Evaluation Filtering.
-    MIN_SCORE = 0.30
-    DETECTION_THRESHOLD = 0.30
-    MIN_TRACK_LEN = 0
+    MIN_SCORE = 0.60
+    DETECTION_THRESHOLD = 0.60
+    MIN_TRACK_LEN = 30
 
     # Set Path to Desired Evaluation Dataset.
     DATASET_PATH = "configs/datasets/hard_dataset_flights.txt"
@@ -101,7 +120,7 @@ def main() -> None:
     EVAL_SUMMARY_DIR = os.path.join(RESULTS_DIR, run_name, "summaries")
 
     # Print Summary Statement.
-    log(LogLevel.INFO, "baseline:config", "Configuration Loaded.")
+    log(LogLevel.INFO, "baselines_evaluator:config", "Configuration Loaded.")
     print(f"  Model Selected : {model_list[SELECTED_MODEL]}")
     print(f"  Dataset Path   : {DATASET_PATH}")
     print(f"  Dataset Parts  : {DATASET_PARTS}")
@@ -117,7 +136,7 @@ def main() -> None:
     print()
 
     # Log How Many Flights were Found & are Ready for Inference.
-    log(LogLevel.INFO, "baseline:preprocessing", "Flights Ready for Inference: %d", len(local_flights))
+    log(LogLevel.INFO, "baselines_evaluator:preprocessing", "Flights Ready for Inference: %d", len(local_flights))
 
     # Preview the First 5 Flights to Confirm Dataset is Correct.
     for name, info in list(local_flights.items())[:5]:
@@ -129,11 +148,11 @@ def main() -> None:
 
     # If there are More than 5 Flights, Log How Many Additional Ones Exist.
     if len(local_flights) > 5:
-        log(LogLevel.DEBUG, "baseline:preprocessing", " ... and %d more.", len(local_flights) - 5)
+        log(LogLevel.DEBUG, "baselines_evaluator:preprocessing", " ... and %d more.", len(local_flights) - 5)
 
     # Load & Filter Ground Truth to Include Local Flights Only. 
     combined_gt = load_combined_gt(DATASET_PARTS, local_flights, PROJECT_ROOT)
-    log(LogLevel.INFO, "baseline:preprocessing", "Flights in Filtered Ground Truth: %d", len(combined_gt['samples']))
+    log(LogLevel.INFO, "baselines_evaluator:preprocessing", "Flights in Filtered Ground Truth: %d", len(combined_gt['samples']))
 
     # Build Set of Image Filenames That Physically Exist on Disk.
     all_images = {name for f in local_flights.values() for name in f["image_names"]}
@@ -150,7 +169,7 @@ def main() -> None:
     after = sum(len(flight["entities"]) for flight in combined_gt["samples"].values())
 
     # Report How Many Images were Removed. 
-    log(LogLevel.INFO, "baseline:preprocessing",
+    log(LogLevel.INFO, "baselines_evaluator:preprocessing",
         "GT Culled: %d -> %d entities (%d removed for missing images).", before, after, before - after)
 
     # Save the Filtered Ground Truth to the Evaluation Folder.
@@ -162,7 +181,7 @@ def main() -> None:
         json.dump(combined_gt, f)
 
     # Print Success Message.
-    log(LogLevel.INFO, "baseline:preprocessing", "Ground Truth Saved: %s", gt_out_path)
+    log(LogLevel.INFO, "baselines_evaluator:preprocessing", "Ground Truth Saved: %s", gt_out_path)
 
     # Create a Directory where all Evaluation Flight Data will be Stored.
     EVAL_DATA_DIR = os.path.join(RESULTS_DIR, run_name, "data")
@@ -186,7 +205,7 @@ def main() -> None:
     os.environ["PARTIAL_RUN_FLIGHTS"] = ",".join(local_flights.keys())
 
     # Print Summary Statement.
-    log(LogLevel.INFO, "baseline:inference", "Environment Configured.")
+    log(LogLevel.INFO, "baselines_evaluator:inference", "Environment Configured.")
     print(f"  Test Data Path     : {EVAL_DATA_DIR}")
     print(f"  Flights to Process : {len(local_flights)}")
     print(f"  MIN_SCORE          : {MIN_SCORE}")
@@ -199,32 +218,40 @@ def main() -> None:
 
     # Check GPU is CUDA Enabled.
     if torch.cuda.is_available():
-        log(LogLevel.INFO, "baseline:device_check", "CUDA-Enabled GPU is Available.")
+        log(LogLevel.INFO, "baselines_evaluator:device_check", "CUDA-Enabled GPU is Available.")
         print(f"  GPU Name: {torch.cuda.get_device_name(0)}.")
         print(f"  CUDA Version: {torch.version.cuda}.")
     else:
-        log(LogLevel.WARNING, "baseline:device_check", "No CUDA-Enabled GPU Found, Using CPU Instead.")
+        log(LogLevel.WARNING, "baselines_evaluator:device_check", "No CUDA-Enabled GPU Found, Using CPU Instead.")
 
     # Map Model Selection to Predictor Classes.
     MODEL_MAP = {
-        0: SegPredictor,          # SegTracker Baseline.
-        1: TransformerPredictor,  # RT-DETR v2.
-        2: DronePredictor,        # YOLOv11.
+        0: SegPredictor,            # SegTracker Baseline.
+        1: TransformerPredictor,    # RT-DETR v2.
+        2: DronePredictor           # YOLOv11.
     }
 
     # Validate Selection.
     if SELECTED_MODEL not in MODEL_MAP:
-        log(LogLevel.ERROR, "baseline:inference", "Invalid SELECTED_MODEL: %s.", SELECTED_MODEL)
+        log(LogLevel.ERROR, "core_improvement:inference", "Invalid SELECTED_MODEL: %s.", SELECTED_MODEL)
         raise ValueError("Please Select a Valid Model Index.")
 
     # Initialise Predictor.
     predictor = MODEL_MAP[SELECTED_MODEL]()
 
+    # Load Models Before Measuring Complexity.
+    predictor.inference_setup()
+
+    # Measure the Current Model's Complexity.
+    print()
+    complexity = measure_predictor_complexity(predictor)
+
     # Run Inference Over all Flights.
+    print()
     predictor.run()
 
     # Print Summary Statement.
-    log(LogLevel.INFO, "baseline:inference", "Inference Complete.")
+    log(LogLevel.INFO, "core_improvement:inference", "Inference Complete.")
     print(f"  Raw Results Saved to: {os.path.join(RESULTS_DIR, run_name)}\n")
 
     # Set Results Directories. 
@@ -238,7 +265,7 @@ def main() -> None:
     convert_results_to_metrics_format(RAW_RESULTS_PATH, METRICS_RESULTS_PATH)
 
     # Print Summary Statement.
-    log(LogLevel.INFO, "baseline:inference", "Results Copied to Metrics Directory.")
+    log(LogLevel.INFO, "core_improvement:inference", "Results Copied to Metrics Directory.")
     print(f"  Metrics-Ready Results Stored at : {METRICS_RESULTS_PATH}")
 
     # Locate the Competition Metrics Script.
@@ -258,58 +285,28 @@ def main() -> None:
     )
 
     # Print Message on Completion. 
-    log(LogLevel.INFO, "baseline:evaluation", "Metrics Complete.")
+    log(LogLevel.INFO, "baselines_evaluator:evaluation", "Metrics Complete.")
 
     # Find the Summary JSON in the Summaries Directory.
     summary_files = glob(os.path.join(EVAL_SUMMARY_DIR, "*.json"))
 
     # Check that the Summary Files Exist.
     if not summary_files:
-        log(LogLevel.ERROR, "baseline:summary", "No Summary Files Found! Run Inference First.")
+        log(LogLevel.ERROR, "baselines_evaluator:summary", "No Summary Files Found! Run Inference First.")
     else:
-        # Load the Summary JSON.
-        with open(summary_files[0]) as f:
-            summary = json.load(f)
-
-        # Extract Key Metrics from Summary JSON.
-        score         = summary["min_det_score"]
-        fppi          = summary["fppi"]
-        hfar          = summary["far"]
-        afdr          = summary["fl_dr_in_range"]
-        det_aircraft  = summary["det_aircraft_in_range"]
-        tot_aircraft  = summary["tot_aircraft_in_range"]
-        edr_all       = summary["Detection"]["Encounters"]["300"]["All"]["dr"]
-        edr_above     = summary["Detection"]["Encounters"]["300"]["Above Horizon"]["dr"]
-        edr_below     = summary["Detection"]["Encounters"]["300"]["Below Horizon"]["dr"]
-
-        # Rank Metrics Against Thresholds.
-        fppi_status = "PASS (≤ 0.0005)" if fppi  <= 0.0005 else f"FAIL (> 0.0005)"
-        hfar_status = "PASS (≤ 0.5)"    if hfar  <= 0.5    else f"FAIL (> 0.0005)"
-
         # Build Summary DataFrame.
-        summary_df = pd.DataFrame([
-            {"Metric": "Detection Score",                       "Value": f"{score:.4f}",       "Status": ""},
-            {"Metric": "AFDR (Airborne Flight Detection Rate)", "Value": f"{afdr:.4f}",        "Status": ""},
-            {"Metric": "FPPI (False Positives Per Image)",      "Value": f"{fppi:.6f}",        "Status": fppi_status},
-            {"Metric": "HFAR (Horizontal False Alarm Rate)",    "Value": f"{hfar:.4f}",        "Status": hfar_status},
-            {"Metric": "EDR - All Scenarios",                   "Value": f"{edr_all:.4f}",     "Status": ""},
-            {"Metric": "EDR - Above Horizon",                   "Value": f"{edr_above:.4f}",   "Status": ""},
-            {"Metric": "EDR - Below Horizon",                   "Value": f"{edr_below:.4f}",   "Status": ""},
-            {"Metric": "Total Aircraft Detected",               "Value": f"{det_aircraft}",    "Status": ""},
-            {"Metric": "Total Aircraft in Dataset",             "Value": f"{tot_aircraft}",    "Status": ""},
-        ])
-
+        summary_df = build_extended_summary(
+            summary_json_path = summary_files[0],
+            run_dir           = os.path.join(RESULTS_DIR, run_name),
+            complexity        = complexity,
+            output_csv_path   = os.path.join(EVAL_SUMMARY_DIR, "baselines_evaluator_benchmark_summary.csv"),
+        )
+    
         # Print Summary to Console.
         print("\n" + "=" * 60)
         print(" BASELINE MODEL - FULL HARD DATASET BENCHMARK SUMMARY")
         print("=" * 60)
         print(summary_df.set_index("Metric").to_string())
-
-        # Save Aggregated Summary to CSV.
-        output_path = os.path.join(EVAL_SUMMARY_DIR, "baseline_benchmark_summary.csv")
-        summary_df.to_csv(output_path, index=False)
-        print()
-        log(LogLevel.INFO, "baseline:summary", "Summary Saved to: %s", output_path)
 # ------------------------------------------------------------------------------
 
 

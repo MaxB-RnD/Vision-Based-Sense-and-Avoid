@@ -23,6 +23,16 @@
 #   1. Run the Script from Project Root:
 #       - python -m src.baselines.winning_solution.seg_test
 #
+#   2. Optional Environment Variables:
+#       - DEBUG_MODEL_INIT=1
+#           Enables verbose/debug logging during model initialisation.
+#
+#       - MIN_TRACK_LEN=30
+#           Minimum track length before detections are committed to results.
+#
+#       - MIN_SCORE=0.6
+#           Minimum confidence score required for final output detections.
+#
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
 # ------------------------------------------------------------------------------
@@ -43,6 +53,8 @@
 import os
 import sys
 import cv2
+import time
+import torch
 
 from tqdm import tqdm
 from os import listdir
@@ -53,6 +65,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches
 
 sys.path.insert(0, os.path.dirname(__file__))
+from notebooks.helpers.notebook_helpers import record_fps_stats
 from src.baselines.winning_solution.evaluator.airborne_detection import AirbornePredictor
 from src.baselines.winning_solution.seg_tracker.seg_tracker import SegDetector, SegTrackerFromOffset
 
@@ -94,6 +107,54 @@ class SegPredictor(AirbornePredictor):
         self.detector       = SegDetector()
         self.tracker        = SegTrackerFromOffset(detector=self.detector)
         self.visualize_pred = False
+
+        # Accumulates Per-Frame Wall-Clock Inference Times Across All Flights.
+        self.frame_times: List[float] = []
+    
+
+    def get_complexity_targets(self) -> List[dict]:
+        """
+        Declares the models and input shapes to be measured by 
+        measure_predictor_complexity() in notebook_helpers.py. Returns one 
+        entry per model in the ensemble. 
+ 
+        Returns:
+            List[dict]: Each entry has keys:
+                model        : torch.nn.Module to profile.
+                input_shape  : (B, C, H, W) dummy input shape.
+                label        : Human-readable name for logging.
+        """
+        return [
+            {
+                "model"       : self.detector.model_seg1,
+                "input_shape" : (1, 2, 2048, 2432),
+                "label"       : "HRNet32 (model_seg1)",
+            },
+            {
+                "model"       : self.detector.model_seg2,
+                "input_shape" : (1, 2, 2048, 2432),
+                "label"       : "GerNet-M BiFPN (model_seg2)",
+            },
+            {
+                "model"       : self.detector.model_seg3,
+                "input_shape" : (1, 2, 2048, 2432),
+                "label"       : "HRNet48 (model_seg3)",
+            },
+            {
+                "model"       : self.detector.model_dla,
+                "input_shape" : (1, 2, 2048, 2432),
+                "label"       : "DLA60-Res2Next (model_dla)",
+            },
+            {
+                "model"       : self.detector.model_transform,
+                "input_shape"    : None,
+                "input_override" : (
+                    torch.zeros(1, 1024, 1024),  # prev_frame.
+                    torch.zeros(1, 1024, 1024),  # cur_frame.
+                ),
+                "label"       : "ResNet34-TSM Transform (model_transform)",
+            },
+        ]
 
 
     def get_all_frame_images(self, flight_id: str) -> List[str]:
@@ -225,8 +286,20 @@ class SegPredictor(AirbornePredictor):
                 prev_frame = frame
                 continue
 
+            # Start Timing FPS.
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            _t0 = time.perf_counter()
+
             # Run Tracker on the Current and Previous Frame.
             results    = self.tracker.predict(image=frame, prev_image=prev_frame)
+
+            # End Timing FPS.
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            self.frame_times.append(time.perf_counter() - _t0)
+
+            # Update the Previous Frame & Assign Class Name. 
             prev_frame = frame
             class_name = "airborne"
 
@@ -262,6 +335,26 @@ class SegPredictor(AirbornePredictor):
             # Display the Visualised Frame.
             if self.visualize_pred and len(results):
                 plt.show()
+
+
+    def run(self) -> None:
+        """
+        Extends the parent run() to save FPS statistics to fps_stats.json
+        inside the run directory after all flights have been processed.
+ 
+        This ensures record_fps_stats() is called exactly once, after the
+        full frame_times list has been populated across every flight.
+        """
+        # Run the Standard Evaluation Pipeline.
+        super().run()
+ 
+        # Save FPS Stats if any Frames were Timed.
+        if self.frame_times:
+            record_fps_stats(
+                frame_times_sec = self.frame_times,
+                run_dir         = self.get_results_directory(),
+                warmup_frames   = 10,
+            )
 # ------------------------------------------------------------------------------
 
 

@@ -1,24 +1,6 @@
 # Vision-Based Sense and Avoid: Monocular Airborne Object Tracking for Safe Drone Flight
 
-## 📑 Contents
-
-- [🛸 Overview](#-overview)  
-- [📋 Project Details](#-project-details)  
-- [🗂️ Project Structure](#️-project-structure)  
-- [⚙️ Requirements](#️-requirements)  
-- [🛠️ Setup](#️-setup)  
-- [🗃️ Dataset](#️-dataset)  
-  - [Data Tools](#data-tools)  
-  - [Visualisation](#visualisation)  
-- [📊 Baseline](#-baseline)  
-  - [Winning Solution](#winning-solution)  
-  - [Competition Results (Full AOT Dataset)](#competition-results-full-aot-dataset)  
-  - [Hard Dataset Results](#hard-dataset-results)
-- [🚀 Proposed Improvement](#-proposed-improvement)
-
----
-
-## 🛸 Overview
+## 1. Overview
 
 This project tackles the challenge of detecting and tracking tiny airborne objects using only a
 single monocular camera onboard a drone. Working with the Airborne Object Tracking (AOT) dataset,
@@ -35,38 +17,66 @@ For background on the dataset and benchmarks, see the
 
 ---
 
-## 📋 Project Details
+<br/>
 
-| Field            | Details                                                                                                |
-|------------------|--------------------------------------------------------------------------------------------------------|
-| **Sponsor**      | Lockheed Martin Australia – Advanced Systems & Technology Group                                        |
-| **Supervisor**   | Dr Feras Dayoub ([feras.dayoub@adelaide.edu.au](mailto:feras.dayoub@adelaide.edu.au))                  |
-| **Co-Supervisor**| Ms Kendall Louise Jenner ([kendall.l.jenner@global.lmco.com](mailto:kendall.l.jenner@global.lmco.com)) |
-| **Second Marker**| Dr Lei Chen ([lei.chen@adelaide.edu.au](mailto:lei.chen@adelaide.edu.au))                              |
+## 2. Project Details
+
+<div align="center">
+
+<table>
+  <tr><th>Field</th><th>Details</th></tr>
+  <tr><td><b>Sponsor</b></td><td>Lockheed Martin Australia – Advanced Systems & Technology Group</td></tr>
+  <tr><td><b>Supervisor</b></td><td>Dr Feras Dayoub (<a href="mailto:feras.dayoub@adelaide.edu.au">email</a>)</td></tr>
+  <tr><td><b>Co-Supervisor</b></td><td>Ms Kendall Louise Jenner (<a href="mailto:kendall.l.jenner@global.lmco.com">email</a>)</td></tr>
+  <tr><td><b>Second Marker</b></td><td>Dr Lei Chen (<a href="mailto:lei.chen@adelaide.edu.au">email</a>)</td></tr>
+</table>
+
+</div>
 
 ---
 
-## 🗂️ Project Structure
+<br/>
+
+## 3. Project Structure
 
 ```text
 Vision-Based-Sense-and-Avoid/
-├── configs/ 
-│   ├── datasets/     # Flight ID sets for different custom libraries.
-│   ├── dependencies/ # Version specifications for project required software.
-│   ├── models/       # Trained model weights (.pth files).
-├── core/             # Competition helper library (AOT dataset access).
-├── docs/             # Research documentation and additional resources.
-├── notebooks/        # End-to-end model evaluation notebooks.
+├── configs/
+│   ├── datasets/          # Flight selections and evaluation subsets.
+│   ├── dependencies/      # Python and PyTorch requirements.
+│   └── models/            # Pretrained model weights and checkpoints.
+│
+├── core/                  # AICrowd helper library and evaluation metrics.
+├── data/                  # Local AOT dataset (external symlink).
+├── docs/
+│   └── Images/            # Documentation figures and visual assets.
+│
+├── notebooks/
+│   ├── baselines.ipynb    
+│   ├── core_improvement.ipynb
+│   ├── demo.ipynb
+│   └── helpers/           # Notebook utilities and visualisation tools.
+│
+├── outputs/
+│   ├── logs/              # Evaluation and training logs.
+│   └── results/           # Generated inference & training outputs.
+│
+├── results/               # Processed benchmarking results and summaries.
+│
 ├── src/
-│   ├── data/         # Dataset selection, cleaning, and visualisation scripts.
-│   └── baselines/    # Baseline solution scripts and models for evaluation.
+│   ├── baselines/         # SegTracker, RT-DETR v2, and YOLOv11 pipelines.
+│   ├── core_improvement/  # Backbone replacement experiments.
+│   └── data/              # Dataset preparation and visualisation utilities.
+|
 ├── README.md
 └── setup.sh
 ```
 
 ---
 
-## ⚙️ Requirements
+<br/>
+
+## 4. Requirements
 
 - Python 3.11.
 - Virtual Environment (recommended).
@@ -76,7 +86,9 @@ Vision-Based-Sense-and-Avoid/
 
 ---
 
-## 🛠️ Setup
+<br/>
+
+## 5. Setup
 
 **1. Install Git LFS (one-time setup):**
 
@@ -110,28 +122,58 @@ Vision-Based-Sense-and-Avoid/
 **5. Install Dependencies:**
 
    ```bash
-      bash setup.sh
+   bash setup.sh
    ```
 
    > *This installs all dependencies from `requirements.txt` and the airborne metrics evaluation package from `core/metrics`.*
 
 ---
 
-## 🗃️ Dataset
+<br/>
 
-The [Airborne Object Tracking (AOT) Dataset](https://www.aicrowd.com/challenges/airborne-object-tracking-challenge#dataset) is a collection of high-resolution flight sequences captured onboard aerial vehicles. Airborne objects average just 0.01% of the image size (down to a few pixels) making it a challenging benchmark for real-world sense-and-avoid detection.
+## 6. Dataset
 
-|                       |                                                                  |
-|-----------------------|------------------------------------------------------------------|
-| **Full Dataset**      | ~11TB via `s3://airborne-obj-detection-challenge-training/`.     |
-| **Partial Dataset**   | ~500GB containing valid planned encounters only (`partial=True`).|
-| **Flights**           | ~2,332 sequences across 3 parts.                                 |
-| **Frames per Flight** | ~120s at 10 fps (~4–5GB per flight).                             |
-| **Resolution**        | 2448 × 2048 px.                                                  |
+The [Airborne Object Tracking (AOT) Dataset](https://www.aicrowd.com/challenges/airborne-object-tracking-challenge#dataset) is a large-scale benchmark for airborne object detection and tracking. It contains high-resolution flight sequences captured from onboard aircraft cameras under diverse environmental and operational conditions. A key challenge of the dataset is that target aircraft often occupy only a few pixels in each frame, with airborne objects averaging approximately **0.01% of the image area**. This makes early detection particularly difficult and provides a realistic benchmark for vision-based Sense-and-Avoid (SAA) systems.
 
-### Data Tools
+<div align="center">
 
-Three scripts are provided to **browse, select, download,** and visualise flights from the dataset. All scripts are run from the project root.
+| Dataset Property     | Description                                                  |
+| -------------------- | ------------------------------------------------------------ |
+| **Full Dataset**     | ~11 TB stored in the public AOT S3 bucket                    |
+| **Partial Dataset**  | ~500 GB containing valid planned encounters (`partial=True`) |
+| **Flights**          | ~2,332 flight sequences                                      |
+| **Frame Rate**       | 10 FPS                                                       |
+| **Typical Duration** | ~120 seconds per flight                                      |
+| **Resolution**       | 2448 × 2048 pixels                                           |
+
+</div>
+
+### 6.1 Evaluation Metrics
+
+Performance is evaluated using the official Airborne Object Tracking Challenge metrics, which balance early detection capability against false alarm generation.
+
+<div align="center">
+
+| Metric | Description |
+|---------|-------------|
+| **AFDR** (Average Frame-level Detection Rate) | Percentage of airborne objects successfully detected at the frame level, considering planned aircraft within 700 m. |
+| **EDR** (Encounter Detection Rate) | Percentage of encounters successfully detected. An encounter is considered detected when the target is tracked for at least 3 seconds before reaching 300 m, or within the first 3 seconds of the encounter. |
+| **FPPI** (False Positives Per Image) | Average number of false positive detections generated per image. Lower values indicate fewer false alarms. |
+| **HFAR** (False Alarm Rate per Hour) | Number of unique false-positive tracks reported per hour of flight data. Lower values indicate greater operational reliability. |
+
+</div>
+
+### 6.2 Example Flight Visualisation
+
+The example below shows a complete annotated flight sequence with object detections, identifiers, and range information overlaid on each frame.
+
+<div align="center">
+    <img src="docs/Images/Data_Viewer_Video.gif" width="900">
+</div>
+
+### 6.3 Data Tools
+
+Several utility scripts are provided to support dataset exploration, preparation, visualisation, and results analysis. All scripts are executed from the project root.
 
 1. **`browse_data.py`:** Browses dataset ground truth metadata entry by entry without downloading any images. Use this to explore object distances, bounding box sizes, and horizon classifications to decide which flights are worth downloading.
 
@@ -157,69 +199,289 @@ Three scripts are provided to **browse, select, download,** and visualise flight
    python -m src.data.view_data
    ```
 
-### Visualisation
+5. **`split_dataset.py`:** Generate reproducible train, validation, and test splits from a flight list. The script ensures there is no overlap between splits and records metadata required for reproducibility.
 
-| **Frame 1**                                                          | **Frame 2**                                                     | **Frame 3**                                                      |
-|:--------------------------------------------------------------------:|:---------------------------------------------------------------:|:----------------------------------------------------------------:|
-| ![Frame 1: Object at Distance](docs/Images/Data_Viewer_Picture_1.png)| ![Frame 2: Object Closer](docs/Images/Data_Viewer_Picture_2.png)| ![Frame 3: Object Closest](docs/Images/Data_Viewer_Picture_3.png)|
-| Early Detection                                                      | Closing Distance                                                | Near Range                                                       |
+   ```bash
+   python -m src.data.split_dataset
+   ```
+
+6. **`visualise_results.py`:** Generate comparative performance visualisations from evaluation results. The script creates a grid of scatter plots showing the trade-offs between detection performance, model complexity, and inference speed, and exports the resulting figure as a high-resolution PNG suitable for reports and technical documentation.
+
+   ```bash
+   python -m src.data.visualise_results
+   ```
+
+### 6.4 Running Inference & Evaluation
+
+To reproduce the results shown in this README, inference and evaluation are provided through two main workflows:
+
+1. **Notebook-Based Workflow:** Full inference and analysis can be run using the notebooks in the `notebooks/` directory. These provide an interactive workflow for both baseline evaluation and core improvement experiments.
+
+2. **Script-Based Workflow (Recommended):** Automated evaluation scripts are provided for reproducible benchmarking:
+
+   ```bash
+   src/baselines/baslines_evaluator.py
+   ```
+   ```bash
+   src/core_improvement/core_improvement_evaluator.py
+   ```
+
+Each script includes its own internal documentation and can be executed directly from the terminal. The script-based workflow is the recommended approach for reproducible evaluation, while notebooks are primarily intended for experimentation, debugging, and visual analysis.
+
+---
 
 <br/>
 
-| **Annotated Video**                                          |
-|:------------------------------------------------------------:|
-| ![Annotated Flight Video](docs/Images/Data_Viewer_Video.gif) |
-| Full Sequence                                                |
+## 7. Baseline Evaluation (Competition-Winning Model)
+
+### 7.1 Baseline Model
+
+The baseline for this project is the [Winning Solution](https://github.com/pdima/airborne_tracking_winning_solution.git) from the AIcrowd Airborne Object Tracking Challenge, which achieved top performance on both the public and private leaderboards. The method is based on an ensemble of four detection backbones:
+
+<div align="center">
+
+<table>
+  <tr><th>Baseline Backbones</th></tr>
+  <tr><td>HRNet-W32</td></tr>
+  <tr><td>HRNet-W48</td></tr>
+  <tr><td>GerNet-M (with BiFPN from EfficientDet-D2)</td></tr>
+  <tr><td>DLA-60</td></tr>
+</table>
+
+</div>
+
+These backbones are combined with a motion-offset-based tracking pipeline for consistent multi-frame association of airborne objects.
+
+
+### 7.2 Evaluation Dataset
+
+All baseline evaluations are performed on the **AOT Hard Dataset (1,618 flights)**. This dataset is a curated subset of the full AOT benchmark designed to focus on challenging operational scenarios, including:
+
+<div align="center">
+
+<table>
+  <tr><th>Evaluation Scenarios</th></tr>
+  <tr><td>Small object encounters</td></tr>
+  <tr><td>Multi-object scenes</td></tr>
+  <tr><td>Below-horizon targets</td></tr>
+  <tr><td>Flights with no visible objects</td></tr>
+</table>
+
+</div>
+
+This subset provides a more challenging evaluation environment compared to the original full competition dataset.
+
+### 7.3 Baseline Results
+
+Performance of the baseline model on the **AOT Hard Dataset (1,618 flights)**, broken down by scenario type.
+
+<div align="center">
+
+<table>
+<tr>
+<th>Scenario</th>
+<th>Flights</th>
+<th>FPPI</th>
+<th>AFDR</th>
+<th>HFAR</th>
+<th>EDR (Total)</th>
+<th>EDR (Above)</th>
+<th>EDR (Mixed)</th>
+<th>EDR (Below)</th>
+</tr>
+
+<tr>
+<td><b>Overall (All Criteria)</b></td>
+<td>1,618</td>
+<td>0.000016</td>
+<td>0.7374</td>
+<td>0.0887</td>
+<td>0.6948</td>
+<td>0.6366</td>
+<td>0.5724</td>
+<td>0.7605</td>
+</tr>
+
+<tr>
+<td>Small Object (bbox ≤ 36 px²)</td>
+<td>662</td>
+<td>0.00</td>
+<td>0.7212</td>
+<td>0.00</td>
+<td>0.6318</td>
+<td>0.6364</td>
+<td>0.4118</td>
+<td>0.6761</td>
+</tr>
+
+<tr>
+<td>Below Horizon</td>
+<td>1,053</td>
+<td>0.00</td>
+<td>0.7572</td>
+<td>0.00</td>
+<td>0.7028</td>
+<td>0.3158</td>
+<td>0.5333</td>
+<td>0.7746</td>
+</tr>
+
+<tr>
+<td>Multi-Object</td>
+<td>627</td>
+<td>0.00</td>
+<td>0.7082</td>
+<td>0.00</td>
+<td>0.6990</td>
+<td>0.6970</td>
+<td>0.4444</td>
+<td>0.7385</td>
+</tr>
+
+<tr>
+<td>No Visible Object</td>
+<td>354</td>
+<td>0.000042</td>
+<td>0.6026</td>
+<td>0.2400</td>
+<td>0.2297</td>
+<td>0.2727</td>
+<td>0.1667</td>
+<td>0.1667</td>
+</tr>
+
+</table>
+
+</div>
+
+<p align="center">
+  <em>Results are evaluated at a minimum detection confidence of 0.60 and a minimum track length of 30 frames (≈ 3 seconds at 10 fps).</em>
+</p>
 
 ---
 
-## 📊 Baseline
+<br/>
 
-### Winning Solution
+## 8. Backbone Model Evaluation (Core Improvement)
 
-The baseline used in this project is the [Winning Solution](https://github.com/pdima/airborne_tracking_winning_solution.git)
-from the AIcrowd Airborne Object Tracking Challenge, achieving the highest scores
-on both the public and private leaderboards. The solution uses an ensemble of
-three detection backbones, HRNet32, gernet_m (with BiFPN from EfficientDet D2),
-and DLA60, combined with a predicted offset-based tracking algorithm.
+The evaluation in this section is conducted using a modified version of the original competition-winning SegTracker-based pipeline. The Optimised Winning Solution retains the pretrained weights from the original system but introduces two key modifications to improve inference efficiency and temporal consistency. 
 
-### Competition Results (Full AOT Dataset)
+1. **Temporal Shift Modules (TSM):** A corrected implementation of temporal feature propagation using a [Temporal Shift Module (TSM)](https://github.com/mit-han-lab/temporal-shift-module), which replaces redundant per-frame recomputation with structured temporal feature reuse across successive frames.
 
-Performance of the winning solution (Submission 22) on the AIcrowd competition leaderboards:
+2. **Optimised Pipline:** Inference acceleration using PyTorch [`torch.compile`](https://docs.pytorch.org/docs/2.12/generated/torch.compile.html) in `max-autotune` mode, enabling CUDA graph capture and kernel-level optimisation to reduce runtime overhead without altering model outputs.
 
-| Leaderboard | Score Threshold | FPPI    | AFDR     | HFAR | EDR      |
-|-------------|-----------------|---------|----------|------|----------|
-| Public      | 0.60            | 5.0e-05 | **0.91** | 0.38 | **0.99** |
-| Private     | 0.60            | 7.8e-05 | 0.89     | 0.38 |  0.96    |
+As a result, this implementation is not equivalent to the original 2021 competition-winning system. Instead, it serves as the reference Optimised Winning Solution used for all backbone replacement experiments presented in this section.
 
-**Metric Definitions:**
+All experiments are conducted on the AOT Hard Dataset, which is partitioned into a stratified 70/15/15 train/validation/test split. This split preserves the distribution of key difficulty factors across all subsets, ensuring consistent representation of challenging scenarios such as small objects, below-horizon targets, multi-object encounters, and frames with no visible objects.
 
-- **AFDR** *(Average Frame-level Detection Rate)*: Ratio of detected airborne objects to all objects that should be detected, considering all planned aircraft within 700m.
-- **FPPI** *(False Positives Per Image)*: Ratio of false positive airborne reports to the total number of images in the dataset.
-- **EDR** *(Encounter-level Detection Rate)*: Ratio of successfully detected encounters to total encounters, where an encounter is successfully detected if the object is tracked for at least 3 seconds before reaching 300m or within the first 3 seconds of the encounter.
-- **HFAR** *(False Alarm Rate per Hour)*: Number of unique reported track IDs containing at least one false positive, divided by total dataset hours.
+The primary objective of the backbone model evaluation is to determine whether the original SegTracker-based ensemble can be replaced with smaller, more computationally efficient single-backbone architectures while maintaining reliable airborne object detection and tracking performance under real-time constraints.
 
-### Hard Dataset Results
+### 8.1 Evaluated Backbone Architectures
 
-The table below reports baseline performance broken down by scenario category across the custom
-hard dataset (1,618 flights). Flights were selected from the full AOT dataset using configurable
-filter criteria to isolate the most challenging sequences, providing a more targeted benchmark
-than the full competition dataset.
+The following backbone models were tested within the optimised detection and tracking framework:
 
-| Scenario                     | Flights | FPPI      | AFDR   | HFAR   | EDR (Total) | EDR (Above) | EDR (Mixed) | EDR (Below) |
-|------------------------------|---------|-----------|--------|--------|-------------|-------------|-------------|-------------|
-| **Overall (All Criteria)**   | 1,618   | 0.000025  | 0.7382 | 0.1109 | 0.6964      | 0.6390      | 0.5793      | 0.7605      |
-| Small Object (bbox ≤ 36 px²) | 662     | 0.000045  | 0.7247 | 0.1230 | 0.6364      | 0.6439      | 0.4118      | 0.6761      |
-| Below Horizon                | 1,053   | 0.000031  | 0.7581 | 0.0865 | 0.7059      | 0.3158      | 0.5500      | 0.7746      |
-| Multi-Object                 | 627     | 0.000000  | 0.7081 | 0.0000 | 0.6990      | 0.6970      | 0.4444      | 0.7385      |
-| No Visible Object            | 354     | 0.000042  | 0.6043 | 0.2400 | 0.2432      | 0.2727      | 0.2500      | 0.1667      |
+<div align="center">
 
-*Results evaluated at a minimum detection confidence of 0.60 and a minimum track length of 30 frames (≈ 3 seconds at 10 fps).*
+<table>
+  <tr><th>Backbone Models</th></tr>
+  <tr><td>MobileNetV4-S</td></tr>
+  <tr><td>EfficientViT-M2</td></tr>
+  <tr><td>EfficientViT-B2</td></tr>
+  <tr><td>ResNet34</td></tr>
+  <tr><td>HRNet-W32</td></tr>
+</table>
 
----
+</div>
 
-## 🚀 Proposed Improvement
+These architectures span a range of computational budgets, from ultra-lightweight mobile models to high-capacity vision backbones.
 
-Beyond the main baseline, a range of additional models were tested for comparison. Based on their performance on the hard dataset, the most promising direction for improvement was...
+### 8.2 Optimised Pipeline Comparison
+
+<div align="center">
+
+<table>
+<tr>
+<th>Model</th>
+<th>Params (M)</th>
+<th>GFLOPs</th>
+<th>FPS</th>
+<th>AFDR</th>
+<th>FPPI</th>
+<th>EDR</th>
+</tr>
+
+<tr>
+<td>MobileNetV4-S</td>
+<td>1.56</td>
+<td>41.60</td>
+<td>26.75</td>
+<td>53.58</td>
+<td>2.08×10<sup>-5</sup></td>
+<td>12.98</td>
+</tr>
+
+<tr>
+<td>EfficientViT-M2</td>
+<td>4.11</td>
+<td>33.72</td>
+<td>3.60</td>
+<td>5.93</td>
+<td>0</td>
+<td>3.37</td>
+</tr>
+
+<tr>
+<td>EfficientViT-B2</td>
+<td>15.17</td>
+<td>168.36</td>
+<td>16.49</td>
+<td>57.64</td>
+<td>3.59×10<sup>-2</sup></td>
+<td>14.90</td>
+</tr>
+
+<tr>
+<td>ResNet34</td>
+<td>21.55</td>
+<td>381.25</td>
+<td>20.75</td>
+<td>51.88</td>
+<td>3.03×10<sup>-2</sup></td>
+<td>12.02</td>
+</tr>
+
+<tr>
+<td>HRNet-W32</td>
+<td>29.56</td>
+<td>42.45</td>
+<td>11.00</td>
+<td>60.07</td>
+<td>2.10×10<sup>-5</sup></td>
+<td>15.87</td>
+</tr>
+
+</table>
+
+<p><em>
+Backbone comparison under the optimised pipeline.
+</em></p>
+
+</div>
+
+<br/>
+
+<div align="center">
+
+<img src="docs/Images/SAA_Backbone_Tradeoffs.png" width="900">
+
+<p><em>
+Performance trade-offs across backbone models.
+</em></p>
+
+</div>
+
+### 8.3 Summary of Findings
+
+The results demonstrate a clear trade-off between computational efficiency and detection performance. Lightweight models such as MobileNetV4-S achieve high inference speeds suitable for real-time deployment but exhibit reduced detection robustness compared to larger architectures. Conversely, EfficientViT-M2 demonstrates severe performance degradation under full-resolution inference, indicating limitations in spatial representation capacity for high-resolution aerial imagery. Among all evaluated architectures, HRNet-W32 provides the most balanced performance, achieving strong detection stability while maintaining real-time inference capability under the optimised pipeline constraints.
 
 ---

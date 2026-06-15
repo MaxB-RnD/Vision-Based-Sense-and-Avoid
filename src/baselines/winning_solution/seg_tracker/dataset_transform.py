@@ -1,19 +1,13 @@
-import pickle
 import pandas as pd
 import numpy as np
 import torch
 import torch.utils.data
-from tqdm import tqdm
-import baseline.winning_solution.seg_tracker.config as config
+import baselines.winning_solution.seg_tracker.config as config
 import os
-import baseline.winning_solution.seg_tracker.common_utils as common_utils
+import baselines.winning_solution.seg_tracker.common_utils as common_utils
 import matplotlib.pyplot as plt
 import cv2
 import math
-import scipy
-import scipy.optimize
-from typing import List
-from baseline.winning_solution.seg_tracker.offset_grid_to_transform import offset_grid_to_transform_params
 
 
 def find_transform_between_images(cur_img, prev_img):

@@ -1,0 +1,109 @@
+# ------------------------------------------------------------------------------
+# -               V E R S I O N   I D E N T I F I C A T I O N                  -
+# ------------------------------------------------------------------------------
+# File:                    %name: hrnet_w32.yaml %
+# Date Created:            %date_created: Thur May 14 12:45:34 2026 %
+# CM Version               %version: 3 %
+# CM Instance              %instance: 1 %
+# Author:                  %created_by: MBusato %
+# ------------------------------------------------------------------------------
+# -                          D E S C R I P T I O N                             -
+# ------------------------------------------------------------------------------
+# Experiment: hrnet_w32
+# Model:      HRNetSegmentation (hrnet_w32)
+# Role:       Strong CNN baseline in the complexity vs AFDR experiment.
+#             Also the primary backbone of the winning solution ensemble.
+# Hypothesis: HRNet-W32 maintains high-resolution representations throughout
+#             the network via parallel multi-resolution branches. As the winning
+#             solution backbone it represents the high-performance anchor on the
+#             complexity curve. Used here in single-model mode to isolate its
+#             individual contribution independent of the ensemble.
+# Notes:
+#   - Uses 512x512 crops around detections (no border padding).
+#   - combine_outputs_dim reduced to 256 vs HRNet (512).
+#   - SGD + cosine warm restarts.
+# ------------------------------------------------------------------------------
+
+meta:
+  experiment: hrnet_w32
+  version: 3
+  author: MBusato
+  model: HRNetSegmentation
+  backbone: hrnet_w32
+  role: crop_refinement
+  input_resolution: [512, 512]
+  optimizer: sgd
+  scheduler: CosineAnnealingWarmRestarts
+
+model_params:
+  model_type:             HRNetSegmentation
+  model_cls:              HRNetSegmentation
+  base_model_name:        hrnet_w32
+  input_frames:           2
+  feature_location:       ''
+  combine_outputs_dim:    512
+  combine_outputs_kernel: 1
+  upscale_mode:           nearest
+  output_binary_mask:     true
+  output_above_horizon:   true
+  pred_scale:             8
+
+train_params:
+  # --- Duration ---
+  nb_epochs:            2220
+  nb_samples_per_epoch: 4096
+  nb_samples_valid:     512
+ 
+  # --- Optimiser ---
+  initial_lr:            1.0e-3
+  optimizer:             sgd
+  grad_clip:             8.0
+  freeze_backbone_steps: 5
+ 
+  # --- Scheduler: CosineAnnealingWarmRestarts ---
+  scheduler:        CosineAnnealingWarmRestarts
+  scheduler_period: 16      # T_0
+  scheduler_t_mult: 1.42    # T_mult
+ 
+  # --- Loss ---
+  mask_loss: fl
+ 
+  # --- Crop Sampling (50 / 25 / 25 split) ---
+  # 50% Fully Random Crops.
+  # 25% Hard False Positive Frames.
+  # 25% Airborne Frames.
+  tracking_samples_share: 0.25
+  fp_samples_share:       0.25
+  fpm_batch_size:         4
+ 
+  # --- False Positive Mining ---
+  fpm_epochs:
+    250:  8
+    370:  8
+    535:  8
+    770:  8
+    1100: 8
+    1535: 8
+ 
+  # --- Loss Weights ---
+  loss_scale:
+    cls:           2000
+    size:          1
+    offset:        0.2
+    distance:      1
+    tracking:      1
+    above_horizon: 1
+ 
+train_data_loader:
+  batch_size:   16
+  num_workers:  8
+ 
+val_data_loader:
+  batch_size:   16
+  num_workers:  8
+ 
+dataset_params:
+  back_steps:            [1]
+  scale:                 1
+  crop_with_plane_ratio: 0.25
+  crop_size:             [512, 512]

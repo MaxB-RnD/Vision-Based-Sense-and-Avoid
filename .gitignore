@@ -45,7 +45,9 @@
 **/*.npy
 **/*.onnx
 
-# Ignore Custom AOT Data.
-**/data
-**/results*
+# Ignore Custom AOT Folders.
+/data
+model_training/
+*/results*
+/wandb/
 # ==============================================================================

@@ -1,0 +1,20 @@
+Metric,Value,Status
+Detection Score,0.6000,
+AFDR (Airborne Flight Detection Rate),0.0593,
+FPPI (False Positives Per Image),0.000000,PASS (≤ 0.0005)
+HFAR (Horizontal False Alarm Rate),0.0000,PASS (≤ 0.5)
+EDR - All Scenarios,0.0337,
+EDR - Above Horizon,0.0635,
+EDR - Below Horizon,0.0000,
+Total Aircraft Detected,2179,
+Total Aircraft in Dataset,36755,
+Parameters (Total),"25,387,267",
+Parameters (Trainable),"25,387,267",
+GFLOPs (per frame),151.820,
+GMACs (per frame),75.910,
+FPS Mean,3.60,
+FPS Std Dev,0.06,
+FPS Min,3.04,
+FPS Max,3.68,
+FPS P95,3.65,
+Frames Measured,49793,

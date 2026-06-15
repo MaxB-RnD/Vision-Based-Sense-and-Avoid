@@ -1,22 +1,12 @@
-import os
-import logging
 import torch
 import numpy as np
-from PIL import Image
 import cv2
-from pathlib import Path
-from tqdm import tqdm
-import urllib
-import zipfile
-# import matplotlib.pyplot as plt
 
 import cv2
 from . import models_segmentation
 from . import models_transformation
 from . import offset_grid_to_transform
-from . import seg_prediction_to_items
 from . import predict_ensemble
-from . import common_utils
 
 from .prediction_structure import *
 from . import tracking
@@ -36,22 +26,6 @@ class SegDetector:
         self.model_transform.load_state_dict(torch.load(f'{models_dir}/030_tr_tsn_rn34_w3_crop_borders_255_0.pth', map_location=self.device, weights_only=False)["model_state_dict"])
         self.model_transform = self.model_transform.to(self.device)        
         self.model_transform.eval()
-
-        # self.model_seg = models_segmentation.DLASegmentation(
-        #     cfg=dict(
-        #         base_model_name="dla32",
-        #         input_frames=2,
-        #         feature_location='',
-        #         combine_outputs_dim=512,
-        #         combine_outputs_kernel=1,
-        #         output_binary_mask=True,
-        #         output_above_horizon=True,
-        #         pred_scale=8
-        #     ),
-        #     pretrained=False
-        # )
-        #
-        # self.model_seg.load_state_dict(torch.load(f'{models_dir}/100_dla32_fpm_1100.pth', weights_only=False)['model_state_dict'], strict=False)
 
         self.model_seg1 = models_segmentation.HRNetSegmentation(
             cfg=dict(
@@ -104,21 +78,6 @@ class SegDetector:
         self.model_dla.load_state_dict(torch.load(f'{models_dir}/120_dla60_256_sgd_all_rerun_2220.pth', map_location=self.device, weights_only=False)['model_state_dict'], strict=False)
         self.model_dla = self.model_seg2.to(self.device)
         self.model_dla.eval()
-
-        # self.model_seg3 = models_segmentation.EffDetSegmentation8x(
-        #     cfg=dict(
-        #         base_model_name="tf_efficientdet_d5",
-        #         input_frames=2,
-        #         output_binary_mask=True,
-        #         output_above_horizon=True,
-        #         pred_scale=8
-        #     ),
-        #     pretrained=False
-        # )
-        #
-        # self.model_seg3.load_state_dict(torch.load(f'{models_dir}/120_edet_b5_all_2220.pth', weights_only=False)['model_state_dict'], strict=False)
-        # self.model_seg3 = self.model_seg3.to(self.device)
-        # self.model_seg3.eval()
 
         self.model_seg3 = models_segmentation.HRNetSegmentation(
             cfg=dict(
