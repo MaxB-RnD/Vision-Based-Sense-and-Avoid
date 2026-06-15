@@ -775,8 +775,13 @@ def predict_dataset_offsets(part: str = 'part1') -> None:
     model.load_state_dict(checkpoint["model_state_dict"])
 
     # Load the Flight Index.
-    df         = pd.read_csv(f'{config.DATA_DIR}/{part}/ImageSets/groundtruth.csv')
-    flight_ids = list(sorted(df['flight_id'].unique()))
+    df = pd.read_csv(f'{config.DATA_DIR}/{part}/ImageSets/groundtruth.csv')
+    
+    # Filter to Only Flights That Exist on Disk.
+    flight_ids = [
+        fid for fid in sorted(df['flight_id'].unique())
+        if os.path.isdir(f'{config.DATA_DIR}/{part}/Images/{part}{fid}')
+    ]
 
     # Set Up Async Image Loading Pipeline.
     load_img_stage   = mpipe.OrderedStage(load_img, 1)
@@ -796,8 +801,7 @@ def predict_dataset_offsets(part: str = 'part1') -> None:
         ].drop_duplicates().reset_index(drop=True)
 
         file_names = [
-            f'{config.DATA_DIR}/{part}/Images/{flight_id}/'
-            f'{fn[:-4]}.{config.IMG_FORMAT}'
+            f'{config.DATA_DIR}/{part}/Images/{part}{flight_id}/{fn[:-4]}.{config.IMG_FORMAT}'
             for fn in df_flight.img_name
         ]
 
