@@ -50,8 +50,8 @@ model_params:
 
 train_params:
   # --- Duration ---
-  nb_epochs:            2220
-  nb_samples_per_epoch: 4096
+  nb_epochs:            800
+  nb_samples_per_epoch: 2048
   nb_samples_valid:     512
  
   # --- Optimiser ---
@@ -78,12 +78,9 @@ train_params:
  
   # --- False Positive Mining ---
   fpm_epochs:
-    250:  8
-    370:  8
-    535:  8
-    770:  8
-    1100: 8
-    1535: 8
+    200:  8
+    350:  8
+    550:  8
  
   # --- Loss Weights ---
   loss_scale:
@@ -105,5 +102,5 @@ val_data_loader:
 dataset_params:
   back_steps:            [1]
   scale:                 1
-  crop_with_plane_ratio: 0.25
+  crop_with_plane_ratio: 0.50
   crop_size:             [512, 512]
