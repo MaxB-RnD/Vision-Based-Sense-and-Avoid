@@ -1,0 +1,102 @@
+--------------------------------------------------------------------------------
+            TRACKING-TO-DETECT FRAMEWORK DESIGN DECISIONS
+--------------------------------------------------------------------------------
+Fix 1: Correct Tracking ID Saftey Nets
+ The ID pool is scoped too narrowly to guarantee uniqueness across a whole flight. 
+ In allocate_track_id(), IDs are only drawn from 1–63, and track_ids_in_use (the 
+ set checked before handing out a new ID) is rebuilt every frame from just 
+ self.prev_frames_items[-3:] — the last 3 kept frames only. So once a track goes 
+ unseen for more than 3 frames, its ID is freed and can be handed to a completely 
+ different, unrelated object later in the same flight. This is exactly what needs 
+ to change: an ID must not be eligible for reassignment just because a track went 
+ quiet briefly — it should only free up once the tracker is confident that track 
+ is genuinely gone (which, once tracking-to-detect lands, means after the 
+ 3-coasted-frame termination point we already agreed on, not before).
+
+ The safety net that would catch a collision isn't actually running. seg_test.py 
+ defines proxy_register_object_and_location(), which raises an exception if the 
+ same track_id appears twice in one frame. But the live inference() loop calls 
+ self.register_object_and_location() directly, bypassing the proxy entirely — so
+ even if Issue 1 above causes a genuine collision, nothing would currently catch 
+ it before it lands in the results file.
+
+Decision 1: Provenance tag, not blended confidence
+ Every item output by the tracker carries an explicit source field: DETECTED 
+ (from the segmentation ensemble this frame) or COASTED (position generated from
+ motion because no detection matched this frame). This is separate metadata, not 
+ folded into the confidence number — confidence must stay a calibrated estimate 
+ of "is this real," not a mix of detector certainty and tracker trust.
+
+Decision 2: Coasted confidence = last real confidence × 0.9 per coasted frame
+ A coasted item inherits the confidence of the track's last DETECTED frame, 
+ multiplied by 0.9 for each consecutive coasted frame since. No separate threshold
+ is introduced for coasted items — they pass through the existing MIN_SCORE (0.6)
+ filter exactly like real detections. This means decay does the filtering work 
+ naturally: a track sitting near the threshold drops out on its own within the 
+ coast window, while a strong detection survives briefly. 0.9 is chosen 
+ specifically so it composes correctly with Decision 3 below.
+
+Decision 3: Maximum 3 consecutive coasted frames
+ This is not an arbitrary new number — it matches the coast cap directly to a 
+ tolerance the baseline already has: SimpleOffsetTracker.process_frame_detections()
+ already searches back up to 3 previous frames (for frames_offset in [1, 2, 3]) 
+ when trying to re-associate a track. Track-to-detect is making that existing 
+ tolerance active (predict forward) rather than passive (search backward) — same
+ number, same underlying assumption about how long a genuine dropout lasts, not 
+ a new hyperparameter invented separately. At 10fps this is 0.3s, short enough 
+ that constant-motion extrapolation stays reasonable, long enough to bridge the 
+ "No Visible Object" case for distant/sub-pixel targets described in the 
+ hypothesis.
+
+ Combined with Decision 2: a maximally-confident detection (≈0.99) decays to 
+ ≈0.99 × 0.9³ ≈ 0.72 by frame 3 — still above MIN_SCORE, so the 3-frame hard cap 
+ (Decision 5) is what actually terminates it, not decay alone. This is intentional
+ — decay handles the common case, the cap is the backstop for the edge case.
+
+Decision 4: Coasted frames do not count toward MIN_TRACK_LEN
+ Coasted frames do not count as track evidence, in either counter. This was 
+ originally written to cover only items_in_track (the counter gating external 
+ MIN_TRACK_LEN/submission filtering in seg_test.py). It's now confirmed to also 
+ apply to SimpleOffsetTracker's own internal items_in_track incrementing logic 
+ in process_frame_detections() — the same field, but the one that gates 
+ min_track_size (8) and the threshold_to_find (0.8) confidence check that decides
+ whether a track is real enough to allocate a track_id and submit. Currently that 
+ logic increments whenever cur_item.confidence > threshold_to_find, with no 
+ distinction between a real detection and a coasted one — and since a coasted 
+ item's confidence (last real confidence × 0.9 per coasted frame, per Decision 2)
+ can stay above 0.8 for a frame or two before decaying out, a coasted frame could
+ currently satisfy this check on its own. The fix: items_in_track only increments
+ on frames with source == DETECTED; coasted frames extend the track's lifespan 
+ and position but never advance this counter. This keeps the 8-frame confidence 
+ gate meaning what it's supposed to mean — genuine detected evidence, not motion 
+ assumption — and keeps it consistent with CEDR now using that same 8-frame 
+ threshold as its minimum encounter length.
+
+Decision 5: Hard termination after 3 uncoasted frames
+ If a 4th consecutive frame passes with no real detection, the track is 
+ terminated outright — no 4th coasted item is generated, ID is released back to 
+ the pool via the existing allocate_track_id/track_ids_in_use mechanism. No 
+ indefinite drift, no soft decay-only cutoff for track lifetime — the cap is 
+ absolute.
+
+Decision 6: Motion model for the predicted position
+ Two components, both already computed elsewhere in the pipeline — no new 
+ estimator introduced:
+
+ Camera/global motion: apply the existing per-frame prev_tr affine transform 
+ (from offset_grid_to_transform) to the track's last known position.
+ Object's own relative motion: linear extrapolation using the track's own dx/dy, 
+ the same term already used in SimpleOffsetTracker.distance()'s predict_distance 
+ calculation, multiplied by frames-since-last-detection.
+
+ Box size (w, h) is held constant at the last real detection's size — no 
+ extrapolated growth/shrink. Scale change over a 3-frame window is small enough 
+ that guessing at it adds risk without clear benefit.
+
+Decision 7: Insertion point
+ Inside SegTrackerFromOffset.predict(), immediately after 
+ SimpleOffsetTracker.process_frame_detections() completes normal association: any 
+ track with next_item_idx is None this frame (no detection matched) and 
+ coast-count < 3 gets a synthesized COASTED item appended to that frame's results, 
+ before confidence filtering runs.
+--------------------------------------------------------------------------------
