@@ -4,7 +4,7 @@
 # File:                    %name: core_improvement_evaluator.py %
 # Date Created:            %date_created: Tue Mar 24 15:18:38 2026 %
 # CM Version               %version: 3 %
-# CM Instance              %instance: 1 %
+# CM Instance              %instance: 2 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -25,13 +25,14 @@
 #         nohup python -m src.core_improvement.core_improvement_evaluator select_model > outputs/logs/core_improvement/core_improvement_evaluation.log 2>&1 &
 #
 #   2. Optional Environment Variables:
-#       - SELECTED_MODEL = (0-5)
+#       - SELECTED_MODEL = (0-6)
 #            0 = Winning Solution (Optimised)
 #            1 = MobileNetV4
 #            2 = EfficientViT-M2
 #            3 = ResNet34
 #            4 = EfficientViT-B2
 #            5 = HRNet-W32
+#            6 = HRNet-W32 Track-to-Detect
 #
 #   3. Then monitor from terminal with:
 #            tail -f outputs/logs/core_improvement/core_improvement_evaluation.log
@@ -97,7 +98,8 @@ def main() -> None:
     # 3 -> ResNet34 (Medium-Weight Detection Backbone).
     # 4 -> EfficientVit-B2 (Heavy-Weight Detection Backbone).
     # 5 -> HRNet-W32 (Heavy-Weight Detection Backbone).
-    model_list = ["winning_solution_star","mobilenetv4", "efficientvitm2", "resnet34", "efficientvitb2", "hrnetw32"]
+    # 6 -> HRNet-W32 Track-to-Detect (Heavy-Weight Detection Backbone With Coasted Tracking).
+    model_list = ["winning_solution_star", "mobilenetv4", "efficientvitm2", "resnet34", "efficientvitb2", "hrnetw32", "hrnetw32_track_to_detect"]
 
     # Allow Model Selection from Command Line.
     if len(sys.argv) > 1:
@@ -111,7 +113,7 @@ def main() -> None:
     MIN_TRACK_LEN = 30
 
     # Set Path to Desired Evaluation Dataset.
-    DATASET_PATH = "configs/datasets/training_subsets/test.txt"
+    DATASET_PATH = "configs/datasets/selected_flights.txt"
     DATASET_PARTS = ["part1", "part2", "part3"]
 
     # Set Results Variables (Auto-Incrementing Run Directory).
@@ -222,6 +224,7 @@ def main() -> None:
     from src.core_improvement.winning_solution_star.seg_test import WinningSolutionPredictor
     from src.core_improvement.efficientvitm2.efficientvit_m2_test import EfficientViTM2Predictor
     from src.core_improvement.efficientvitb2.efficientvit_b2_test import EfficientViTB2Predictor
+    from src.core_improvement.hrnetw32_track_to_detect.hrnetw32_track_to_detect_test import HRNetW32TrackToDetectPredictor
 
     # Check GPU is CUDA Enabled.
     if torch.cuda.is_available():
@@ -233,12 +236,13 @@ def main() -> None:
 
     # Map Model Selection to Predictor Classes.
     MODEL_MAP = {
-        0: WinningSolutionPredictor, # Optimised Baseline.
-        1: MobileNetV4Predictor,     # MobileNet v4.
-        2: EfficientViTM2Predictor,  # EfficientVit m2.
-        3: ResNet34Predictor,        # ResNet34.
-        4: EfficientViTB2Predictor,  # EfficientVit b2.
-        5: HRNetW32Predictor         # HRNet-W32.
+        0: WinningSolutionPredictor,       # Optimised Baseline.
+        1: MobileNetV4Predictor,           # MobileNet v4.
+        2: EfficientViTM2Predictor,        # EfficientVit m2.
+        3: ResNet34Predictor,              # ResNet34.
+        4: EfficientViTB2Predictor,        # EfficientVit b2.
+        5: HRNetW32Predictor,              # HRNet-W32.
+        6: HRNetW32TrackToDetectPredictor, # HRNet-W32 Track-to-Detect.
     }
 
     # Validate Selection.
