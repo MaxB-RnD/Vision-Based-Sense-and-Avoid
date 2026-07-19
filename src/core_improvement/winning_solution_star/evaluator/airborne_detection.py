@@ -43,11 +43,12 @@ class AirbornePredictor:
         self.current_img_name = None
         self.track_id_seq = 0
 
-    def register_object_and_location(self, class_name, track_id, bbox, confidence, img_name):
+    def register_object_and_location(self, class_name, track_id, bbox, confidence, img_name, source='DETECTED'):
         """
         Register all your tracking results to this function.
            `track_id`: unique id for your detected airborne object
            `img_name`: The image_name to which this prediction belongs.
+           `source`: 'DETECTED' or 'COASTED' -- optional, defaults to 'DETECTED' for predictors that don't pass it.
         """
         assert 0 < confidence < 1
         assert track_id is not None
@@ -63,7 +64,8 @@ class AirbornePredictor:
                     "w": bbox[2],
                     "h": bbox[3],
                     "n": class_name,
-                    "s": confidence
+                    "s": confidence,
+                    "source": source
                 }
             ],
             "img_name": img_name

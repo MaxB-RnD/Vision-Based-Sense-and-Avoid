@@ -35,6 +35,7 @@ MINS_TO_HOURS = 1 / 60
 TARGET_FAR_PER_HOUR = 1 / 2 # 1 False Alarm per 2 hours
 RANGES_TO_DETECT = [300] # the metrics is reported for detections before 300 m
 FAST_DETECTION_WINDOW_ = 30 # frames - an encounter is detected fast if it is detected within 3 secs.
+DEFAULT_CEDR_MIN_ENCOUNTER_FRAMES_ = 8  # matches the tracker's own min_track_size confidence gate.
 
 # Frame level detection rate calculation constants
 DEFAULT_MIN_OBJECT_AREA = 200 # minimum object area for frame level 
@@ -439,6 +440,146 @@ def augment_with_moving_most_common_track_id_count_per_encounter(df_matches, tem
     df_matched_track_freq.index.name = 'frame'
     return df_matched_track_freq.reset_index()
 
+
+# ------------------------------------------------------------------------------
+#                CONTINUOUS ENCOUNTER-LEVEL DETECTION RATE (CEDR)
+# ------------------------------------------------------------------------------
+def augment_with_dominant_track_detection_rate_per_encounter(df, exclude_coasted=True):
+    """
+    Flags Each Frame of an Encounter as a CEDR Match Based on Track Continuity.
+
+    Unlike augment_with_moving_most_common_track_id_count_per_encounter, this
+    is NOT a rolling window. For each encounter, the single track_id that
+    matches the object most often across the WHOLE encounter is identified as
+    the "dominant" track. A frame is only flagged as a CEDR match if the
+    dominant track_id itself produced the match in that frame -- a model that
+    detects the object correctly but under several disconnected track_ids
+    gets no credit for those fragmented frames, since none of them belongs to
+    the single dominant track.
+
+    Args:
+        df (pd.DataFrame):
+            Combined encounter/ground-truth-match dataframe. Must contain
+            'encounter_id' and 'matched_track_id' columns.
+        exclude_coasted (bool):
+            If True and a 'source' column is present, matches produced by
+            COASTED (motion-predicted) frames are excluded from counting
+            toward the dominant track's tally. CEDR is intended to measure
+            genuine detection coverage, not the tracker's own motion
+            assumptions. Models that don't emit a 'source' column (i.e. any
+            detect-to-track pipeline with no coasting) are unaffected.
+
+    Returns:
+        pd.DataFrame: Same as input, with two additional columns:
+            dominant_track_id: The track_id that matched most often within
+                                each encounter (-1 if the encounter has no
+                                matches at all).
+            cedr_match: 1 if this row's frame was matched by the dominant
+                        track (and, unless excluded, not coasted), else 0.
+    """
+    # Confirm the Columns Required for This Augmentation are Present.
+    required_cols = ['encounter_id', 'matched_track_id']
+    assert is_in_df_columns(df, required_cols), (
+        'One Or More Out of {} Columns is Not Found, Cannot Augment'.format(', '.join(required_cols)))
+    
+    # Ignore Unmatched Rows (matched_track_id == -1) When Finding the
+    # Most Common Real Track ID for This Encounter.
+    def _dominant_track_id(group):
+        ids = [tid for tid in group if tid != -1]
+        if not ids:
+            return -1
+        return Counter(ids).most_common(1)[0][0]
+
+    # Identify the Single Dominant Track ID for Every Encounter.
+    dominant = df.groupby('encounter_id')['matched_track_id'].apply(_dominant_track_id)
+    dominant = dominant.rename('dominant_track_id').reset_index()
+    df = df.merge(dominant, on='encounter_id', how='left')
+
+    # A Frame Counts as a CEDR Match Only if the Dominant Track Produced It.
+    is_dominant_match = (df['matched_track_id'] == df['dominant_track_id']) & (df['dominant_track_id'] != -1)
+
+    # Exclude Tracking-to-Detect Coasted Frames from the Numerator, if Requested.
+    if exclude_coasted and 'source' in df.columns:
+        is_dominant_match = is_dominant_match & (df['source'] != 'COASTED')
+    
+    # Store the Final Per-Frame CEDR Match Flag.
+    df = df.assign(cedr_match=is_dominant_match.astype(int))
+    return df
+
+
+def compute_cedr(df_matches, df_val_encounters, min_score,
+                  min_encounter_frames=DEFAULT_CEDR_MIN_ENCOUNTER_FRAMES_):
+    """
+    Computes Continuous Encounter-Level Detection Rate (CEDR) per Encounter.
+
+    CEDR = (frames matched by the encounter's single dominant track_id,
+            excluding coasted frames) / (total frames the object is in view)
+
+    Replaces the windowed, binary detected/not-detected EDR check with a
+    continuous per-encounter percentage that also enforces single-track
+    continuity -- a model that detects an object correctly but under several
+    disconnected track_ids scores lower than one that tracks it continuously
+    under one ID.
+
+    Args:
+        df_matches (pd.DataFrame):
+            Ground-truth/detection match dataframe, must include 's'
+            (confidence), 'track_id', and 'gt_det_match' columns.
+        df_val_encounters (pd.DataFrame):
+            Valid encounters dataframe used to scope frames to their
+            encounter_id.
+        min_score (float):
+            Minimum confidence score required for a detection to count as a
+            match. Detections below this threshold are treated as unmatched
+            before CEDR is computed.
+        min_encounter_frames (int):
+            Minimum total encounter length, in frames, required for an
+            encounter to be scored by CEDR at all. Defaults to
+            DEFAULT_CEDR_MIN_ENCOUNTER_FRAMES_, matching the tracker's own
+            min_track_size confidence gate rather than an arbitrary value.
+            Encounters shorter than this are excluded entirely -- not scored
+            as a 0, simply not applicable.
+
+    Returns:
+        pd.DataFrame: One row per qualifying encounter, with columns:
+            encounter_id, flight_id, tot_num_frames,
+            num_dominant_track_matches, cedr.
+    """
+    # Work on a Copy to Avoid Mutating the Caller's DataFrame.
+    df_matches = df_matches.copy()
+
+    # Treat Any Detection Below min_score as Unmatched.
+    below_thresh_det = df_matches['s'] < min_score
+    df_matches.loc[below_thresh_det, 'gt_det_match'] = 0
+
+    # Record the Track ID Responsible for Each Match, -1 Where There is None.
+    df_matches = df_matches.assign(matched_track_id=[
+        track_id if is_match else -1
+        for track_id, is_match in zip(df_matches['track_id'], df_matches['gt_det_match'])
+    ])
+
+    # Scope Matches to Their Encounters & Flag the Dominant-Track CEDR Matches.
+    df = combine_encounter_with_gt_det_matches(df_matches, df_val_encounters)
+    df = augment_with_dominant_track_detection_rate_per_encounter(df)
+
+    # Aggregate to One Row per Encounter.
+    df_cedr = df.groupby('encounter_id').agg(
+        flight_id=('flight_id', 'first'),
+        tot_num_frames=('frame', 'count'),
+        num_dominant_track_matches=('cedr_match', 'sum'),
+    ).reset_index()
+
+    # Drop Encounters Too Short to be Meaningfully Scored.
+    df_cedr = df_cedr.query('tot_num_frames >= @min_encounter_frames').copy()
+
+    # Compute the Final Per-Encounter CEDR Percentage.
+    df_cedr['cedr'] = df_cedr['num_dominant_track_matches'] / df_cedr['tot_num_frames']
+
+    # Return the Per-Encounter CEDR Results.
+    return df_cedr
+# ------------------------------------------------------------------------------
+
+
 def augment_with_diff_to_first_frame(df_encounters):
     """adds difference in frame between each frame in encounter and the first frame of the encounter"""
     required_columns_str = ', '.join(['frame', 'framemin']) 
@@ -766,6 +907,7 @@ def run(flags):
     if flags.use_track_fl_dr:
         df_final_results_track_fl_dr = compute_encounter_detections(df_val_encounters_with_fl_dr, 
                     flags.min_fl_dr, flags.fl_dr_temporal_win, use_track_fl_dr=True)
+    df_cedr = compute_cedr(df_gt_det_matches, df_val_encounters, thresh_score)
 
     # saving intermidiate results
     log.info('Saving results')
@@ -794,6 +936,7 @@ def run(flags):
                                                                 results_filename, results_filename)
     df_final_results.to_json(results_filename + '.json', orient='records', lines=True, indent=4)
     df_final_results_track_fl_dr.to_csv(results_filename + '_tracking.csv')
+    df_cedr.to_csv(results_filename + '_cedr.csv')
 
     log.info('Data frame with information on encounter detection is saved to %s.json', results_filename)
     
@@ -814,7 +957,7 @@ def run(flags):
             if flags.use_track_fl_dr:
                 num_det_encounters_tracking[det_range][query_key] = df_final_results_track_fl_dr.query(
                                             query_value)['detected_before_{}'.format(det_range)].sum()
-
+    
     summary = {} 
     log.info('Summary')
     summary['gt_encounters'] = flags.encounters_with_groundtruth_filename
@@ -830,6 +973,10 @@ def run(flags):
     summary['num_planned_intruders'] = int(num_planned)
     summary['num_non_planned_intruders'] = int(num_non_planned)
     summary['num_non_planned_aircraft'] = int(num_non_planned_aircraft)
+    summary['cedr_mean'] = float(df_cedr['cedr'].mean()) if len(df_cedr) else 0.0
+    summary['cedr_num_qualifying_encounters'] = int(len(df_cedr))
+    log.info('CEDR (mean over %d qualifying encounters, min %d frames): %.5f',
+             len(df_cedr), DEFAULT_CEDR_MIN_ENCOUNTER_FRAMES_, summary['cedr_mean'])
     log.info('Planned Aircraft: %d', num_planned)
     log.info('Non-Planned Airborne: %d', num_non_planned)
     log.info('Non-Planned Aircraft: %d', num_non_planned_aircraft)

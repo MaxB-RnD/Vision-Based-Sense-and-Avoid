@@ -135,6 +135,8 @@ def summarize(summaries_dir):
             results['Detected planned aircraft'].append(summary['det_aircraft_in_range'])
             results['Total planned aircraft'].append(summary['tot_aircraft_in_range'])
             results['HFAR'].append(summary['far'])
+            results['CEDR'].append(round(summary['cedr_mean'], 5))
+            results['CEDR Qualifying Encounters'].append(summary['cedr_num_qualifying_encounters'])
             for dr_criteria in ['Tracking']:
                 for scenario in list(HORIZON_QUERIES.keys()):
                     results['EDR {}, {}'.format(scenario, dr_criteria)].append(

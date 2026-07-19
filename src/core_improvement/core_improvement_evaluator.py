@@ -4,7 +4,7 @@
 # File:                    %name: core_improvement_evaluator.py %
 # Date Created:            %date_created: Tue Mar 24 15:18:38 2026 %
 # CM Version               %version: 3 %
-# CM Instance              %instance: 2 %
+# CM Instance              %instance: 3 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -320,7 +320,8 @@ def main() -> None:
         print("\n" + "=" * 60)
         print(" NEW BACKBONE MODEL - FULL HARD DATASET BENCHMARK SUMMARY")
         print("=" * 60)
-        print(summary_df.set_index("Metric").to_string())
+        display_df = summary_df[~summary_df["Metric"].str.startswith("EDR")]
+        print(display_df.set_index("Metric").to_string())
 # ------------------------------------------------------------------------------
 
 

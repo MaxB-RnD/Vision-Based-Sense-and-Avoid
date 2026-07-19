@@ -708,7 +708,7 @@ class HRNetW32TrackToDetectPredictor(AirbornePredictor):
         self.visited_frame[img_name].append(track_id)
 
         # Commit the Detection to the Results.
-        self.register_object_and_location(class_name, track_id, bbox, confidence, img_name)
+        self.register_object_and_location(class_name, track_id, bbox, confidence, img_name, source=source)
 
 
     def inference(self, flight_id: str) -> None:

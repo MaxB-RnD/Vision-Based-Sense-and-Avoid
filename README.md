@@ -157,6 +157,7 @@ Performance is evaluated using the official Airborne Object Tracking Challenge m
 | Metric | Description |
 |---------|-------------|
 | **AFDR** (Average Frame-level Detection Rate) | Percentage of airborne objects successfully detected at the frame level, considering planned aircraft within 700 m. |
+| **CEDR** (Continuous Encounter Detection Rate) | Percentage of an encounter's frames for which the target was followed continuously under a single, consistent track, rather than being lost and re-acquired as a new track. Averaged across all encounters of at least 8 frames. |
 | **EDR** (Encounter Detection Rate) | Percentage of encounters successfully detected. An encounter is considered detected when the target is tracked for at least 3 seconds before reaching 300 m, or within the first 3 seconds of the encounter. |
 | **FPPI** (False Positives Per Image) | Average number of false positive detections generated per image. Lower values indicate fewer false alarms. |
 | **HFAR** (False Alarm Rate per Hour) | Number of unique false-positive tracks reported per hour of flight data. Lower values indicate greater operational reliability. |
