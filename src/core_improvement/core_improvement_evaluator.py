@@ -320,8 +320,7 @@ def main() -> None:
         print("\n" + "=" * 60)
         print(" NEW BACKBONE MODEL - FULL HARD DATASET BENCHMARK SUMMARY")
         print("=" * 60)
-        display_df = summary_df[~summary_df["Metric"].str.startswith("EDR")]
-        print(display_df.set_index("Metric").to_string())
+        print(summary_df.set_index("Metric").to_string())
 # ------------------------------------------------------------------------------
 
 

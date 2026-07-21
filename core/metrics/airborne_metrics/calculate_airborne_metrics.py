@@ -35,7 +35,13 @@ MINS_TO_HOURS = 1 / 60
 TARGET_FAR_PER_HOUR = 1 / 2 # 1 False Alarm per 2 hours
 RANGES_TO_DETECT = [300] # the metrics is reported for detections before 300 m
 FAST_DETECTION_WINDOW_ = 30 # frames - an encounter is detected fast if it is detected within 3 secs.
-DEFAULT_CEDR_MIN_ENCOUNTER_FRAMES_ = 8  # matches the tracker's own min_track_size confidence gate.
+
+# New Metric Constants.
+DEFAULT_CEDR_MIN_ENCOUNTER_FRAMES_ = 8  # Matches the tracker's own min_track_size confidence gate.
+DEFAULT_FTPS_MIN_TRACK_FRAMES_    = 8     # Matches min_track_size, same reasoning as CEDR.
+DEFAULT_FTPS_THRESHOLDS_          = [0.50, 0.80, 0.95]   # Headline reportable thresholds.
+DEFAULT_FTPS_DEFAULT_THRESHOLD_   = 0.80  # Day-to-day working threshold.
+DEFAULT_FTPS_AVERAGE_RANGE_       = [round(t, 2) for t in np.arange(0.50, 1.00, 0.05)]  # mAP-style 50:5:95.
 
 # Frame level detection rate calculation constants
 DEFAULT_MIN_OBJECT_AREA = 200 # minimum object area for frame level 
@@ -580,6 +586,113 @@ def compute_cedr(df_matches, df_val_encounters, min_score,
 # ------------------------------------------------------------------------------
 
 
+# ------------------------------------------------------------------------------
+#                     FALSE TRACKS PER SEQUENCE (FTPS)
+# ------------------------------------------------------------------------------
+def augment_with_track_unmatched_ratio(df_matches, min_score):
+    """
+    Computes the Unmatched-Frame Ratio for Every Track.
+
+    Inverts the same pattern track_fl_dr uses for matches -- but computed
+    once over each track's ENTIRE lifespan, not a rolling window, since
+    FTPS judges whether a whole trajectory was wrong, not a moment of it.
+
+    Multiple ground-truth objects can appear in the same frame, which would
+    duplicate a single detection's row once per GT pairing after the outer
+    join in match_groundtruth_results.py. This collapses back to one row per
+    (flight_id, track_id, frame) before counting, so a track's frame count
+    isn't inflated by multi-object frames.
+
+    Args:
+        df_matches (pd.DataFrame): Ground-truth/detection match dataframe.
+        min_score (float): Detections below this confidence are treated as
+                            unmatched, same convention as compute_cedr.
+
+    Returns:
+        pd.DataFrame: One row per (flight_id, track_id) with tot_num_frames,
+        num_matched_frames, num_unmatched_frames, unmatched_ratio.
+    """
+    # Work on a Copy & Drop Rows With No Associated Track (Missed GT, No Detection).
+    df = df_matches.copy()
+    df = df[df['track_id'].notna()]
+
+    # Treat Any Detection Below min_score as Unmatched.
+    below_thresh_det = df['s'] < min_score
+    df.loc[below_thresh_det, 'gt_det_match'] = 0
+
+    # Collapse Multi-GT-Per-Frame Duplication to One Row per Detection-Frame.
+    df_frame_level = df.groupby(['flight_id', 'track_id', 'frame'])['gt_det_match'].max().reset_index()
+
+    # Aggregate to One Row per Track.
+    df_tracks = df_frame_level.groupby(['flight_id', 'track_id']).agg(
+        tot_num_frames=('frame', 'count'),
+        num_matched_frames=('gt_det_match', 'sum'),
+    ).reset_index()
+
+    # Compute the Unmatched Ratio for Each Track.
+    df_tracks['num_unmatched_frames'] = df_tracks['tot_num_frames'] - df_tracks['num_matched_frames']
+    df_tracks['unmatched_ratio'] = df_tracks['num_unmatched_frames'] / df_tracks['tot_num_frames']
+    return df_tracks
+
+
+def compute_ftps(df_matches, min_score, num_sequences,
+                  min_track_frames=DEFAULT_FTPS_MIN_TRACK_FRAMES_,
+                  thresholds=DEFAULT_FTPS_THRESHOLDS_):
+    """
+    Computes False Tracks Per Sequence (FTPS) at Multiple Thresholds.
+
+    Replaces raw per-frame FPPI with a track-level count of fully wrong
+    trajectories: a track only counts as a false track once its unmatched-
+    frame ratio crosses a threshold, so a single stray frame on an otherwise
+    correct track is ignored, unlike HFAR's "at least one unmatched frame"
+    rule. Reported at multiple thresholds, mAP-IoU-style, rather than a
+    single contestable cutoff.
+
+    Tracks shorter than min_track_frames are excluded entirely (not scored
+    as a false track by default), matching the tracker's own min_track_size
+    confidence gate -- same reasoning as CEDR's minimum encounter length.
+
+    Args:
+        df_matches (pd.DataFrame): Ground-truth/detection match dataframe.
+        min_score (float): Confidence threshold, forwarded to
+                            augment_with_track_unmatched_ratio.
+        num_sequences (int): Number of flight sequences evaluated, used as
+                              the "Per Sequence" denominator.
+        min_track_frames (int): Minimum track length to be judged.
+        thresholds (List[float]): Unmatched-ratio thresholds to report
+                                   individually (e.g. FTPS@50/80/95).
+
+    Returns:
+        Tuple[pd.DataFrame, dict, float]:
+            df_eligible: Per-track unmatched ratios for all judged tracks.
+            ftps_by_threshold: {threshold: FTPS value} for each of `thresholds`.
+            ftps_averaged: Mean FTPS across DEFAULT_FTPS_AVERAGE_RANGE_
+                           (50:5:95), mirroring mAP@[.5:.95].
+    """
+    # Compute Per-Track Unmatched Ratios & Apply the Minimum Track Length Gate.
+    df_tracks = augment_with_track_unmatched_ratio(df_matches, min_score)
+    df_eligible = df_tracks.query('tot_num_frames >= @min_track_frames').copy()
+    num_eligible_tracks = len(df_eligible)
+
+    # Count False Tracks at Each Headline Threshold.
+    ftps_rate_by_threshold = {}
+    ftps_count_by_threshold = {}
+    for thresh in thresholds:
+        n_false_tracks = int((df_eligible['unmatched_ratio'] >= thresh).sum())
+        ftps_count_by_threshold[thresh] = n_false_tracks
+        ftps_rate_by_threshold[thresh] = n_false_tracks / num_sequences if num_sequences else 0.0
+
+    # Compute the Averaged FTPS Across the Full mAP-Style Threshold Range.
+    avg_scores = []
+    for thresh in DEFAULT_FTPS_AVERAGE_RANGE_:
+        n_false_tracks = int((df_eligible['unmatched_ratio'] >= thresh).sum())
+        avg_scores.append(n_false_tracks / num_sequences if num_sequences else 0.0)
+    ftps_averaged = float(np.mean(avg_scores)) if avg_scores else 0.0
+
+    return df_eligible, ftps_rate_by_threshold, ftps_count_by_threshold, ftps_averaged, num_eligible_tracks
+# ------------------------------------------------------------------------------
+
+
 def augment_with_diff_to_first_frame(df_encounters):
     """adds difference in frame between each frame in encounter and the first frame of the encounter"""
     required_columns_str = ', '.join(['frame', 'framemin']) 
@@ -907,7 +1020,13 @@ def run(flags):
     if flags.use_track_fl_dr:
         df_final_results_track_fl_dr = compute_encounter_detections(df_val_encounters_with_fl_dr, 
                     flags.min_fl_dr, flags.fl_dr_temporal_win, use_track_fl_dr=True)
+    
+    # Making New Metrics.
     df_cedr = compute_cedr(df_gt_det_matches, df_val_encounters, thresh_score)
+    num_sequences = df_gt_det_matches['flight_id'].nunique()
+    df_ftps_tracks, ftps_rate_by_threshold, ftps_count_by_threshold, ftps_averaged, ftps_num_eligible = compute_ftps(
+        df_gt_det_matches, thresh_score, num_sequences
+    )
 
     # saving intermidiate results
     log.info('Saving results')
@@ -936,7 +1055,10 @@ def run(flags):
                                                                 results_filename, results_filename)
     df_final_results.to_json(results_filename + '.json', orient='records', lines=True, indent=4)
     df_final_results_track_fl_dr.to_csv(results_filename + '_tracking.csv')
+    
+    # Saving New Metrics. 
     df_cedr.to_csv(results_filename + '_cedr.csv')
+    df_ftps_tracks.to_csv(results_filename + '_ftps_tracks.csv')
 
     log.info('Data frame with information on encounter detection is saved to %s.json', results_filename)
     
@@ -966,6 +1088,14 @@ def run(flags):
     summary['target_value'] = flags.target_value
     summary['min_det_score'] = float(thresh_score)
     log.info('The minimum detection score is %.3f', thresh_score)
+    summary['ftps_rate_by_threshold']   = {f"{int(round(t*100))}": v for t, v in ftps_rate_by_threshold.items()}
+    summary['ftps_count_by_threshold']  = {f"{int(round(t*100))}": v for t, v in ftps_count_by_threshold.items()}
+    summary['ftps_averaged']            = ftps_averaged
+    summary['ftps_num_eligible_tracks'] = int(ftps_num_eligible)
+    summary['ftps_num_sequences']       = int(num_sequences)
+    log.info('FTPS: %s | avg(50:95): %.4f | %d eligible tracks across %d sequences',
+             {k: round(v, 4) for k, v in summary['ftps_rate_by_threshold'].items()},
+             ftps_averaged, ftps_num_eligible, num_sequences)
     summary['fppi'] = float(fppi)
     log.info('FPPI: %.5f', fppi)
     summary['far'] = float(far)

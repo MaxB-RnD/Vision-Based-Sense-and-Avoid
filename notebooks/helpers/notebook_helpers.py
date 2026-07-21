@@ -701,9 +701,13 @@ def build_extended_summary(
     edr_above    = summary["Detection"]["Encounters"]["300"]["Above Horizon"]["dr"]
     edr_below    = summary["Detection"]["Encounters"]["300"]["Below Horizon"]["dr"]
 
-    # CEDR --> Use .get() Rather than Direct Indexing, Since Older summary.json Files Won't Have this Key.
-    cedr_mean = summary.get("cedr_mean")
-    cedr_n    = summary.get("cedr_num_qualifying_encounters")
+    # CEDR & FTPS --> Use .get() Rather than Direct Indexing, Since Older summary.json Files Won't Have this Key.
+    cedr_mean     = summary.get("cedr_mean")
+    cedr_n        = summary.get("cedr_num_qualifying_encounters")
+    ftps_rates    = summary.get("ftps_rate_by_threshold", {})
+    ftps_counts   = summary.get("ftps_count_by_threshold", {})
+    ftps_averaged = summary.get("ftps_averaged")
+    ftps_eligible = summary.get("ftps_num_eligible_tracks")
 
     # Load FPS Stats (Written by record_fps_stats During Inference).
     fps = load_fps_stats(run_dir)
@@ -715,28 +719,32 @@ def build_extended_summary(
     # Build Unified Rows.
     rows = [
         # Detection Metrics
-        {"Metric": "Detection Score",                             "Value": f"{score:.4f}",                                          "Status": ""},
-        {"Metric": "AFDR (Airborne Flight Detection Rate)",       "Value": f"{afdr:.4f}",                                           "Status": ""},
-        {"Metric": "FPPI (False Positives Per Image)",            "Value": f"{fppi:.6f}",                                           "Status": fppi_status},
-        {"Metric": "HFAR (Horizontal False Alarm Rate)",          "Value": f"{hfar:.4f}",                                           "Status": hfar_status},
-        {"Metric": "CEDR (Continuous Encounter Detection Rate)",  "Value": f"{cedr_mean:.4f}" if cedr_mean is not None else "N/A",  "Status": f"N = {cedr_n}" if cedr_n is not None else ""},
-        {"Metric": "EDR - All Scenarios",                         "Value": f"{edr_all:.4f}",                                        "Status": ""},
-        {"Metric": "EDR - Above Horizon",                         "Value": f"{edr_above:.4f}",                                      "Status": ""},
-        {"Metric": "EDR - Below Horizon",                         "Value": f"{edr_below:.4f}",                                      "Status": ""},
-        {"Metric": "Total Aircraft Detected",                     "Value": f"{det_aircraft}",                                       "Status": ""},
-        {"Metric": "Total Aircraft in Dataset",                   "Value": f"{tot_aircraft}",                                       "Status": ""},
+        {"Metric": "Detection Score",                             "Value": f"{score:.4f}",                                                               "Status": ""},
+        {"Metric": "AFDR (Airborne Flight Detection Rate)",       "Value": f"{afdr:.4f}",                                                                "Status": ""},
+        {"Metric": "CEDR (Continuous Encounter Detection Rate)",  "Value": f"{cedr_mean:.4f}" if cedr_mean is not None else "N/A",                       "Status": f"N = {cedr_n}" if cedr_n is not None else ""},
+        {"Metric": "FTPS@50 (False Tracks Per Sequence)",         "Value": f"{ftps_rates.get('50'):.4f}" if ftps_rates.get('50') is not None else "N/A", "Status": f"N = {ftps_counts.get('50')}/{ftps_eligible} Tracks" if ftps_eligible is not None else ""},
+        {"Metric": "FTPS@80 (False Tracks Per Sequence)",         "Value": f"{ftps_rates.get('80'):.4f}" if ftps_rates.get('80') is not None else "N/A", "Status": f"N = {ftps_counts.get('80')}/{ftps_eligible} Tracks" if ftps_eligible is not None else ""},
+        {"Metric": "FTPS@95 (False Tracks Per Sequence)",         "Value": f"{ftps_rates.get('95'):.4f}" if ftps_rates.get('95') is not None else "N/A", "Status": f"N = {ftps_counts.get('95')}/{ftps_eligible} tracks" if ftps_eligible is not None else ""},
+        {"Metric": "FTPS avg(50:95)",                             "Value": f"{ftps_averaged:.4f}" if ftps_averaged is not None else "N/A",               "Status": f"N = {ftps_eligible} Eligible Tracks" if ftps_eligible is not None else ""},        
+        {"Metric": "FPPI (False Positives Per Image)",            "Value": f"{fppi:.6f}",                                                                "Status": fppi_status},
+        {"Metric": "HFAR (Horizontal False Alarm Rate)",          "Value": f"{hfar:.4f}",                                                                "Status": hfar_status},
+        {"Metric": "EDR - All Scenarios",                         "Value": f"{edr_all:.4f}",                                                             "Status": ""},
+        {"Metric": "EDR - Above Horizon",                         "Value": f"{edr_above:.4f}",                                                           "Status": ""},
+        {"Metric": "EDR - Below Horizon",                         "Value": f"{edr_below:.4f}",                                                           "Status": ""},
+        {"Metric": "Total Aircraft Detected",                     "Value": f"{det_aircraft}",                                                            "Status": ""},
+        {"Metric": "Total Aircraft in Dataset",                   "Value": f"{tot_aircraft}",                                                            "Status": ""},
         # Model Complexity
-        {"Metric": "Parameters (Total)",                          "Value": f"{complexity['total_params']:,}",                       "Status": ""},
-        {"Metric": "Parameters (Trainable)",                      "Value": f"{complexity['trainable_params']:,}",                   "Status": ""},
-        {"Metric": "GFLOPs (per frame)",                          "Value": f"{complexity['gflops']:.3f}",                           "Status": ""},
-        {"Metric": "GMACs (per frame)",                           "Value": f"{complexity['gmacs']:.3f}",                            "Status": ""},
+        {"Metric": "Parameters (Total)",                          "Value": f"{complexity['total_params']:,}",                                            "Status": ""},
+        {"Metric": "Parameters (Trainable)",                      "Value": f"{complexity['trainable_params']:,}",                                        "Status": ""},
+        {"Metric": "GFLOPs (per frame)",                          "Value": f"{complexity['gflops']:.3f}",                                                "Status": ""},
+        {"Metric": "GMACs (per frame)",                           "Value": f"{complexity['gmacs']:.3f}",                                                 "Status": ""},
         # FPS Statistics
-        {"Metric": "FPS Mean",                                    "Value": f"{fps['fps_mean']:.2f}",                                "Status": ""},
-        {"Metric": "FPS Std Dev",                                 "Value": f"{fps['fps_std']:.2f}",                                 "Status": ""},
-        {"Metric": "FPS Min",                                     "Value": f"{fps['fps_min']:.2f}",                                 "Status": ""},
-        {"Metric": "FPS Max",                                     "Value": f"{fps['fps_max']:.2f}",                                 "Status": ""},
-        {"Metric": "FPS P95",                                     "Value": f"{fps['fps_p95']:.2f}",                                 "Status": ""},
-        {"Metric": "Frames Measured",                             "Value": f"{fps['n_frames']}",                                    "Status": ""},
+        {"Metric": "FPS Mean",                                    "Value": f"{fps['fps_mean']:.2f}",                                                     "Status": ""},
+        {"Metric": "FPS Std Dev",                                 "Value": f"{fps['fps_std']:.2f}",                                                      "Status": ""},
+        {"Metric": "FPS Min",                                     "Value": f"{fps['fps_min']:.2f}",                                                      "Status": ""},
+        {"Metric": "FPS Max",                                     "Value": f"{fps['fps_max']:.2f}",                                                      "Status": ""},
+        {"Metric": "FPS P95",                                     "Value": f"{fps['fps_p95']:.2f}",                                                      "Status": ""},
+        {"Metric": "Frames Measured",                             "Value": f"{fps['n_frames']}",                                                         "Status": ""},
     ]
 
     # Save the Summary to a Dataframe. 
@@ -897,25 +905,33 @@ def load_subset_summary(subset_summary_dir: str, subset_name: str) -> pd.DataFra
     edr_above    = summary["Detection"]["Encounters"]["300"]["Above Horizon"]["dr"]
     edr_below    = summary["Detection"]["Encounters"]["300"]["Below Horizon"]["dr"]
     
-    # CEDR --> Use .get() Rather than Direct Indexing, Since Older summary.json Files Won't Have this Key.
-    cedr_mean = summary.get("cedr_mean")
-    cedr_n    = summary.get("cedr_num_qualifying_encounters")
-    
+    # CEDR & FTPS --> Use .get() Rather than Direct Indexing, Since Older summary.json Files Won't Have this Key.
+    cedr_mean     = summary.get("cedr_mean")
+    cedr_n        = summary.get("cedr_num_qualifying_encounters")
+    ftps_rates    = summary.get("ftps_rate_by_threshold", {})
+    ftps_counts   = summary.get("ftps_count_by_threshold", {})
+    ftps_averaged = summary.get("ftps_averaged")
+    ftps_eligible = summary.get("ftps_num_eligible_tracks")
+
     # Rank Metrics Against Thresholds.
     fppi_status = "PASS (≤ 0.0005)" if fppi <= 0.0005 else f"FAIL — Actual: {fppi:.6f}"
     hfar_status = "PASS (≤ 0.5)"    if hfar <= 0.5    else f"FAIL — Actual: {hfar:.4f}"
 
     # Build Summary DataFrame.
     summary_df = pd.DataFrame([
-        {"Metric": "AFDR (Airborne Flight Detection Rate)",       "Value": f"{afdr:.4f}",                                           "Status": ""},
-        {"Metric": "FPPI (False Positives Per Image)",            "Value": f"{fppi:.6f}",                                           "Status": fppi_status},
-        {"Metric": "HFAR (Horizontal False Alarm Rate)",          "Value": f"{hfar:.4f}",                                           "Status": hfar_status},
-        {"Metric": "CEDR (Continuous Encounter Detection Rate)",  "Value": f"{cedr_mean:.4f}" if cedr_mean is not None else "N/A",  "Status": f"N = {cedr_n}" if cedr_n is not None else ""},
-        {"Metric": "EDR - All Scenarios",                         "Value": f"{edr_all:.4f}",                                        "Status": ""},
-        {"Metric": "EDR - Above Horizon",                         "Value": f"{edr_above:.4f}",                                      "Status": ""},
-        {"Metric": "EDR - Below Horizon",                         "Value": f"{edr_below:.4f}",                                      "Status": ""},
-        {"Metric": "Total Aircraft Detected",                     "Value": f"{det_aircraft}",                                       "Status": ""},
-        {"Metric": "Total Aircraft in Dataset",                   "Value": f"{tot_aircraft}",                                       "Status": ""},
+        {"Metric": "AFDR (Airborne Flight Detection Rate)",       "Value": f"{afdr:.4f}",                                                                "Status": ""},
+        {"Metric": "CEDR (Continuous Encounter Detection Rate)",  "Value": f"{cedr_mean:.4f}" if cedr_mean is not None else "N/A",                        "Status": f"N = {cedr_n}" if cedr_n is not None else ""},
+        {"Metric": "FTPS@50 (False Tracks Per Sequence)",         "Value": f"{ftps_rates.get('50'):.4f}" if ftps_rates.get('50') is not None else "N/A", "Status": f"N = {ftps_counts.get('50')}/{ftps_eligible} Tracks" if ftps_eligible is not None else ""},
+        {"Metric": "FTPS@80 (False Tracks Per Sequence)",         "Value": f"{ftps_rates.get('80'):.4f}" if ftps_rates.get('80') is not None else "N/A", "Status": f"N = {ftps_counts.get('80')}/{ftps_eligible} Tracks" if ftps_eligible is not None else ""},
+        {"Metric": "FTPS@95 (False Tracks Per Sequence)",         "Value": f"{ftps_rates.get('95'):.4f}" if ftps_rates.get('95') is not None else "N/A", "Status": f"N = {ftps_counts.get('95')}/{ftps_eligible} tracks" if ftps_eligible is not None else ""},
+        {"Metric": "FTPS avg(50:95)",                             "Value": f"{ftps_averaged:.4f}" if ftps_averaged is not None else "N/A",               "Status": f"N = {ftps_eligible} Eligible Tracks" if ftps_eligible is not None else ""},        
+        {"Metric": "FPPI (False Positives Per Image)",            "Value": f"{fppi:.6f}",                                                                "Status": fppi_status},        
+        {"Metric": "HFAR (Horizontal False Alarm Rate)",          "Value": f"{hfar:.4f}",                                                                "Status": hfar_status},
+        {"Metric": "EDR - All Scenarios",                         "Value": f"{edr_all:.4f}",                                                             "Status": ""},
+        {"Metric": "EDR - Above Horizon",                         "Value": f"{edr_above:.4f}",                                                           "Status": ""},
+        {"Metric": "EDR - Below Horizon",                         "Value": f"{edr_below:.4f}",                                                           "Status": ""},
+        {"Metric": "Total Aircraft Detected",                     "Value": f"{det_aircraft}",                                                            "Status": ""},
+        {"Metric": "Total Aircraft in Dataset",                   "Value": f"{tot_aircraft}",                                                            "Status": ""},
     ])
 
     # Save Aggregated Summary to CSV.

@@ -26,9 +26,9 @@ For background on the dataset and benchmarks, see the
 <table>
   <tr><th>Field</th><th>Details</th></tr>
   <tr><td><b>Sponsor</b></td><td>Lockheed Martin Australia – Advanced Systems & Technology Group</td></tr>
-  <tr><td><b>Supervisor</b></td><td>Dr Feras Dayoub (<a href="mailto:feras.dayoub@adelaide.edu.au">email</a>)</td></tr>
-  <tr><td><b>Co-Supervisor</b></td><td>Ms Kendall Louise Jenner (<a href="mailto:kendall.l.jenner@global.lmco.com">email</a>)</td></tr>
-  <tr><td><b>Second Marker</b></td><td>Dr Lei Chen (<a href="mailto:lei.chen@adelaide.edu.au">email</a>)</td></tr>
+  <tr><td><b>Supervisor</b></td><td>Dr Feras Dayoub (<a href="mailto:feras.dayoub@adelaide.edu.au">feras.dayoub@adelaide.edu.au</a>)</td></tr>
+  <tr><td><b>Co-Supervisor</b></td><td>Ms Kendall Louise Jenner (<a href="mailto:kendall.l.jenner@global.lmco.com">kendall.l.jenner@global.lmco.com</a>)</td></tr>
+  <tr><td><b>Second Marker</b></td><td>Dr Lei Chen (<a href="mailto:lei.chen@adelaide.edu.au">lei.chen@adelaide.edu.au</a>)</td></tr>
 </table>
 
 </div>
@@ -158,6 +158,7 @@ Performance is evaluated using the official Airborne Object Tracking Challenge m
 |---------|-------------|
 | **AFDR** (Average Frame-level Detection Rate) | Percentage of airborne objects successfully detected at the frame level, considering planned aircraft within 700 m. |
 | **CEDR** (Continuous Encounter Detection Rate) | Percentage of an encounter's frames for which the target was followed continuously under a single, consistent track, rather than being lost and re-acquired as a new track. Averaged across all encounters of at least 8 frames. |
+| **FTPS** (False Tracks Per Sequence) | Number of *completely* wrong trajectories (tracks with an unmatched-frame ratio at or above a given threshold) reported per flight sequence, ignoring isolated single-frame false positives. Reported across multiple thresholds (e.g. FTPS@50, FTPS@80, FTPS@95) and as an average over the range. Only tracks of at least 8 frames are eligible for judgement. Lower values indicate fewer spurious trajectories. |
 | **EDR** (Encounter Detection Rate) | Percentage of encounters successfully detected. An encounter is considered detected when the target is tracked for at least 3 seconds before reaching 300 m, or within the first 3 seconds of the encounter. |
 | **FPPI** (False Positives Per Image) | Average number of false positive detections generated per image. Lower values indicate fewer false alarms. |
 | **HFAR** (False Alarm Rate per Hour) | Number of unique false-positive tracks reported per hour of flight data. Lower values indicate greater operational reliability. |
