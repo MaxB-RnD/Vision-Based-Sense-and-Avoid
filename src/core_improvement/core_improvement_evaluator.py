@@ -32,7 +32,7 @@
 #            3 = ResNet34
 #            4 = EfficientViT-B2
 #            5 = HRNet-W32
-#            6 = HRNet-W32 Track-to-Detect
+#            6 = HRNet-W32 (Track-to-Detect)
 #
 #   3. Then monitor from terminal with:
 #            tail -f outputs/logs/core_improvement/core_improvement_evaluation.log
@@ -113,7 +113,7 @@ def main() -> None:
     MIN_TRACK_LEN = 30
 
     # Set Path to Desired Evaluation Dataset.
-    DATASET_PATH = "configs/datasets/selected_flights.txt"
+    DATASET_PATH = "configs/datasets/training_subsets/test.txt"
     DATASET_PARTS = ["part1", "part2", "part3"]
 
     # Set Results Variables (Auto-Incrementing Run Directory).
