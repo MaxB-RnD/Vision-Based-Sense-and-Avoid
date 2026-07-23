@@ -1,0 +1,25 @@
+Metric,Value,Status
+Detection Score,0.6000,
+AFDR (Airborne Flight Detection Rate),0.0593,
+CEDR (Continuous Encounter Detection Rate),0.0251,N = 208
+FTPS@50 (False Tracks Per Sequence),0.0000,N = 0/27 Tracks
+FTPS@80 (False Tracks Per Sequence),0.0000,N = 0/27 Tracks
+FTPS@95 (False Tracks Per Sequence),0.0000,N = 0/27 tracks
+FTPS avg(50:95),0.0000,N = 27 Eligible Tracks
+FPPI (False Positives Per Image),0.000000,PASS (≤ 0.0005)
+HFAR (Horizontal False Alarm Rate),0.0000,PASS (≤ 0.5)
+EDR - All Scenarios,0.0337,
+EDR - Above Horizon,0.0635,
+EDR - Below Horizon,0.0000,
+Total Aircraft Detected,2179,
+Total Aircraft in Dataset,36755,
+Parameters (Total),"25,387,267",
+Parameters (Trainable),"25,387,267",
+GFLOPs (per frame),151.820,
+GMACs (per frame),75.910,
+FPS Mean,3.59,
+FPS Std Dev,0.06,
+FPS Min,2.98,
+FPS Max,3.71,
+FPS P95,3.65,
+Frames Measured,49793,
