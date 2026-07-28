@@ -51,6 +51,8 @@ def normalize_json_result_to_dataframe(json_data):
         columns_to_return.append('track_id')
     if 'object_id' in df_columns:
         columns_to_return.append('object_id')
+    if 'source' in df_columns:
+        columns_to_return.append('source')
     return df[columns_to_return]
 
 def _get_as_dataframe(filename, normalization_func=None):

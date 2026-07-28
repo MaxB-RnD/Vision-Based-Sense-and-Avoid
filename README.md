@@ -26,9 +26,9 @@ For background on the dataset and benchmarks, see the
 <table>
   <tr><th>Field</th><th>Details</th></tr>
   <tr><td><b>Sponsor</b></td><td>Lockheed Martin Australia – Advanced Systems & Technology Group</td></tr>
-  <tr><td><b>Supervisor</b></td><td>Dr Feras Dayoub (<a href="mailto:feras.dayoub@adelaide.edu.au">email</a>)</td></tr>
-  <tr><td><b>Co-Supervisor</b></td><td>Ms Kendall Louise Jenner (<a href="mailto:kendall.l.jenner@global.lmco.com">email</a>)</td></tr>
-  <tr><td><b>Second Marker</b></td><td>Dr Lei Chen (<a href="mailto:lei.chen@adelaide.edu.au">email</a>)</td></tr>
+  <tr><td><b>Supervisor</b></td><td>Dr Feras Dayoub (<a href="mailto:feras.dayoub@adelaide.edu.au">feras.dayoub@adelaide.edu.au</a>)</td></tr>
+  <tr><td><b>Co-Supervisor</b></td><td>Ms Kendall Louise Jenner (<a href="mailto:kendall.l.jenner@global.lmco.com">kendall.l.jenner@global.lmco.com</a>)</td></tr>
+  <tr><td><b>Second Marker</b></td><td>Dr Lei Chen (<a href="mailto:lei.chen@adelaide.edu.au">lei.chen@adelaide.edu.au</a>)</td></tr>
 </table>
 
 </div>
@@ -157,6 +157,8 @@ Performance is evaluated using the official Airborne Object Tracking Challenge m
 | Metric | Description |
 |---------|-------------|
 | **AFDR** (Average Frame-level Detection Rate) | Percentage of airborne objects successfully detected at the frame level, considering planned aircraft within 700 m. |
+| **CEDR** (Continuous Encounter Detection Rate) | Percentage of an encounter's frames for which the target was followed continuously under a single, consistent track, rather than being lost and re-acquired as a new track. Averaged across all encounters of at least 8 frames. |
+| **FTPS** (False Tracks Per Sequence) | Number of *completely* wrong trajectories (tracks with an unmatched-frame ratio at or above a given threshold) reported per flight sequence, ignoring isolated single-frame false positives. Reported across multiple thresholds (e.g. FTPS@50, FTPS@80, FTPS@95) and as an average over the range. Only tracks of at least 8 frames are eligible for judgement. Lower values indicate fewer spurious trajectories. |
 | **EDR** (Encounter Detection Rate) | Percentage of encounters successfully detected. An encounter is considered detected when the target is tracked for at least 3 seconds before reaching 300 m, or within the first 3 seconds of the encounter. |
 | **FPPI** (False Positives Per Image) | Average number of false positive detections generated per image. Lower values indicate fewer false alarms. |
 | **HFAR** (False Alarm Rate per Hour) | Number of unique false-positive tracks reported per hour of flight data. Lower values indicate greater operational reliability. |
@@ -483,5 +485,143 @@ Performance trade-offs across backbone models.
 ### 8.3 Summary of Findings
 
 The results demonstrate a clear trade-off between computational efficiency and detection performance. Lightweight models such as MobileNetV4-S achieve high inference speeds suitable for real-time deployment but exhibit reduced detection robustness compared to larger architectures. Conversely, EfficientViT-M2 demonstrates severe performance degradation under full-resolution inference, indicating limitations in spatial representation capacity for high-resolution aerial imagery. Among all evaluated architectures, HRNet-W32 provides the most balanced performance, achieving strong detection stability while maintaining real-time inference capability under the optimised pipeline constraints.
+
+---
+
+<br/>
+
+## 9. Tracking-to-Detect & Refined Metrics
+
+The second stage of this project builds on the backbone evaluation by addressing the disparity observed between frame-level detection performance and sustained tracking performance. To improve target continuity during temporary detection failures, a **Tracking-to-Detect (T2D)** architecture is introduced. In parallel, a refined evaluation framework is adopted to assess tracking performance across entire target encounters rather than independent frame-level detections.
+
+### 9.1 Tracking-to-Detect (T2D) Architecture
+
+Conventional **Detect-to-Track (D2T)** pipelines treat tracking as a passive process that associates detections after they are produced. In contrast, the proposed **Tracking-to-Detect (T2D)** architecture actively uses tracker state information, including velocity vectors *(`dx/dy`)* and affine transformation matrices *(`prev_tr`)*, to propagate target locations through brief detection dropouts, improving track continuity without modifying the underlying detector.
+
+### 9.2 Refined Metrics Evaluation
+
+To better assess downstream tracking quality across all models, evaluations are extended using two refined metrics: **Continuous Encounter-Level Detection Rate (CEDR)** and **False Tracks Per Sequence (FTPS)**. Unlike the standard competition frame-level metrics, which assess detections independently, these metrics evaluate tracking performance across frames. CEDR measures uninterrupted target identity retention, while FTPS quantifies persistent false trajectories rather than transient frame-level errors.
+
+<div align="center">
+
+<table>
+<tr>
+<th>Model</th>
+<th>Encounters / Flights</th>
+<th>AFDR</th>
+<th>CEDR</th>
+<th>FTPS (Avg)</th>
+<th>FTPS (@50)</th>
+<th>FTPS (@80)</th>
+<th>FTPS (@95)</th>
+<th>Tracks Identified</th>
+</tr>
+
+<tr>
+<td><b>MobileNetV4-S</b></td>
+<td>208 / 243</td>
+<td>53.58%</td>
+<td>22.28%</td>
+<td>0.0000</td>
+<td>0.0000</td>
+<td>0.0000</td>
+<td>0.0000</td>
+<td>113</td>
+</tr>
+
+<tr>
+<td><b>EfficientViT-M2</b></td>
+<td>208 / 243</td>
+<td>5.93%</td>
+<td>2.51%</td>
+<td>0.0000</td>
+<td>0.0000</td>
+<td>0.0000</td>
+<td>0.0000</td>
+<td>27</td>
+</tr>
+
+<tr>
+<td><b>EfficientViT-B2</b></td>
+<td>208 / 243</td>
+<td>57.63%</td>
+<td>27.20%</td>
+<td>0.0701</td>
+<td>0.0726</td>
+<td>0.0684</td>
+<td>0.0684</td>
+<td>156</td>
+</tr>
+
+<tr>
+<td><b>ResNet34</b></td>
+<td>208 / 243</td>
+<td>51.88%</td>
+<td>21.55%</td>
+<td>0.0556</td>
+<td>0.0556</td>
+<td>0.0556</td>
+<td>0.0556</td>
+<td>122</td>
+</tr>
+
+<tr>
+<td><b>HRNet-W32 (D2T)</b></td>
+<td>208 / 243</td>
+<td>60.07%</td>
+<td>28.11%</td>
+<td>0.0000</td>
+<td>0.0000</td>
+<td>0.0000</td>
+<td>0.0000</td>
+<td>145</td>
+</tr>
+
+<tr>
+<td><b>HRNet-W32 (T2D)</b></td>
+<td>208 / 243</td>
+<td>60.46%</td>
+<td>28.31%</td>
+<td>0.0043</td>
+<td>0.0043</td>
+<td>0.0043</td>
+<td>0.0043</td>
+<td>150</td>
+</tr>
+
+<tr>
+<td><b>Optimised Winning Sol.</b></td>
+<td>208 / 243</td>
+<td>71.51%</td>
+<td>47.60%</td>
+<td>0.0000</td>
+<td>0.0000</td>
+<td>0.0000</td>
+<td>0.0000</td>
+<td>173</td>
+</tr>
+</table>
+
+<p><em>Evaluation of all models using the refined tracking metrics, with a minimum track length of 8 frames.</em></p>
+
+</div>
+
+</div>
+
+<br/>
+
+<div align="center">
+
+<img src="docs/Images/SAA_Backbone_Tradeoffs_Tracking.png" width="900">
+
+<p><em>
+Performance trade-offs across backbone models evaluated under the refined tracking metrics (CEDR and FTPS).
+</em></p>
+
+</div>
+
+### 9.3 Summary of Findings
+
+The refined tracking metrics reinforce the relative performance of each architecture, with the model rankings remaining consistent across both the original competition metrics and the new tracking-focused evaluation. This reaffirms HRNet-W32 as the strongest edge-deployable architecture and the Optimised Winning Solution as the high-capacity performance baseline. The redesigned metrics also provide a clearer measure of sustained tracking performance, increasing HRNet-W32's effective tracking score from 15.87% EDR to 28.11% CEDR. Finally, adopting the T2D framework yields modest improvements over the D2T variant, increasing detection performance to 60.46% *(+0.39%)* AFDR and continuous identity retention to 28.31% *(+0.2%)* CEDR, while recovering five additional valid tracks *(150 total)* with virtually no persistent false trajectories *(FTPS = 0.0043)*.
 
 ---

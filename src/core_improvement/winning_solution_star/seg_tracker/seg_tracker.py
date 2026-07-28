@@ -182,7 +182,7 @@ class SegDetector:
         # Load Pretrained DLA-60 Weights.
         self.model_dla.load_state_dict(
             torch.load(
-                f'{models_dir}/DLA60_300.pt',
+                f'{models_dir}/winning_solution_star/DLA60_300.pt',
                 map_location=self.device,
                 weights_only=False,
             )['model_state_dict'],
@@ -217,7 +217,7 @@ class SegDetector:
         # Load Pretrained HRNet-W48 Weights.
         self.model_seg3.load_state_dict(
             torch.load(
-                f'{models_dir}/HRNetW48_300.pt',
+                f'{models_dir}/winning_solution_star/HRNetW48_300.pt',
                 map_location=self.device,
                 weights_only=False,
             )['model_state_dict'],

@@ -391,8 +391,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--model-path", type=str,
-        default="configs/models/baselines/winning_solution/"
-                "030_tr_tsn_rn34_w3_crop_borders_255_0.pth",
+        default="configs/models/core_improvement/ResNet34_Transforms_Adjusted.pt",
         help="Path to pre-trained transform model weights.",
     )
     parser.add_argument(
