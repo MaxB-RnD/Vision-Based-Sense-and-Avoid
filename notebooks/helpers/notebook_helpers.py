@@ -44,6 +44,7 @@ from fvcore.nn import FlopCountAnalysis, parameter_count
 
 from pathlib import Path
 from typing import Optional
+from IPython.display import display
 from logging_module import LogLevel, log
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -806,18 +807,25 @@ def build_introspection_summary(
 
     # Build the Trimmed Row Set.
     rows = [
-        # Introspection Metrics
+        # Introspection Metrics.
+        {"Metric": "", "Value": "", "Status": ""},
 
-        # Detection Metrics
+        # Detection Metrics.
+        {"Metric": "", "Value": "", "Status": ""},
         {"Metric": "AFDR (Airborne Flight Detection Rate)",       "Value": f"{afdr:.4f}",                                                                "Status": ""},
+        {"Metric": "Total Aircraft Detected",                     "Value": f"{det_aircraft}",                                                            "Status": ""},
+        {"Metric": "Total Aircraft in Dataset",                   "Value": f"{tot_aircraft}",                                                            "Status": ""},
+
+        # Tracking Metrics.
+        {"Metric": "", "Value": "", "Status": ""},
         {"Metric": "CEDR (Continuous Encounter Detection Rate)",  "Value": f"{cedr_mean:.4f}" if cedr_mean is not None else "N/A",                       "Status": f"N = {cedr_n}" if cedr_n is not None else ""},
         {"Metric": "FTPS@50 (False Tracks Per Sequence)",         "Value": f"{ftps_rates.get('50'):.4f}" if ftps_rates.get('50') is not None else "N/A", "Status": f"N = {ftps_counts.get('50')}/{ftps_eligible} Tracks" if ftps_eligible is not None else ""},
         {"Metric": "FTPS@80 (False Tracks Per Sequence)",         "Value": f"{ftps_rates.get('80'):.4f}" if ftps_rates.get('80') is not None else "N/A", "Status": f"N = {ftps_counts.get('80')}/{ftps_eligible} Tracks" if ftps_eligible is not None else ""},
         {"Metric": "FTPS@95 (False Tracks Per Sequence)",         "Value": f"{ftps_rates.get('95'):.4f}" if ftps_rates.get('95') is not None else "N/A", "Status": f"N = {ftps_counts.get('95')}/{ftps_eligible} tracks" if ftps_eligible is not None else ""},
         {"Metric": "FTPS avg(50:95)",                             "Value": f"{ftps_averaged:.4f}" if ftps_averaged is not None else "N/A",               "Status": f"N = {ftps_eligible} Eligible Tracks" if ftps_eligible is not None else ""},
-        {"Metric": "Total Aircraft Detected",                     "Value": f"{det_aircraft}",                                                            "Status": ""},
-        {"Metric": "Total Aircraft in Dataset",                   "Value": f"{tot_aircraft}",                                                            "Status": ""},
-        # FPS Statistics
+
+        # FPS Statistics.
+        {"Metric": "", "Value": "", "Status": ""},
         {"Metric": "FPS Mean",                                    "Value": f"{fps['fps_mean']:.2f}",                                                     "Status": ""},
         {"Metric": "FPS Std Dev",                                 "Value": f"{fps['fps_std']:.2f}",                                                      "Status": ""},
         {"Metric": "FPS Min",                                     "Value": f"{fps['fps_min']:.2f}",                                                      "Status": ""},
@@ -836,6 +844,43 @@ def build_introspection_summary(
 
     # Return the DataFrame.
     return summary_df
+
+
+def display_styled_summary(summary_df: "pd.DataFrame") -> None:
+    """
+    Prints a Section Header & Displays a Summary DataFrame with Notebook
+    Styling Applied.
+
+    Args:
+        summary_df (pd.DataFrame): Summary DataFrame to display, expected to
+                                   have Metric / Value / Status columns.
+
+    Returns:
+        None: Displays the styled table directly.
+    """
+    # Style the DataFrame for Cleaner Notebook Display.
+    styled_summary = (
+        summary_df.style
+        .hide(axis="index")                                  # Drop the 0,1,2... Index Column.
+        .set_table_styles([
+            {"selector": "th",                                # Header Cells.
+             "props": [("text-align", "center"),
+                       ("background-color", "#2c3e50"),
+                       ("color", "white"),
+                       ("font-weight", "bold"),
+                       ("padding", "6px 12px")]},
+            {"selector": "td",                                # Body Cells.
+             "props": [("text-align", "center"),
+                       ("padding", "4px 12px")]},
+            {"selector": "table",
+             "props": [("border-collapse", "collapse"),
+                       ("width", "100%")]},
+        ])
+        .set_properties(subset=["Metric"], **{"text-align": "left", "font-weight": "500"})
+    )
+
+    # Display the Styled Table.
+    display(styled_summary)
 # ------------------------------------------------------------------------------
 
 

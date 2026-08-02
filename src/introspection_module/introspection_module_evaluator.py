@@ -198,6 +198,9 @@ def main() -> None:
     os.environ["MIN_SCORE"] = str(MIN_SCORE)
     os.environ["DETECTION_THRESHOLD"] = str(DETECTION_THRESHOLD)
 
+    # Disable the Per-Flight Timeout.
+    os.environ["INFERENCE_PER_FLIGHT_TIMEOUT_SECONDS"] = "0"
+
     # Limit Inference to Only the Specified Flights.
     os.environ["PARTIAL_RUN_FLIGHTS"] = ",".join(local_flights.keys())
 
@@ -292,15 +295,14 @@ def main() -> None:
         summary_df = build_introspection_summary(
             summary_json_path = summary_files[0],
             run_dir           = os.path.join(RESULTS_DIR, run_name),
-            complexity        = complexity,
             output_csv_path   = os.path.join(EVAL_SUMMARY_DIR, "introspection_module_evaluator_benchmark_summary.csv"),
         )
     
         # Print Summary to Console.
-        print("\n" + "=" * 60)
-        print(" INTROSPECTION MODULE - FULL TEST DATASET SUMMARY")
-        print("=" * 60)
-        print(summary_df.set_index("Metric").to_string())
+        print("\n" + "=" * 73)
+        print("INTROSPECTION MODULE - FULL TEST DATASET SUMMARY".center(73))
+        print("=" * 73)
+        print(summary_df.to_string(index=False))
 # ------------------------------------------------------------------------------
 
 
