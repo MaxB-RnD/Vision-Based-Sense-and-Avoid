@@ -85,6 +85,7 @@ class HRNetW32IntrospectivePredictor(HRNetW32TrackToDetectPredictor):
         """
         # Initialise the Standard T2D Predictor.
         super().inference_setup()
+        print()
 
         # Store the Recent History for Each Active Track.
         self.track_history: Dict[int, Dict[str, List]] = {}
@@ -211,7 +212,7 @@ class HRNetW32IntrospectivePredictor(HRNetW32TrackToDetectPredictor):
         # Record that an Escalation Request Occurred.
         self.num_escalations += 1
 
-        # Return the Original Detection Until Ensemble Processing is Implemented.
+        # TODO: Return the Original Detection Until Ensemble Processing is Implemented.
         return det
     
 

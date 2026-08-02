@@ -210,6 +210,7 @@ def main() -> None:
     print(f"  Flights to Process : {len(local_flights)}")
     print(f"  MIN_SCORE          : {MIN_SCORE}")
     print(f"  MIN_TRACK_LEN      : {MIN_TRACK_LEN}")
+    print()
 
     # Import Baseline Classes.
     from src.introspection_module.hrnetw32_introspective.hrnetw32_introspective_test import HRNetW32IntrospectivePredictor
@@ -237,6 +238,7 @@ def main() -> None:
     predictor.introspection_module = introspection_module
 
     # Load Models Before Measuring Complexity.
+    print()
     predictor.inference_setup()
 
     # Measure the Current Model's Complexity.
