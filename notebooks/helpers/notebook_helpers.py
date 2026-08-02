@@ -762,6 +762,84 @@ def build_extended_summary(
 
 
 # ------------------------------------------------------------------------------
+#                        TRIMMED INTROSPECTION SUMMARY
+# ------------------------------------------------------------------------------
+def build_introspection_summary(
+    summary_json_path : str,
+    run_dir            : str,
+    output_csv_path    : str,
+) -> "pd.DataFrame":
+    """
+    Builds a benchmark summary containing only the metrics relevant to
+    the introspection module evaluation, omitting metrics outside its
+    evaluation scope.
+
+    Args:
+        summary_json_path (str): Path to the metrics summary JSON produced
+                                 by run_airborne_metrics.py.
+        run_dir (str): Path to the run directory (used to load fps_stats.json).
+        output_csv_path (str): Full path where the trimmed CSV should be saved.
+
+    Returns:
+        pd.DataFrame with Metric / Value / Status columns, saved to CSV.
+    """
+    # Load Detection Metrics JSON.
+    with open(summary_json_path) as f:
+        summary = json.load(f)
+
+    # Extract Only the Metrics This Trimmed Summary Reports.
+    afdr         = summary["fl_dr_in_range"]
+    det_aircraft = summary["det_aircraft_in_range"]
+    tot_aircraft = summary["tot_aircraft_in_range"]
+
+    # CEDR & FTPS -- Use .get() Rather than Direct Indexing, Since Older
+    # summary.json Files Won't Have these Keys.
+    cedr_mean     = summary.get("cedr_mean")
+    cedr_n        = summary.get("cedr_num_qualifying_encounters")
+    ftps_rates    = summary.get("ftps_rate_by_threshold", {})
+    ftps_counts   = summary.get("ftps_count_by_threshold", {})
+    ftps_averaged = summary.get("ftps_averaged")
+    ftps_eligible = summary.get("ftps_num_eligible_tracks")
+
+    # Load FPS Stats (Written by record_fps_stats During Inference).
+    fps = load_fps_stats(run_dir)
+
+    # Build the Trimmed Row Set.
+    rows = [
+        # Introspection Metrics
+
+        # Detection Metrics
+        {"Metric": "AFDR (Airborne Flight Detection Rate)",       "Value": f"{afdr:.4f}",                                                                "Status": ""},
+        {"Metric": "CEDR (Continuous Encounter Detection Rate)",  "Value": f"{cedr_mean:.4f}" if cedr_mean is not None else "N/A",                       "Status": f"N = {cedr_n}" if cedr_n is not None else ""},
+        {"Metric": "FTPS@50 (False Tracks Per Sequence)",         "Value": f"{ftps_rates.get('50'):.4f}" if ftps_rates.get('50') is not None else "N/A", "Status": f"N = {ftps_counts.get('50')}/{ftps_eligible} Tracks" if ftps_eligible is not None else ""},
+        {"Metric": "FTPS@80 (False Tracks Per Sequence)",         "Value": f"{ftps_rates.get('80'):.4f}" if ftps_rates.get('80') is not None else "N/A", "Status": f"N = {ftps_counts.get('80')}/{ftps_eligible} Tracks" if ftps_eligible is not None else ""},
+        {"Metric": "FTPS@95 (False Tracks Per Sequence)",         "Value": f"{ftps_rates.get('95'):.4f}" if ftps_rates.get('95') is not None else "N/A", "Status": f"N = {ftps_counts.get('95')}/{ftps_eligible} tracks" if ftps_eligible is not None else ""},
+        {"Metric": "FTPS avg(50:95)",                             "Value": f"{ftps_averaged:.4f}" if ftps_averaged is not None else "N/A",               "Status": f"N = {ftps_eligible} Eligible Tracks" if ftps_eligible is not None else ""},
+        {"Metric": "Total Aircraft Detected",                     "Value": f"{det_aircraft}",                                                            "Status": ""},
+        {"Metric": "Total Aircraft in Dataset",                   "Value": f"{tot_aircraft}",                                                            "Status": ""},
+        # FPS Statistics
+        {"Metric": "FPS Mean",                                    "Value": f"{fps['fps_mean']:.2f}",                                                     "Status": ""},
+        {"Metric": "FPS Std Dev",                                 "Value": f"{fps['fps_std']:.2f}",                                                      "Status": ""},
+        {"Metric": "FPS Min",                                     "Value": f"{fps['fps_min']:.2f}",                                                      "Status": ""},
+        {"Metric": "FPS Max",                                     "Value": f"{fps['fps_max']:.2f}",                                                      "Status": ""},
+        {"Metric": "Frames Measured",                             "Value": f"{fps['n_frames']}",                                                         "Status": ""},
+    ]
+
+    # Save the Summary to a DataFrame.
+    summary_df = pd.DataFrame(rows)
+
+    # Save the Summary Statistics to a CSV.
+    os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
+    summary_df.to_csv(output_csv_path, index=False)
+    log(LogLevel.INFO, "notebook_helpers:build_introspection_summary",
+        "Introspection Summary Saved to: %s", output_csv_path)
+
+    # Return the DataFrame.
+    return summary_df
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
 #                       SUBSET RESULTS COLLECTION
 # ------------------------------------------------------------------------------
 def prepare_subset(
