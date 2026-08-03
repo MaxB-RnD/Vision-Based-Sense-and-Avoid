@@ -4,7 +4,7 @@
 # File:                    %name: introspection_module_evaluator.py %
 # Date Created:            %date_created: Tue Jul 30 17:06:23 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 1 %
+# CM Instance              %instance: 3 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -250,7 +250,7 @@ def main() -> None:
     predictor.run()
 
     # Print Summary Statement.
-    log(LogLevel.INFO, "introspection_module:inference", "Inference Complete.")
+    log(LogLevel.INFO, "introspection_module_evaluator:inference", "Inference Complete.")
     print(f"  Raw Results Saved to: {os.path.join(RESULTS_DIR, run_name)}\n")
 
     # Set Results Directories. 
@@ -264,7 +264,7 @@ def main() -> None:
     convert_results_to_metrics_format(RAW_RESULTS_PATH, METRICS_RESULTS_PATH)
 
     # Print Summary Statement.
-    log(LogLevel.INFO, "introspection_module:inference", "Results Copied to Metrics Directory.")
+    log(LogLevel.INFO, "introspection_module_evaluator:inference", "Results Copied to Metrics Directory.")
     print(f"  Metrics-Ready Results Stored at : {METRICS_RESULTS_PATH}")
 
     # Locate the Competition Metrics Script.
