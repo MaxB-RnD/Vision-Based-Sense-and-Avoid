@@ -4,7 +4,7 @@
 # File:                    %name: hrnetw32_introspective_test.py %
 # Date Created:            %date_created: Tue Jul 30 17:45:43 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 1 %
+# CM Instance              %instance: 2 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -94,19 +94,12 @@ class HRNetW32IntrospectivePredictor(HRNetW32TrackToDetectPredictor):
         self.num_escalations: int = 0
         self.num_frames_processed: int = 0
 
-        # Load the Ensemble Detector Only When it may be Required.
+        ### TODO: Restore Conditional Ensemble Loading.
         self._ensemble_detector = None
-        if not isinstance(self.introspection_module, NullIntrospectionModule):
-            log(LogLevel.INFO, "hrnetw32_introspective:inference_setup",
-                "Introspection Module '%s' Active. Loading Ensemble Model for Escalation.",
-                self.introspection_module.name)
-            
-            # Initialise the Ensemble Detector.
-            self._ensemble_detector = SegDetector()
-        
-        else:
-            log(LogLevel.INFO, "hrnetw32_introspective:inference_setup",
-                "Introspection Module 'none' Selected. Ensemble NOT Loaded.")
+
+        # Load the Ensemble Detector Only When it may be Required.
+        log(LogLevel.INFO, "hrnetw32_introspective:inference_setup",
+            "Introspection Module 'none' Selected. Ensemble NOT Loaded.")
 
         # Log the Selected Introspection Strategy.
         log(LogLevel.INFO, "hrnetw32_introspective:inference_setup",
@@ -212,7 +205,12 @@ class HRNetW32IntrospectivePredictor(HRNetW32TrackToDetectPredictor):
         # Record that an Escalation Request Occurred.
         self.num_escalations += 1
 
-        # TODO: Return the Original Detection Until Ensemble Processing is Implemented.
+        ### TODO: No Ensemble Call Happens Here Right Now.
+        #         self._ensemble_detector is always None (see inference_setup()),
+        #         so there's nothing to call yet.
+        
+
+        # Return the Original Detection Until Ensemble Processing is Implemented.
         return det
     
 
