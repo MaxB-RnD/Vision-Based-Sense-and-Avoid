@@ -667,7 +667,12 @@ def load_fps_stats(run_dir: str) -> dict:
 # ------------------------------------------------------------------------------
 #                            ORIGINAL SUMMARY METRICS
 # ------------------------------------------------------------------------------
-def build_summary(summary_json_path : str, output_csv_path : str,) -> "pd.DataFrame":
+def build_summary(
+    summary_json_path : str,
+    run_dir           : str,
+    complexity        : dict,
+    output_csv_path   : str,
+) -> "pd.DataFrame":
     """
     Builds the full benchmark summary DataFrame using the orginal competition metrics.
 
@@ -699,6 +704,9 @@ def build_summary(summary_json_path : str, output_csv_path : str,) -> "pd.DataFr
     fppi_status = "PASS (≤ 0.0005)" if fppi <= 0.0005 else f"FAIL (> 0.0005)"
     hfar_status = "PASS (≤ 0.5)"    if hfar <= 0.5    else f"FAIL (> 0.5)"
 
+    # Load FPS Stats (Written by record_fps_stats During Inference).
+    fps = load_fps_stats(run_dir)
+
     # Build Unified Rows.
     rows = [
         # Detection Metrics.
@@ -714,6 +722,22 @@ def build_summary(summary_json_path : str, output_csv_path : str,) -> "pd.DataFr
         {"Metric": "EDR - All Scenarios",                         "Value": f"{edr_all:.4f}",                                                             "Status": ""},
         {"Metric": "EDR - Above Horizon",                         "Value": f"{edr_above:.4f}",                                                           "Status": ""},
         {"Metric": "EDR - Below Horizon",                         "Value": f"{edr_below:.4f}",                                                           "Status": ""},
+
+        # FPS Statistics.
+        {"Metric": "", "Value": "", "Status": ""},
+        {"Metric": "FPS Mean",                                    "Value": f"{fps['fps_mean']:.2f}",                                                     "Status": ""},
+        {"Metric": "FPS Std Dev",                                 "Value": f"{fps['fps_std']:.2f}",                                                      "Status": ""},
+        {"Metric": "FPS Min",                                     "Value": f"{fps['fps_min']:.2f}",                                                      "Status": ""},
+        {"Metric": "FPS Max",                                     "Value": f"{fps['fps_max']:.2f}",                                                      "Status": ""},
+        {"Metric": "FPS P95",                                     "Value": f"{fps['fps_p95']:.2f}",                                                      "Status": ""},
+        {"Metric": "Frames Measured",                             "Value": f"{fps['n_frames']}",                                                         "Status": ""},
+
+        # Model Complexity
+        {"Metric": "", "Value": "", "Status": ""},
+        {"Metric": "Parameters (Total)",                          "Value": f"{complexity['total_params']:,}",                                            "Status": ""},
+        {"Metric": "Parameters (Trainable)",                      "Value": f"{complexity['trainable_params']:,}",                                        "Status": ""},
+        {"Metric": "GFLOPs (per frame)",                          "Value": f"{complexity['gflops']:.3f}",                                                "Status": ""},
+        {"Metric": "GMACs (per frame)",                           "Value": f"{complexity['gmacs']:.3f}",                                                 "Status": ""},
     ]
 
     # Save the Summary to a Dataframe. 
@@ -723,7 +747,7 @@ def build_summary(summary_json_path : str, output_csv_path : str,) -> "pd.DataFr
     os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
     summary_df.to_csv(output_csv_path, index=False)
     log(LogLevel.INFO, "notebook_helpers:build_summary",
-        "Extended Summary Saved to: %s", output_csv_path)
+        "Summary Saved to: %s", output_csv_path)
 
     # Return the Dataframe. 
     return summary_df
@@ -731,7 +755,7 @@ def build_summary(summary_json_path : str, output_csv_path : str,) -> "pd.DataFr
 
 
 # ------------------------------------------------------------------------------
-#                   EXTENDED SUMMARY WITH COMPLEXITY & FPS
+#                   EXTENDED SUMMARY WITH CEDR & FTPS
 # ------------------------------------------------------------------------------
 def build_extended_summary(
     summary_json_path : str,
@@ -741,7 +765,7 @@ def build_extended_summary(
 ) -> "pd.DataFrame":
     """
     Builds the full benchmark summary DataFrame, extending the standard
-    detection metrics with model complexity (params, GFLOPs) and FPS stats.
+    detection metrics with more accurate tracking metrics CEDR & FTPS.
 
     Args:
         summary_json_path (str): Path to the metrics summary JSON produced by
@@ -804,13 +828,6 @@ def build_extended_summary(
         {"Metric": "FTPS@95 (False Tracks Per Sequence)",         "Value": f"{ftps_rates.get('95'):.4f}" if ftps_rates.get('95') is not None else "N/A", "Status": f"N = {ftps_counts.get('95')}/{ftps_eligible} tracks" if ftps_eligible is not None else ""},
         {"Metric": "FTPS avg(50:95)",                             "Value": f"{ftps_averaged:.4f}" if ftps_averaged is not None else "N/A",               "Status": f"N = {ftps_eligible} Eligible Tracks" if ftps_eligible is not None else ""},
 
-        # Model Complexity
-        {"Metric": "", "Value": "", "Status": ""},
-        {"Metric": "Parameters (Total)",                          "Value": f"{complexity['total_params']:,}",                                            "Status": ""},
-        {"Metric": "Parameters (Trainable)",                      "Value": f"{complexity['trainable_params']:,}",                                        "Status": ""},
-        {"Metric": "GFLOPs (per frame)",                          "Value": f"{complexity['gflops']:.3f}",                                                "Status": ""},
-        {"Metric": "GMACs (per frame)",                           "Value": f"{complexity['gmacs']:.3f}",                                                 "Status": ""},
-
         # FPS Statistics.
         {"Metric": "", "Value": "", "Status": ""},
         {"Metric": "FPS Mean",                                    "Value": f"{fps['fps_mean']:.2f}",                                                     "Status": ""},
@@ -819,6 +836,13 @@ def build_extended_summary(
         {"Metric": "FPS Max",                                     "Value": f"{fps['fps_max']:.2f}",                                                      "Status": ""},
         {"Metric": "FPS P95",                                     "Value": f"{fps['fps_p95']:.2f}",                                                      "Status": ""},
         {"Metric": "Frames Measured",                             "Value": f"{fps['n_frames']}",                                                         "Status": ""},
+
+        # Model Complexity
+        {"Metric": "", "Value": "", "Status": ""},
+        {"Metric": "Parameters (Total)",                          "Value": f"{complexity['total_params']:,}",                                            "Status": ""},
+        {"Metric": "Parameters (Trainable)",                      "Value": f"{complexity['trainable_params']:,}",                                        "Status": ""},
+        {"Metric": "GFLOPs (per frame)",                          "Value": f"{complexity['gflops']:.3f}",                                                "Status": ""},
+        {"Metric": "GMACs (per frame)",                           "Value": f"{complexity['gmacs']:.3f}",                                                 "Status": ""},
     ]
 
     # Save the Summary to a Dataframe. 
@@ -1106,19 +1130,24 @@ def load_subset_summary(subset_summary_dir: str, subset_name: str) -> pd.DataFra
     edr_below    = summary["Detection"]["Encounters"]["300"]["Below Horizon"]["dr"]
     
     # Rank Metrics Against Thresholds.
-    fppi_status = "PASS (≤ 0.0005)" if fppi <= 0.0005 else f"FAIL — Actual: {fppi:.6f}"
-    hfar_status = "PASS (≤ 0.5)"    if hfar <= 0.5    else f"FAIL — Actual: {hfar:.4f}"
+    fppi_status = "PASS (≤ 0.0005)" if fppi <= 0.0005 else f"FAIL ({fppi:.6f})"
+    hfar_status = "PASS (≤ 0.5)"    if hfar <= 0.5    else f"FAIL ({hfar:.4f})"
 
     # Build Summary DataFrame.
     summary_df = pd.DataFrame([
+        # Detection Metrics.
+        {"Metric": "", "Value": "", "Status": ""},
         {"Metric": "AFDR (Airborne Flight Detection Rate)",       "Value": f"{afdr:.4f}",                                                                "Status": ""},
-        {"Metric": "FPPI (False Positives Per Image)",            "Value": f"{fppi:.6f}",                                                                "Status": fppi_status},        
+        {"Metric": "FPPI (False Positives Per Image)",            "Value": f"{fppi:.6f}",                                                                "Status": fppi_status},
         {"Metric": "HFAR (Horizontal False Alarm Rate)",          "Value": f"{hfar:.4f}",                                                                "Status": hfar_status},
+        {"Metric": "Total Aircraft Detected",                     "Value": f"{det_aircraft}",                                                            "Status": ""},
+        {"Metric": "Total Aircraft in Dataset",                   "Value": f"{tot_aircraft}",                                                            "Status": ""},
+
+        # Tracking Metrics.
+        {"Metric": "", "Value": "", "Status": ""},
         {"Metric": "EDR - All Scenarios",                         "Value": f"{edr_all:.4f}",                                                             "Status": ""},
         {"Metric": "EDR - Above Horizon",                         "Value": f"{edr_above:.4f}",                                                           "Status": ""},
         {"Metric": "EDR - Below Horizon",                         "Value": f"{edr_below:.4f}",                                                           "Status": ""},
-        {"Metric": "Total Aircraft Detected",                     "Value": f"{det_aircraft}",                                                            "Status": ""},
-        {"Metric": "Total Aircraft in Dataset",                   "Value": f"{tot_aircraft}",                                                            "Status": ""},
     ])
 
     # Save Aggregated Summary to CSV.

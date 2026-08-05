@@ -4,7 +4,7 @@
 # File:                    %name: baselines_evaluator.py %
 # Date Created:            %date_created: Tue Mar 24 15:18:38 2026 %
 # CM Version               %version: 3 %
-# CM Instance              %instance: 1 %
+# CM Instance              %instance: 2 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -77,7 +77,7 @@ from logging_module import LogLevel, log
 from notebooks.helpers.notebook_helpers import (
     get_next_run_dir, load_combined_gt, resolve_local_flights,
     convert_results_to_metrics_format, measure_predictor_complexity,
-    build_extended_summary
+    build_summary
 )
  
 # Confirm Project Root.
@@ -295,7 +295,7 @@ def main() -> None:
         log(LogLevel.ERROR, "baselines_evaluator:summary", "No Summary Files Found! Run Inference First.")
     else:
         # Build Summary DataFrame.
-        summary_df = build_extended_summary(
+        summary_df = build_summary(
             summary_json_path = summary_files[0],
             run_dir           = os.path.join(RESULTS_DIR, run_name),
             complexity        = complexity,
@@ -303,10 +303,10 @@ def main() -> None:
         )
     
         # Print Summary to Console.
-        print("\n" + "=" * 60)
-        print(" BASELINE MODEL - FULL HARD DATASET BENCHMARK SUMMARY")
-        print("=" * 60)
-        print(summary_df.set_index("Metric").to_string())
+        print("\n" + "=" * 65)
+        print(" BASELINE MODEL - FULL HARD DATASET BENCHMARK SUMMARY".center(65))
+        print("=" * 65)
+        print(summary_df.to_string(index=False))
 # ------------------------------------------------------------------------------
 
 

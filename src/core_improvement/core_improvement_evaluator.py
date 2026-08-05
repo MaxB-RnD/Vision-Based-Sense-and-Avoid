@@ -317,10 +317,10 @@ def main() -> None:
         )
     
         # Print Summary to Console.
-        print("\n" + "=" * 60)
-        print(" NEW BACKBONE MODEL - FULL HARD DATASET BENCHMARK SUMMARY")
-        print("=" * 60)
-        print(summary_df.set_index("Metric").to_string())
+        print("\n" + "=" * 70)
+        print("CORE BACKBONE IMPROVEMENT - FULL TEST DATASET SUMMARY".center(70))
+        print("=" * 70)
+        print(summary_df.to_string(index=False))
 # ------------------------------------------------------------------------------
 
 
