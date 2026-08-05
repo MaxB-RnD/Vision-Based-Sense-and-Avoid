@@ -21,7 +21,7 @@
 #
 # USAGE INSTRUCTIONS:
 #   1. Run the Script from Project Root:
-#       - python -m src.core_improvement.winning_solution_star.seg_test
+#       - python -m src.introspection_module.winning_solution_star.seg_test
 #
 #   2. Optional Environment Variables:
 #       - DEBUG_MODEL_INIT=1

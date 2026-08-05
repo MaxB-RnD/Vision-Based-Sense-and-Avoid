@@ -42,6 +42,8 @@ DEFAULT_FTPS_MIN_TRACK_FRAMES_    = 8     # Matches min_track_size, same reasoni
 DEFAULT_FTPS_THRESHOLDS_          = [0.50, 0.80, 0.95]   # Headline reportable thresholds.
 DEFAULT_FTPS_DEFAULT_THRESHOLD_   = 0.80  # Day-to-day working threshold.
 DEFAULT_FTPS_AVERAGE_RANGE_       = [round(t, 2) for t in np.arange(0.50, 1.00, 0.05)]  # mAP-style 50:5:95.
+DEFAULT_INTROSPECTION_FAILURE_THRESHOLD_ = 0.80  # Confidence threshold below which a matched detection is counted as an introspection failure.
+DEFAULT_MIN_MATCHED_FRAMES_FOR_DRIFT_ = 5        # Minimum number of matched frames required before calculating drift metrics, preventing unreliable measurements from very short track overlaps.
 
 # Frame level detection rate calculation constants
 DEFAULT_MIN_OBJECT_AREA = 200 # minimum object area for frame level 
@@ -693,6 +695,264 @@ def compute_ftps(df_matches, min_score, num_sequences,
 # ------------------------------------------------------------------------------
 
 
+# ------------------------------------------------------------------------------
+#                           INTROSPECTION METRICS
+# ------------------------------------------------------------------------------
+def augment_with_failure_onset_frame(df_matches, min_score, failure_threshold=DEFAULT_INTROSPECTION_FAILURE_THRESHOLD_):
+    """
+    Computes the Failure Onset Frame per Track.
+
+    The Failure Onset Frame is the earliest frame t0 such that the
+    trailing unmatched-ratio, computed from t0 to the track's final frame,
+    never again drops below failure_threshold -- i.e. the earliest point
+    after which the track's failure state, evaluated over the remaining
+    trajectory, never recovers.
+
+    Args:
+        df_matches (pd.DataFrame): Ground-truth/detection match dataframe, must 
+                                   include 's' (confidence), 'gt_det_match', 'track_id', 
+                                   'flight_id', and 'frame' columns.
+        min_score (float): Minimum confidence score required for a detection to 
+                           count as a match. Detections below this threshold are 
+                           treated as unmatched before onset is computed.
+        failure_threshold (float): Unmatched-ratio threshold above which a track 
+                                   is considered a genuine failure.
+
+    Returns:
+        pd.DataFrame: One row per failed track, with columns flight_id, track_id, 
+                      failure_onset_frame, tot_num_frames.
+    """
+    # Work on a Copy & Treat Any Detection Below min_score as Unmatched.
+    df = df_matches.copy()
+    below_thresh_det = df['s'] < min_score
+    df.loc[below_thresh_det, 'gt_det_match'] = 0
+
+    # Collapse Multi-GT-Per-Frame Duplication to One Row per Detection-Frame.
+    df_frame_level = df.groupby(['flight_id', 'track_id', 'frame'])['gt_det_match'].max().reset_index()
+    df_frame_level = df_frame_level.sort_values(['flight_id', 'track_id', 'frame'])
+
+    # Initalise Store for Onset Rows.
+    onset_rows = []
+
+    # Compute Onset Frame per Track.
+    for (flight_id, track_id), group in df_frame_level.groupby(['flight_id', 'track_id']):
+        # Get Frames & GT Matches.
+        frames = group['frame'].tolist()
+        matches = group['gt_det_match'].tolist()
+        n = len(frames)
+
+        # Skip Tracks that Never Cross the Failure Threshold Overall --
+        overall_unmatched_ratio = 1 - (sum(matches) / n)
+        if overall_unmatched_ratio < failure_threshold:
+            # Not a Genuine Failure. No Onset Frame.
+            continue 
+
+        # Scan Backward from the Track's Final Frame to Find the Earliest.
+        onset_idx = n - 1
+        for i in range(n - 1, -1, -1):
+            # Count Suffix Matches.
+            suffix = matches[i:]
+            suffix_unmatched_ratio = 1 - (sum(suffix) / len(suffix))
+
+            # Stop the Loop If a Suffix Drops Back Below Threshold.
+            if suffix_unmatched_ratio >= failure_threshold:
+                onset_idx = i
+            else:
+                break
+
+        # Record This Track's Onset Frame.
+        onset_rows.append({
+            'flight_id': flight_id, 'track_id': track_id,
+            'failure_onset_frame': frames[onset_idx],
+            'tot_num_frames': n,
+        })
+
+    # Return One Row per Failed Track. Empty DataFrame if No Tracks Failed.
+    return pd.DataFrame(onset_rows)
+
+
+def compute_introspection_metrics(df_matches, min_score, num_sequences, failure_threshold=DEFAULT_INTROSPECTION_FAILURE_THRESHOLD_):
+    """
+    Computes Average Warning Lead Time (AWLT), False Negative Rate, and False 
+    Alarm Rate (FAR) Together.
+
+    All three share the same Failure Onset Frame / per-track warning-history
+    groundwork, so they're computed in a single pass rather than three separate 
+    functions re-deriving the same intermediate data.
+
+    AWLT: Mean number of frames between a track's first introspection warning 
+        and its Failure Onset Frame, averaged only over failed tracks that were 
+        warned about strictly BEFORE onset (a genuine advance warning).
+
+    False Negative Rate: Proportion of genuine failures (per Failure Onset Frame 
+        / FTPS) for which no warning was ever raised, before or during the failure.
+
+    False Alarm Rate (FAR): Proportion of tracks FTPS classifies as correct (i.e. 
+        never failed) on which a warning was raised anyway.
+
+    Args:
+        df_matches (pd.DataFrame): Ground-truth/detection match dataframe. Must 
+            include the standard match columns plus a 'warning' column (True/False
+            per detection-frame).
+        min_score (float): Confidence threshold, forwarded to 
+            augment_with_failure_onset_frame().
+        num_sequences (int): Present for interface consistency with 
+            compute_cedr()/compute_ftps() -- not currently used in the calculation
+            itself, since AWLT/FNR/FAR are all ratios or means over tracks, not 
+            per-sequence rates.
+        failure_threshold (float): Forwarded to augment_with_failure_onset_frame() 
+            -- see that function's docstring.
+
+    Returns:
+        dict: {
+            awlt: mean lead time in frames (None if no track was ever warned 
+                about strictly before its onset frame),
+            fnr: False Negative Rate,
+            far: False Alarm Rate,
+            num_failed_tracks: total tracks FTPS/onset classifies as genuine failures,
+            num_correct_tracks: total tracks never classified as a failure,
+            num_warned_in_advance: number of failed tracks that contributed a lead time to AWLT,
+            num_missed: number of failed tracks never warned about at all,
+            num_false_alarms: number of correct tracks warned about anyway,
+        }
+
+    Raises:
+        AssertionError: if 'warning' is not present in df_matches -- this means 
+        the introspective predictor's warning field isn't flowing all the way 
+        through register_object_and_location() and normalize_json_result_to_dataframe() 
+        into the results this function reads.
+    """
+    # Confirm the 'warning' Column Exists Before Doing Any Real Work.
+    assert is_in_df_columns(df_matches, ['warning']), (
+        "'warning' column not found -- confirm the introspective predictor's "
+        "warning field is flowing through register_object_and_location() and "
+        "normalize_json_result_to_dataframe().")
+
+    # Compute Failure Onset Frames & Build the Set of Genuinely Failed Tracks.
+    df_onset = augment_with_failure_onset_frame(df_matches, min_score, failure_threshold)
+    failed_track_ids = set(zip(df_onset['flight_id'], df_onset['track_id']))
+
+    # Find the First Frame on Which Each Track Was Ever Warned About.
+    df_warn = df_matches[df_matches['warning'] == True].groupby(['flight_id', 'track_id'])['frame'].min().reset_index()
+    df_warn = df_warn.rename(columns={'frame': 'first_warning_frame'})
+    first_warning = {(r.flight_id, r.track_id): r.first_warning_frame for r in df_warn.itertuples()}
+
+    # "Correct" Tracks are Every Track NOT Classified as a Genuine Failure.
+    all_track_ids = set(zip(df_matches['flight_id'], df_matches['track_id']))
+    correct_track_ids = all_track_ids - failed_track_ids
+
+    # AWLT & False Negative Rate (Over Failed Tracks)
+    lead_times = []
+    num_missed = 0
+    for _, row in df_onset.iterrows():
+        # Store Warnings & Onset Frame.
+        key = (row['flight_id'], row['track_id'])
+        t0 = row['failure_onset_frame']
+        t_warn = first_warning.get(key)
+
+        # Never Warned About at All. Counts as a Missed Failure.
+        if t_warn is None:
+            num_missed += 1
+        elif t_warn < t0:
+            # Warned About STRICTLY BEFORE Onset.
+            lead_times.append(t0 - t_warn)
+
+    # Warning Lead Time and False Negatives.
+    awlt = (sum(lead_times) / len(lead_times)) if lead_times else None
+    fnr = (num_missed / len(df_onset)) if len(df_onset) else 0.0
+
+    # False Alarm Rate (Over Correct Tracks)
+    num_false_alarms = sum(1 for key in correct_track_ids if key in first_warning)
+    far = (num_false_alarms / len(correct_track_ids)) if correct_track_ids else 0.0
+
+    # Return All Three Metrics Plus the Underlying Counts for Reporting.
+    return dict(
+        awlt=awlt, fnr=fnr, far=far,
+        num_failed_tracks=len(df_onset),
+        num_correct_tracks=len(correct_track_ids),
+        num_warned_in_advance=len(lead_times),
+        num_missed=num_missed,
+        num_false_alarms=num_false_alarms,
+    )
+
+
+def compute_positional_divergence(df_matches, min_score, min_matched_frames=DEFAULT_MIN_MATCHED_FRAMES_FOR_DRIFT_):
+    """
+    Computes Positional Divergence (Track Drift) per Track.
+
+    For every track, fits a simple linear trend (least-squares slope) of IoU against 
+    frame index, restricted to frames where the track is still considered matched 
+    (gt_det_match == 1).
+
+    Args:
+        df_matches (pd.DataFrame): Ground-truth/detection match dataframe. Must
+            include the standard match columns plus 'iou'.
+        min_score (float): Minimum confidence score required for a detection to 
+            count as a match.
+        min_matched_frames (int): Minimum number of matched frames a track must 
+            have before its IoU trend is considered meaningful.
+
+    Returns:
+        dict: {
+            mean_iou_slope: mean regression slope across all eligible tracks,
+            pct_tracks_drifting: proportion of eligible tracks with a negative slope,
+            num_eligible_tracks: number of tracks that met min_matched_frames and 
+                were included in the above,
+        }
+
+    Raises:
+        AssertionError: if 'iou' is not present in df_matches -- this column 
+            should already exist from the standard IoU-matching step and its 
+            absence indicates a broken or reordered pipeline upstream, not 
+            something this function should silently work around.
+    """
+    # Confirm the 'iou' Column Exists.
+    assert is_in_df_columns(df_matches, ['iou']), (
+        "'iou' column not found -- this should already exist from "
+        "augment_with_iou_match() in match_groundtruth_results.py.")
+    
+    # Work on a Copy & Treat Any Detection Below min_score as Unmatched.
+    df = df_matches.copy()
+    below_thresh_det = df['s'] < min_score
+    df.loc[below_thresh_det, 'gt_det_match'] = 0
+
+    # Restrict to Frames Where the Track is Still Considered Matched.
+    df_matched = df[df['gt_det_match'] == 1]
+
+    # Fit a Linear Trend of IoU vs. Frame Index for Each Eligible Track.
+    slopes = []
+    for (flight_id, track_id), group in df_matched.groupby(['flight_id', 'track_id']):
+        group = group.sort_values('frame')
+
+        # Skip Tracks with Too Few Matched Frames for a Meaningful Trend.
+        if len(group) < min_matched_frames:
+            continue
+
+        # Manual Least-Squares Slope.
+        x = group['frame'].values.astype(float)
+        y = group['iou'].values.astype(float)
+        x_mean, y_mean = x.mean(), y.mean()
+        denom = ((x - x_mean) ** 2).sum()
+
+        # All Frame Indices Identical -- Cannot Fit a Trend, Skip.
+        if denom == 0:
+            continue
+        slope = ((x - x_mean) * (y - y_mean)).sum() / denom
+        slopes.append(slope)
+
+    # Aggregate Across All Eligible Tracks.
+    mean_slope = (sum(slopes) / len(slopes)) if slopes else None
+    pct_drifting = (sum(1 for s in slopes if s < 0) / len(slopes)) if slopes else 0.0
+
+    # Return Slope & Drift.
+    return dict(
+        mean_iou_slope=mean_slope,
+        pct_tracks_drifting=pct_drifting,
+        num_eligible_tracks=len(slopes),
+    )
+# ------------------------------------------------------------------------------
+
+
 def augment_with_diff_to_first_frame(df_encounters):
     """adds difference in frame between each frame in encounter and the first frame of the encounter"""
     required_columns_str = ', '.join(['frame', 'framemin']) 
@@ -1028,6 +1288,10 @@ def run(flags):
         df_gt_det_matches, thresh_score, num_sequences
     )
 
+    # Making Introspection Metrics.
+    introspection_metrics = compute_introspection_metrics(df_gt_det_matches, thresh_score, num_sequences)
+    divergence_metrics = compute_positional_divergence(df_gt_det_matches, thresh_score)
+
     # saving intermidiate results
     log.info('Saving results')
     if flags.output_dir_path is None:
@@ -1107,6 +1371,17 @@ def run(flags):
     summary['cedr_num_qualifying_encounters'] = int(len(df_cedr))
     log.info('CEDR (mean over %d qualifying encounters, min %d frames): %.5f',
              len(df_cedr), DEFAULT_CEDR_MIN_ENCOUNTER_FRAMES_, summary['cedr_mean'])
+    summary['awlt'] = introspection_metrics['awlt']
+    summary['false_negative_rate'] = introspection_metrics['fnr']
+    summary['false_alarm_rate'] = introspection_metrics['far']
+    summary['num_failed_tracks'] = introspection_metrics['num_failed_tracks']
+    summary['num_correct_tracks'] = introspection_metrics['num_correct_tracks']
+    summary['mean_iou_slope'] = divergence_metrics['mean_iou_slope']
+    summary['pct_tracks_drifting'] = divergence_metrics['pct_tracks_drifting']
+    summary['num_eligible_drift_tracks'] = divergence_metrics['num_eligible_tracks']
+    log.info('AWLT: %s | FNR: %.4f | FAR: %.4f | Mean IoU Slope: %s',
+             introspection_metrics['awlt'], introspection_metrics['fnr'],
+             introspection_metrics['far'], divergence_metrics['mean_iou_slope'])
     log.info('Planned Aircraft: %d', num_planned)
     log.info('Non-Planned Airborne: %d', num_non_planned)
     log.info('Non-Planned Aircraft: %d', num_non_planned_aircraft)

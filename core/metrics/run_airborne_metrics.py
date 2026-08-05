@@ -128,20 +128,31 @@ def summarize(summaries_dir):
         results = defaultdict(list)
         for summary in summaries:
             results_name = os.path.basename(os.path.dirname(summary['gt_det_matches']))
+            # Original Detection Metrics.
             results['Algorithm'].append(results_name)
             results['Score'].append(summary['min_det_score'])
             results['FPPI'].append(summary['fppi'])
+            results['HFAR'].append(summary['far'])
             results['AFDR'].append(summary['fl_dr_in_range'])
             results['Detected planned aircraft'].append(summary['det_aircraft_in_range'])
             results['Total planned aircraft'].append(summary['tot_aircraft_in_range'])
+
+            # Advanced Tracking Metrics.
+            results['CEDR'].append(round(summary['cedr_mean'], 5))
+            results['CEDR Qualifying Encounters'].append(summary['cedr_num_qualifying_encounters'])
             results['FTPS@50'].append(round(summary['ftps_rate_by_threshold']['50'], 5))
             results['FTPS@80'].append(round(summary['ftps_rate_by_threshold']['80'], 5))
             results['FTPS@95'].append(round(summary['ftps_rate_by_threshold']['95'], 5))
             results['FTPS avg(50:95)'].append(round(summary['ftps_averaged'], 5))
             results['FTPS Eligible Tracks'].append(summary['ftps_num_eligible_tracks'])
-            results['HFAR'].append(summary['far'])
-            results['CEDR'].append(round(summary['cedr_mean'], 5))
-            results['CEDR Qualifying Encounters'].append(summary['cedr_num_qualifying_encounters'])
+
+            # Introspection Metrics.
+            results['AWLT'].append(summary['awlt'])
+            results['False Negative Rate'].append(round(summary['false_negative_rate'], 5) if summary['false_negative_rate'] is not None else None)
+            results['False Alarm Rate'].append(round(summary['false_alarm_rate'], 5) if summary['false_alarm_rate'] is not None else None)
+            results['Mean IoU Slope'].append(summary['mean_iou_slope'])
+
+            # Original Tracking Metrics.
             for dr_criteria in ['Tracking']:
                 for scenario in list(HORIZON_QUERIES.keys()):
                     results['EDR {}, {}'.format(scenario, dr_criteria)].append(
@@ -150,6 +161,8 @@ def summarize(summaries_dir):
                             round(summary[dr_criteria]['Encounters'][str(range_)][scenario]['detected'], 5))
                     results['Total {}, {}'.format(scenario, dr_criteria)].append(
                             round(summary[dr_criteria]['Encounters'][str(range_)][scenario]['total'], 5))
+
+        # Save All Metrics to File. 
         df_to_save = pd.DataFrame.from_dict(results)
         df_to_save = df_to_save.sort_values(
             ['EDR All, Tracking', 'EDR Below Horizon, Tracking', 'EDR Mixed, Tracking', 
@@ -219,6 +232,8 @@ def run(flags):
                 os.path.basename(summary_json.replace('summary', '{}_summary'.format(exp_name)))))
                        
     summarize(summaries_dir)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluate airborne detection results with airborne metrics')
     add_flags(parser)
@@ -227,8 +242,3 @@ if __name__ == '__main__':
     args = parser.parse_args()
     setup_logging(args.log_level)
     run(args)
-
-
-
-
- 

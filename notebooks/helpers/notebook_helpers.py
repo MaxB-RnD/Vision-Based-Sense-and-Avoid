@@ -885,7 +885,7 @@ def build_introspection_summary(
     with open(summary_json_path) as f:
         summary = json.load(f)
 
-    # Extract Only the Metrics This Trimmed Summary Reports.
+    # Extract Only the Original Metrics This Trimmed Summary Reports.
     afdr         = summary["fl_dr_in_range"]
     det_aircraft = summary["det_aircraft_in_range"]
     tot_aircraft = summary["tot_aircraft_in_range"]
@@ -899,6 +899,17 @@ def build_introspection_summary(
     ftps_averaged = summary.get("ftps_averaged")
     ftps_eligible = summary.get("ftps_num_eligible_tracks")
 
+    # Extract Introspection Metrics -- Use .get() Rather than Direct Indexing, 
+    # Since Older summary.json Files Won't Have these Keys.
+    awlt = summary.get("awlt")
+    fnr = summary.get("false_negative_rate")
+    far = summary.get("false_alarm_rate")
+    num_failed = summary.get("num_failed_tracks")
+    num_correct = summary.get("num_correct_tracks")
+    mean_iou_slope = summary.get("mean_iou_slope")
+    pct_drifting = summary.get("pct_tracks_drifting")
+    num_drift_tracks = summary.get("num_eligible_drift_tracks")
+
     # Load FPS Stats (Written by record_fps_stats During Inference).
     fps = load_fps_stats(run_dir)
 
@@ -906,6 +917,10 @@ def build_introspection_summary(
     rows = [
         # Introspection Metrics.
         {"Metric": "", "Value": "", "Status": ""},
+        {"Metric": "Average Warning Lead Time (AWLT)",            "Value": f"{awlt:.2f}" if awlt is not None else "N/A",                                "Status": ""},
+        {"Metric": "False Negative Rate",                         "Value": f"{fnr:.4f}" if fnr is not None else "N/A",                                  "Status": f"N = {num_failed} Failed Tracks" if num_failed is not None else ""},
+        {"Metric": "False Alarm Rate (FAR)",                      "Value": f"{far:.4f}" if far is not None else "N/A",                                  "Status": f"N = {num_correct} Correct Tracks" if num_correct is not None else ""},
+        {"Metric": "Positional Divergence (Mean IoU Slope)",      "Value": f"{mean_iou_slope:.6f}" if mean_iou_slope is not None else "N/A",            "Status": f"N = {num_drift_tracks} Tracks, {pct_drifting:.1%} Drifting" if num_drift_tracks is not None else ""},
 
         # Detection Metrics.
         {"Metric": "", "Value": "", "Status": ""},

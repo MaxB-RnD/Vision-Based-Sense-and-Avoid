@@ -4,7 +4,7 @@
 # File:                    %name: hrnetw32_track_to_detect_test.py %
 # Date Created:            %date_created: Thur Jul 16 17:09:23 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 1 %
+# CM Instance              %instance: 3 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -19,7 +19,7 @@
 #
 # USAGE INSTRUCTIONS:
 #   1. Run the Script from the Project Root:
-#       - python -m src.core_improvement.hrnet_w32.hrnet_w32_test
+#       - python -m src.introspection_module.hrnetw32_introspective.hrnetw32_track_to_detect_test
 #
 #   2. Optional Environment Variables:
 #       - DEBUG_MODEL_INIT=1
@@ -75,13 +75,13 @@ from logging_module import LogLevel, log, set_level
 
 sys.path.insert(0, os.path.dirname(__file__))
 from notebooks.helpers.notebook_helpers import record_fps_stats
-from src.core_improvement.winning_solution_star.evaluator.airborne_detection import AirbornePredictor
+from src.introspection_module.winning_solution_star.evaluator.airborne_detection import AirbornePredictor
 
 # ------------------------------------------------------------------------------
 #                           CONFIGURATION VARIABLES
 # ------------------------------------------------------------------------------
 # Path to the Fine-Tuned Model Checkpoint Directory.
-MODEL_PATH = os.getenv("MODEL_PATH", "configs/models/core_improvement/hrnetw32/HRNetW32_Complete.pt")
+MODEL_PATH = os.getenv("MODEL_PATH", "configs/models/introspection_module/hrnetw32/HRNetW32_Complete.pt")
 
 # Minimum Number of Frames a Track Must Span Before Being Committed to Results.
 MIN_TRACK_LEN = int(os.getenv("MIN_TRACK_LEN", 30))
@@ -118,11 +118,11 @@ class HRNetW32TrackToDetectPredictor(AirbornePredictor):
         """
         # Import Modules Required Only During Inference Setup.
         # Keeping these Imports Local can Reduce Startup/Import Overhead.
-        from src.core_improvement.hrnetw32_track_to_detect.tracking_to_detect.prediction_structure import (
+        from src.introspection_module.hrnetw32_introspective.tracking_to_detect.prediction_structure import (
             DetectedItem
         )
 
-        from src.core_improvement.hrnetw32_track_to_detect.tracking_to_detect import (
+        from src.introspection_module.hrnetw32_introspective.tracking_to_detect import (
             models_segmentation,
             models_transformation,
             offset_grid_to_transform,
@@ -201,7 +201,7 @@ class HRNetW32TrackToDetectPredictor(AirbornePredictor):
         self.model_seg = torch.compile(self.model_seg, mode="max-autotune")
 
         # Directory Containing Transformation Model Weights.
-        models_dir = "configs/models/core_improvement"
+        models_dir = "configs/models/introspection_module"
 
         # Create Transform Estimation Model.
         self._model_transform_raw = models_transformation.TrEstimatorTsmCached(
@@ -660,7 +660,8 @@ class HRNetW32TrackToDetectPredictor(AirbornePredictor):
         bbox       : List[float],
         confidence : float,
         img_name   : str,
-        source='DETECTED'
+        source = 'DETECTED',
+        warning = False
     ) -> None:
         """
         Wraps register_object_and_location with MIN_TRACK_LEN and MIN_SCORE
@@ -678,6 +679,8 @@ class HRNetW32TrackToDetectPredictor(AirbornePredictor):
             confidence (float): Detection confidence score (0-1).
             img_name (str): Image filename this detection belongs to.
             source (str): The type of frame detected for tracking (Detected or Coast).
+            warning (bool): Whether the introspection module flagged this track as
+                            unreliable on this frame (True) or not (False).
 
         Raises:
             Exception: If the same track_id is registered twice for img_name.
@@ -708,7 +711,7 @@ class HRNetW32TrackToDetectPredictor(AirbornePredictor):
         self.visited_frame[img_name].append(track_id)
 
         # Commit the Detection to the Results.
-        self.register_object_and_location(class_name, track_id, bbox, confidence, img_name, source=source)
+        self.register_object_and_location(class_name, track_id, bbox, confidence, img_name, source=source, warning=warning)
 
 
     def inference(self, flight_id: str) -> None:
@@ -739,7 +742,7 @@ class HRNetW32TrackToDetectPredictor(AirbornePredictor):
 
             # Skip Empty Frames.
             if frame is None:
-                log(LogLevel.WARNING, "format_output:inference",
+                log(LogLevel.WARNING, "hrnetw32_ttd:inference",
                      "Could Not Read Frame '%s', Skipping.", frame_path)
                 prev_frame = frame
                 continue
@@ -764,7 +767,9 @@ class HRNetW32TrackToDetectPredictor(AirbornePredictor):
                     confidence = float(det["confidence"]),
                     img_name   = frame_name,
                     source     = det.get("source", "DETECTED"),
+                    warning    = det.get("warning", False),
                 )
+
 
     def run(self) -> None:
         """

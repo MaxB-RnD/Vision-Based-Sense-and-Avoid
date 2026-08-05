@@ -53,6 +53,8 @@ def normalize_json_result_to_dataframe(json_data):
         columns_to_return.append('object_id')
     if 'source' in df_columns:
         columns_to_return.append('source')
+    if 'warning' in df_columns:
+        columns_to_return.append('warning')
     return df[columns_to_return]
 
 def _get_as_dataframe(filename, normalization_func=None):

@@ -36,11 +36,10 @@
 
 import time
 import torch
-from typing import Any, Dict, List
 
+from typing import Any, Dict, List
 from logging_module import LogLevel, log
 
-from src.introspection_module.winning_solution_star.seg_tracker.seg_tracker import SegDetector
 from src.introspection_module.hrnetw32_introspective.hrnetw32_track_to_detect_test import HRNetW32TrackToDetectPredictor
 from src.introspection_module.hrnetw32_introspective.introspection_modules import IntrospectionModule, NullIntrospectionModule
 
@@ -263,12 +262,23 @@ class HRNetW32IntrospectivePredictor(HRNetW32TrackToDetectPredictor):
             self._update_track_history(track_id, confidence, source, coast_count)
             track_state = self._build_track_state(track_id, coast_count)
 
-            # Escalate the Track if Requested by the Introspection Strategy.
+            # Escalate the Track if Requested by the Introspection Strategy.      
             if self.introspection_module.should_escalate(track_state):
+                # Log the Flag for Debugging/Traceability.
                 log(LogLevel.DEBUG, "hrnetw32_introspective:run_model_on_frame",
-                    "Escalation Triggered --> Flight: %s Frame: %s Track: %s (coast_count=%d)",
+                    "Escalation Triggered --> Flight: %s Frame: %s Track: %s (coast_count = %d)",
                     flight_id, frame_name, track_id, coast_count)
+
+                # Record that a Flag was Raised.
                 det = self._run_ensemble_on_track(det, frame, prev_frame)
+
+                # Mark this Detection as Having Been Warned About.
+                det["warning"] = True
+            else:
+                # No Flag Raised for this Track on this Frame.
+                det["warning"] = False
+
+            # Append the Detection to this Frame's Output.
             updated_detections.append(det)
 
         # Update Timing to Include Introspection and Escalation Overhead.
