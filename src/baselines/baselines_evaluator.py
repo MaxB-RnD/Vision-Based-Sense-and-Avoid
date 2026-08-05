@@ -27,7 +27,7 @@
 #         nohup python -m src.baselines.baselines_evaluator select_model > outputs/logs/baselines/baseline_evaluation.log 2>&1 &
 #
 #   2. Optional Environment Variables:
-#       - SELECTED_MODEL = (0-5)
+#       - SELECTED_MODEL = (0-2)
 #            0 = Winning Solution (Original)
 #            1 = RT-DETR v2
 #            2 = YOLOv11
