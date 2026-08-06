@@ -26,9 +26,11 @@
 #         nohup python -m src.introspection_module.introspection_module_evaluator select_module > outputs/logs/introspection_module/introspection_module_evaluation.log 2>&1 &
 #
 #   2. Optional Environment Variables:
-#       - SELECTED_INTROSPECTION_MODULE = (0-1)
+#       - SELECTED_INTROSPECTION_MODULE = (0-3)
 #            0 = None.
 #            1 = Simple Confidence Threshold.
+#            2 = Rolling Confidence Trend / EWMA.
+#            3 = Consecutive-Coast-Count Threshold.
 #
 #   3. Then monitor from terminal with:
 #            tail -f outputs/logs/introspection_module/introspection_module_evaluation.log
@@ -90,7 +92,9 @@ def main() -> None:
     # --------------------------------------------------
     # 0 -> None (Control Condition).
     # 1 -> Confidence Threshold (Simple Baseline).
-    module_list = ["none", "confidence_threshold"]
+    # 2 -> Rolling Confidence Trend / EWMA.
+    # 3 -> Consecutive-Coast-Count Threshold.
+    module_list = ["none", "confidence_threshold", "rolling_confidence_trend", "coast_count_threshold"]
 
     # Allow Introspection Module Selection from Command Line.
     if len(sys.argv) > 1:

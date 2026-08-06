@@ -4,7 +4,7 @@
 # File:                    %name: introspection_module_evaluator.py %
 # Date Created:            %date_created: Tue Jul 30 17:35:45 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 1 %
+# CM Instance              %instance: 3 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -50,7 +50,6 @@ class IntrospectionModule:
     """
     # Filesystem-Safe Identifier Used in Logs & Run Directory Naming.
     name: str = "base"
-
 
     def should_escalate(self, track_state: Dict) -> bool:
         """
@@ -105,7 +104,7 @@ class NullIntrospectionModule(IntrospectionModule):
 
 
 # ------------------------------------------------------------------------------
-#         MODULE 1 -- SIMPLE CONFIDENCE THRESHOLD (FERAS'S BASELINE)
+#                   MODULE 1 -- SIMPLE CONFIDENCE THRESHOLD
 # ------------------------------------------------------------------------------
 class ConfidenceThresholdIntrospectionModule(IntrospectionModule):
     """
@@ -119,7 +118,6 @@ class ConfidenceThresholdIntrospectionModule(IntrospectionModule):
     """
     # Identifier Used to Select this Strategy within the Evaluation Framework.
     name = "confidence_threshold"
-
 
     def __init__(self, threshold: float = 0.70, window: int = 1):
         # Minimum Confidence Required Before Escalation is Considered.
@@ -150,10 +148,143 @@ class ConfidenceThresholdIntrospectionModule(IntrospectionModule):
 
 
 # ------------------------------------------------------------------------------
+#                   MODULE 2 -- ROLLING CONFIDENCE TREND / EWMA
+# ------------------------------------------------------------------------------
+class RollingConfidenceTrendIntrospectionModule(IntrospectionModule):
+    """
+    Escalates a Track Based on the TREND of its Confidence Over Recent Frames, 
+    Rather than a Single-Frame Threshold Check.
+
+    Combines two related signals as an OR condition -- either alone is 
+    sufficient to raise a flag, since they catch different failure shapes:
+
+      1. EWMA below threshold: An Exponentially Weighted Moving Average of 
+         confidence has dropped below a fixed level. EWMA requires SUSTAINED low 
+         confidence to cross the line -- one noisy low frame is smoothed out, a
+         genuine multi-frame decline is not.
+
+      2. Negative slope beyond threshold: A linear trend fit over the recent 
+         confidence window has a sufficiently negative slope. This can fire even 
+         if the EWMA/absolute confidence level hasn't dropped far yet -- it's 
+         reacting to the DIRECTION of change, not the current value.
+    """
+    # Identifier Used to Select this Strategy within the Evaluation Framework.
+    name = "rolling_confidence_trend"
+
+    def __init__(self, ewma_threshold: float = 0.70, ewma_alpha: float = 0.30,
+                 slope_threshold: float = -0.05, min_history: int = 3):
+        # Set EWMA Threshold.
+        self.ewma_threshold = ewma_threshold
+
+        # Set EWMA Smoothing Factor.
+        self.ewma_alpha = ewma_alpha
+
+        # Set Slope Threshold.
+        self.slope_threshold = slope_threshold
+
+        # Set Minimum Number of Frames of History Required Before Either Signal
+        # is Evaluated.
+        self.min_history = min_history
+
+
+    def _compute_ewma(self, history: List[float]) -> float:
+        # Initialise the EWMA with the Oldest Confidence Value in the History.
+        ewma = history[0]
+
+        # Update the Running EWMA. Newer Confidence Values Receive Greater
+        # Weight, While Older Values Gradually Decay in Influence.
+        for value in history[1:]:
+            ewma = self.ewma_alpha * value + (1 - self.ewma_alpha) * ewma
+
+        # Return the Final Smoothed Confidence Estimate.
+        return ewma
+
+
+    def _compute_slope(self, history: List[float]) -> float:
+        # Number of Confidence Samples in the Current History Window.
+        n = len(history)
+
+        # Use Sequential Frame Indices as the Independent Variable (x).
+        x = list(range(n))
+
+        # Compute the Mean Frame Index and Mean Confidence.
+        x_mean = sum(x) / n
+        y_mean = sum(history) / n
+
+        # Compute the Variance of the Frame Indices.
+        denom = sum((xi - x_mean) ** 2 for xi in x)
+
+        # Guard Against Division by Zero if the Variance is Zero.
+        if denom == 0:
+            return 0.0
+
+        # Compute the Covariance Between Frame Index and Confidence.
+        numer = sum((x[i] - x_mean) * (history[i] - y_mean) for i in range(n))
+
+        # Return the Best-Fit Slope.
+        return numer / denom
+
+
+    def should_escalate(self, track_state: Dict) -> bool:
+        # Retrieve the Confidence Values Recorded for this Track.
+        history: List[float] = track_state.get('confidence_history', [])
+
+        # Wait Until Enough History has Accumulated Before Evaluating
+        # Either Signal.
+        if len(history) < self.min_history:
+            return False
+
+        # Signal 1: Smoothed Confidence has Dropped Below Threshold.
+        ewma = self._compute_ewma(history)
+        if ewma < self.ewma_threshold:
+            return True
+
+        # Signal 2: Confidence is Actively Trending Downward, Regardless
+        # of Current Absolute Level.
+        slope = self._compute_slope(history)
+        if slope < self.slope_threshold:
+            return True
+
+        # Neither Signal Fired. No Escalation.
+        return False
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
+#               MODULE 3 -- CONSECUTIVE-COAST-COUNT THRESHOLD
+# ------------------------------------------------------------------------------
+class CoastCountIntrospectionModule(IntrospectionModule):
+    """
+    Escalates a Track Once it has been Propagated by Motion Prediction
+    (Coasting) for More than a Specified Number of Consecutive Frames
+    Without a Real Detection.
+    """
+    # Identifier Used to Select this Strategy within the Evaluation Framework.
+    name = "coast_count_threshold"
+
+    def __init__(self, threshold: int = 2):
+        # Number of Consecutive Coasted Frames Required Before Escalation.
+        self.threshold = threshold
+
+
+    def should_escalate(self, track_state: Dict) -> bool:
+        # Coast Count is Already Maintained by the T2D Tracker Itself. Read 
+        # Directly, No History Reconstruction Needed.
+        coast_count = track_state.get('coast_count', 0)
+
+        # Return True Once the Number of Consecutive Coasted Frames Meets or
+        # Exceeds the Configured Escalation Threshold.
+        return coast_count >= self.threshold
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
 #                       REGISTRY OF AVAILABLE MODULES
 # ------------------------------------------------------------------------------
 INTROSPECTION_MODULE_MAP = {
-    0: NullIntrospectionModule,                # No Introspection.
-    1: ConfidenceThresholdIntrospectionModule, # Simple Confidence Threshold.
+    0: NullIntrospectionModule,                    # No Introspection.
+    1: ConfidenceThresholdIntrospectionModule,     # Simple Confidence Threshold.
+    2: RollingConfidenceTrendIntrospectionModule,  # Rolling Confidence Trend / EWMA.
+    3: CoastCountIntrospectionModule,              # Consecutive-Coast-Count Threshold.
 }
 # ------------------------------------------------------------------------------
