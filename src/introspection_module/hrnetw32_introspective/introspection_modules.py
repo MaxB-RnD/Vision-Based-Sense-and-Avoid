@@ -121,7 +121,7 @@ class ConfidenceThresholdIntrospectionModule(IntrospectionModule):
     name = "confidence_threshold"
 
 
-    def __init__(self, threshold: float = 0.70, window: int = 3):
+    def __init__(self, threshold: float = 0.70, window: int = 1):
         # Minimum Confidence Required Before Escalation is Considered.
         self.threshold = threshold
 

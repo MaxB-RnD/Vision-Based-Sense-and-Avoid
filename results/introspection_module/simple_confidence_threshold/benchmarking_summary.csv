@@ -1,8 +1,8 @@
 Metric,Value,Status
 ,,
 Average Warning Lead Time (AWLT),N/A,
-False Negative Rate,0.5000,N = 2 Failed Tracks
-False Alarm Rate (FAR),0.0003,N = 31553 Correct Tracks
+False Negative Rate,0.0000,N = 2 Failed Tracks
+False Alarm Rate (FAR),0.0019,N = 31553 Correct Tracks
 Positional Divergence (Mean IoU Slope),-0.000565,"N = 152 Tracks, 46.1% Drifting"
 ,,
 AFDR (Airborne Flight Detection Rate),0.6046,
@@ -15,8 +15,8 @@ FTPS@80 (False Tracks Per Sequence),0.0043,N = 1/150 Tracks
 FTPS@95 (False Tracks Per Sequence),0.0043,N = 1/150 tracks
 FTPS avg(50:95),0.0043,N = 150 Eligible Tracks
 ,,
-FPS Mean,10.87,
-FPS Std Dev,0.33,
-FPS Min,8.81,
-FPS Max,11.62,
+FPS Mean,10.83,
+FPS Std Dev,0.32,
+FPS Min,6.07,
+FPS Max,11.67,
 Frames Measured,49793,
