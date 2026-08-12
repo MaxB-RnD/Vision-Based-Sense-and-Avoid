@@ -202,6 +202,6 @@ def applyColorQuantization(image: np.ndarray, severity: float) -> np.ndarray:
 CORRUPTION_REGISTRY = {
     "iso_noise":         applyIsoNoise,
     "defocus_blur":      applyDefocusBlur,
-    "color_quantization": applyColorQuantization,
+    "colour_quantisation": applyColorQuantization,
 }
 # ------------------------------------------------------------------------------

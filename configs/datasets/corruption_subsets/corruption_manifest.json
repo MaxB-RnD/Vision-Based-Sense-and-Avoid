@@ -1,0 +1,40 @@
+{
+  "seed": 42,
+  "corrupted_fraction": 0.5,
+  "active_corruptions": [
+    "iso_noise",
+    "defocus_blur",
+    "colour_quantisation"
+  ],
+  "ramp_shape": "linear",
+  "ramp_length_frames": 30,
+  "peak_severity": 1.0,
+  "onset_fraction_range": [
+    0.3,
+    0.65
+  ],
+  "flights": [
+    {
+      "flight_id": "part1036edfd6ece44c37b8ca9562fd701682",
+      "corruption_type": "defocus_blur",
+      "num_frames": 1199,
+      "frames_written": 1199,
+      "onset_frame": 484,
+      "ramp_shape": "linear",
+      "ramp_length": 30,
+      "peak_severity": 1.0,
+      "output_dir": "data/corruption_dataset/defocus_blur/data/part1/Images/part1036edfd6ece44c37b8ca9562fd701682"
+    },
+    {
+      "flight_id": "part354be71509266480ca13ae3fec487af47",
+      "corruption_type": "iso_noise",
+      "num_frames": 242,
+      "frames_written": 242,
+      "onset_frame": 86,
+      "ramp_shape": "linear",
+      "ramp_length": 30,
+      "peak_severity": 1.0,
+      "output_dir": "data/corruption_dataset/iso_noise/data/part3/Images/part354be71509266480ca13ae3fec487af47"
+    }
+  ]
+}
