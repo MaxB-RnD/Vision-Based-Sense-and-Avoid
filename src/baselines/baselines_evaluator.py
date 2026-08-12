@@ -109,6 +109,7 @@ def main() -> None:
     # Set Path to Desired Evaluation Dataset.
     DATASET_PATH = "configs/datasets/hard_dataset_flights.txt"
     DATASET_PARTS = ["part1", "part2", "part3"]
+    DATASET_ROOT = os.path.join(PROJECT_ROOT, "data", "original_dataset")
 
     # Set Results Variables (Auto-Incrementing Run Directory).
     RESULTS_DIR = "outputs/results/baselines/" + model_list[SELECTED_MODEL]
@@ -122,6 +123,7 @@ def main() -> None:
     # Print Summary Statement.
     log(LogLevel.INFO, "baselines_evaluator:config", "Configuration Loaded.")
     print(f"  Model Selected : {model_list[SELECTED_MODEL]}")
+    print(f"  Dataset Root   : {DATASET_ROOT}")
     print(f"  Dataset Path   : {DATASET_PATH}")
     print(f"  Dataset Parts  : {DATASET_PARTS}")
     print(f"  Run Name       : {run_name}")
@@ -130,7 +132,7 @@ def main() -> None:
     print(f"  Min Track Len  : {MIN_TRACK_LEN}")
     
     # Find all Available Sequences from the Provided Dataset.
-    local_flights = resolve_local_flights(DATASET_PATH, PROJECT_ROOT)
+    local_flights = resolve_local_flights(DATASET_PATH, DATASET_ROOT)
 
     # Add Spacing in Console Output for Readability.
     print()
@@ -151,7 +153,7 @@ def main() -> None:
         log(LogLevel.DEBUG, "baselines_evaluator:preprocessing", " ... and %d more.", len(local_flights) - 5)
 
     # Load & Filter Ground Truth to Include Local Flights Only. 
-    combined_gt = load_combined_gt(DATASET_PARTS, local_flights, PROJECT_ROOT)
+    combined_gt = load_combined_gt(DATASET_PARTS, local_flights, DATASET_ROOT)
     log(LogLevel.INFO, "baselines_evaluator:preprocessing", "Flights in Filtered Ground Truth: %d", len(combined_gt['samples']))
 
     # Build Set of Image Filenames That Physically Exist on Disk.

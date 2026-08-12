@@ -9,28 +9,20 @@
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
 # ------------------------------------------------------------------------------
-# FIUX MEEEEEEE
-# Generates per-frame corruption severity schedules for a flight sequence.
+# Generates per-frame corruption severity schedules for image sequences.
 #
-# A schedule is a list of floats, one per frame, each in [0, 1], describing
-# how strongly the corruption in corruptions.py should be applied to that
-# frame. Frames before the onset frame are clean (severity 0.0). From the
-# onset frame, severity ramps up according to the chosen shape until it
-# reaches peak_severity, then holds at peak_severity for the remainder of the
-# track. This is deliberately kept separate from the corruption functions
-# themselves -- swapping ramp shape, onset frame, or peak severity never
-# requires touching corruptions.py, and adding a new ramp SHAPE never
-# requires touching a new corruption FUNCTION.
+# Each schedule contains one severity value in the range [0, 1] for every
+# frame in a flight. Frames before the configured onset frame have a severity
+# of 0.0 and therefore remain uncorrupted. From the onset frame, severity
+# increases according to the selected ramp shape until the configured
+# peak_severity is reached, after which the peak severity is maintained for
+# the remainder of the sequence.
 #
-# NOTE ON THE TWO NOTIONS OF "ONSET":
-#   The onset_frame parameter here is the DESIGNED onset -- the frame where
-#   you started ramping up corruption. This is NOT the same as the Failure
-#   Onset Frame defined in your metrics (the retrospective, threshold-based
-#   definition computed from CEDR/FTPS after running the real pipeline). The
-#   two won't line up exactly, because the detector's response to increasing
-#   corruption is not guaranteed to be linear even if the corruption ramp is.
-#   Log both in the manifest so you can compare them later -- that comparison
-#   is itself a useful sanity check on the Failure Onset Frame methodology.
+# Ramp generation is kept separate from the individual corruption functions
+# defined in corruptions.py. This allows the onset frame, ramp length, ramp
+# shape, and peak severity to be changed independently of the corruption being
+# applied. New ramp shapes can be added to the registry without modifying the
+# corruption functions or the dataset-generation script.
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
@@ -71,14 +63,14 @@ def _linearRamp(num_frames: int, onset_frame: int, ramp_length: int,
     # Build the Schedule Frame-by-Frame.
     schedule = []
     for i in range(num_frames):
+        # Before Onset Use Original Frames.
         if i < onset_frame:
-            # Before Onset -- Clean.
             s = 0.0
+        # Ramp Complete (or Instantaneous Ramp) Hold at Peak.
         elif ramp_length <= 0 or i >= onset_frame + ramp_length:
-            # Ramp Complete (or Instantaneous Ramp) -- Hold at Peak.
             s = peak_severity
+        # Ramp in Progress Linearly Interpolate.
         else:
-            # Within the Ramp -- Linearly Interpolate.
             s = peak_severity * (i - onset_frame) / float(ramp_length)
         schedule.append(s)
 
@@ -90,8 +82,8 @@ def _sigmoidRamp(num_frames: int, onset_frame: int, ramp_length: int,
                  peak_severity: float) -> List[float]:
     """
     Builds a sigmoid (S-curve) severity ramp, centred on the midpoint of the
-    ramp window. Slower to start and finish than a linear ramp, steepest in
-    the middle -- included as an extension point, not used by default.
+    ramp window. Slower to start and finish than a linear ramp, and steepest in
+    the middle.
 
     Args:
         num_frames (int): Total number of frames in the track.
@@ -105,7 +97,7 @@ def _sigmoidRamp(num_frames: int, onset_frame: int, ramp_length: int,
     # Import Locally to Keep the Module Dependency-Light for the Default Case.
     import math
 
-    # Guard Against a Degenerate (Zero-Length) Ramp Window.
+    # Guard Against a Zero-Length Ramp Window.
     if ramp_length <= 0:
         return _linearRamp(num_frames, onset_frame, ramp_length, peak_severity)
 
@@ -116,11 +108,11 @@ def _sigmoidRamp(num_frames: int, onset_frame: int, ramp_length: int,
     # Build the Schedule Frame-by-Frame.
     schedule = []
     for i in range(num_frames):
+        # Before Onset Use Original Frames.
         if i < onset_frame:
-            # Before Onset -- Clean.
             s = 0.0
+        # Sigmoid Curve Centred on the Ramp Midpoint.
         else:
-            # Sigmoid Curve Centred on the Ramp Midpoint.
             s = peak_severity / (1.0 + math.exp(-steepness * (i - midpoint)))
         schedule.append(s)
 
@@ -132,8 +124,7 @@ def _sigmoidRamp(num_frames: int, onset_frame: int, ramp_length: int,
 # ------------------------------------------------------------------------------
 #                               SHAPE REGISTRY
 # ------------------------------------------------------------------------------
-# Maps a Filesystem-Safe Shape Name to its Corresponding Ramp Function. Add New
-# Shapes Here -- the Main Build Script Only Ever Looks Values up by Name.
+# Maps a Filesystem-Safe Shape Name to its Corresponding Ramp Function.
 RAMP_SHAPE_REGISTRY = {
     "linear":  _linearRamp,
     "sigmoid": _sigmoidRamp,
@@ -142,7 +133,7 @@ RAMP_SHAPE_REGISTRY = {
 
 
 # ------------------------------------------------------------------------------
-#                           PUBLIC ENTRY POINT
+#                           SEVERITY SCHEDULE BUILDER
 # ------------------------------------------------------------------------------
 def buildSeveritySchedule(num_frames: int, onset_frame: int, ramp_length: int,
                           peak_severity: float = 1.0, shape: str = "linear") -> List[float]:
@@ -157,7 +148,7 @@ def buildSeveritySchedule(num_frames: int, onset_frame: int, ramp_length: int,
         peak_severity (float): Severity value once the ramp completes.
                                Defaults to 1.0 (worst-case corruption).
         shape (str): Ramp shape name, must exist in RAMP_SHAPE_REGISTRY.
-                    Defaults to 'linear'.
+                     Defaults to 'linear'.
 
     Returns:
         List[float]: Per-frame severity values, length num_frames.

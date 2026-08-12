@@ -23,7 +23,7 @@
       "ramp_shape": "linear",
       "ramp_length": 30,
       "peak_severity": 1.0,
-      "output_dir": "data/corruption_dataset/defocus_blur/data/part1/Images/part1036edfd6ece44c37b8ca9562fd701682"
+      "output_dir": "data/corruption_dataset/part1/Images/part1036edfd6ece44c37b8ca9562fd701682"
     },
     {
       "flight_id": "part354be71509266480ca13ae3fec487af47",
@@ -34,7 +34,7 @@
       "ramp_shape": "linear",
       "ramp_length": 30,
       "peak_severity": 1.0,
-      "output_dir": "data/corruption_dataset/iso_noise/data/part3/Images/part354be71509266480ca13ae3fec487af47"
+      "output_dir": "data/corruption_dataset/part3/Images/part354be71509266480ca13ae3fec487af47"
     }
   ]
 }
