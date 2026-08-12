@@ -42,18 +42,33 @@ class AirbornePredictor:
         self.current_flight_results = []
         self.current_img_name = None
         self.track_id_seq = 0
+    
 
-    def register_object_and_location(self, class_name, track_id, bbox, confidence, img_name):
+    def register_object_and_location(self, class_name, track_id, bbox, confidence, img_name, source='DETECTED', warning=False):
         """
-        Register all your tracking results to this function.
-           `track_id`: unique id for your detected airborne object
-           `img_name`: The image_name to which this prediction belongs.
+        Register a tracked object detection and its location.
+
+        Args:
+            class_name : The class label of the detected object.
+            track_id   : Unique identifier for the tracked airborne object.
+            bbox       : Bounding box in the format (x, y, w, h).
+            confidence : Detection confidence score in the range (0, 1).
+            img_name   : Name of the image to which this detection belongs. If None, the current image name is used.
+            source     : Detection source. Typically 'DETECTED' or 'COASTED'. Defaults to 'DETECTED'.
+            warning    : Indicates whether this detection should be flagged as a warning. Defaults to False.
         """
+        # Ensure the Confidence Score is a Valid Probability.
         assert 0 < confidence < 1
+
+        # Every Detection Must Belong to a Valid Track.
         assert track_id is not None
+
+        # If No Image Name is Provided, Associate the Detection with the
+        # Current Image Being Processed.
         if img_name is None:
             img_name = self.current_img_name
 
+        # Create the Detection Record in the Expected Output Format.
         result = {
             "detections": [
                 {
@@ -63,13 +78,22 @@ class AirbornePredictor:
                     "w": bbox[2],
                     "h": bbox[3],
                     "n": class_name,
-                    "s": confidence
+                    "s": confidence,
+                    "source": source,
+                    "warning": warning,
                 }
             ],
+
+            # Image that this Detection Belongs to.
             "img_name": img_name
         }
+
+        # Store the Detection in the Overall Results List.
         self.results.append(result)
+
+        # Also Store it in the Current Flight's Results.
         self.current_flight_results.append(result)
+
 
     def get_all_flight_ids(self):
         valid_flight_ids = None

@@ -767,8 +767,16 @@ def augment_with_failure_onset_frame(df_matches, min_score, failure_threshold=DE
             'tot_num_frames': n,
         })
 
-    # Return One Row per Failed Track. Empty DataFrame if No Tracks Failed.
-    return pd.DataFrame(onset_rows)
+    # Return One Row per Failed Track. Preserve Expected Columns When No Tracks Failed.
+    return pd.DataFrame(
+        onset_rows,
+        columns=[
+            'flight_id',
+            'track_id',
+            'failure_onset_frame',
+            'tot_num_frames',
+        ],
+    )
 
 
 def compute_introspection_metrics(df_matches, min_score, num_sequences, failure_threshold=DEFAULT_INTROSPECTION_FAILURE_THRESHOLD_):

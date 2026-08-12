@@ -158,7 +158,7 @@ def get_last_run(results_dir: str) -> Optional[str]:
 # ------------------------------------------------------------------------------
 #                           GROUND TRUTH LOADING
 # ------------------------------------------------------------------------------
-def load_combined_gt(parts: list, local_flights: dict, project_root: str) -> dict:
+def load_combined_gt(parts: list, local_flights: dict, dataset_root: str) -> dict:
     """
     Loads and merges the groundtruth.json file from each part's ImageSets/
     folder, filtering down to only the flights that are present on disk.
@@ -173,7 +173,7 @@ def load_combined_gt(parts: list, local_flights: dict, project_root: str) -> dic
         local_flights (dict): The local_flights dict returned by resolve_local_flights(), 
                               keyed by folder name with each value containing 'part' 
                               and 'flight_hash'.
-        project_root  (str): Absolute path to the project root directory.
+        dataset_root  (str): Absolute path to the root of the data directory.
  
     Returns:
         dict: A merged ground truth dict in the standard AOT format:
@@ -194,7 +194,7 @@ def load_combined_gt(parts: list, local_flights: dict, project_root: str) -> dic
     # Iterate through Each Part Specified.
     for part in parts:
         # Path to the Part's Ground Truth JSON.
-        gt_path = Path(project_root) / "data" / part / "ImageSets" / "groundtruth.json"
+        gt_path = Path(dataset_root) / part / "ImageSets" / "groundtruth.json"
  
         # Skip if the Ground Truth File is Missing for this Part.
         if not gt_path.exists():
@@ -231,10 +231,10 @@ def load_combined_gt(parts: list, local_flights: dict, project_root: str) -> dic
 # ------------------------------------------------------------------------------
 #                           FLIGHT RESOLUTION
 # ------------------------------------------------------------------------------
-def resolve_local_flights(txt_path: str, project_root: str) -> dict:
+def resolve_local_flights(txt_path: str, dataset_root: str) -> dict:
     """
     Cross-references the flight IDs listed in txt_path against what is
-    actually present on disk under project_root/data/<part>/Images/.
+    actually present on disk under dataset_root/<part>/Images/.
 
     Only flights that are both listed in the .txt file AND have a matching
     folder on disk are included in the returned dict. Flights listed in the
@@ -242,7 +242,7 @@ def resolve_local_flights(txt_path: str, project_root: str) -> dict:
 
     Args:
         txt_path (str): Path to the flight-ID .txt file.
-        project_root (str): Absolute path to the project root directory.
+        dataset_root (str): Absolute path to the root of the data directory.
 
     Returns:
         dict: A dict keyed by flight folder name, where each value contains:
@@ -259,7 +259,7 @@ def resolve_local_flights(txt_path: str, project_root: str) -> dict:
     # Parse Each Tuple from the .txt File.
     for part, flight_hash in parse_flight_txt(txt_path):
         # Path to the Images Folder for this Part.
-        images_root = Path(project_root) / "data" / part / "Images"
+        images_root = Path(dataset_root) / part / "Images"
 
         # Skip Immediately if the Entire Part Images Folder is Absent.
         if not images_root.exists():
@@ -1007,7 +1007,7 @@ def prepare_subset(
     subset_txt     : str,
     run_dir        : str,
     run_gt_dir     : str,
-    project_root   : str,
+    dataset_root   : str,
 ) -> tuple[str, str, str, str]:
     """
     Stitches per-flight result.json files for a subset of flights, converts
@@ -1017,7 +1017,7 @@ def prepare_subset(
         subset_txt (str): Path to the .txt file listing subset flight IDs.
         run_dir (str): Path to the run directory (e.g. outputs/results/baseline/run0).
         run_gt_dir (str): Path to the run's gt/ dir (e.g. outputs/results/baseline/run0/gt).
-        project_root (str): Absolute path to the project root.
+        dataset_root (str): Absolute path to the root of the dataset directory.
 
     Returns:
         tuple: (subset_name, subset_result_dir, subset_gt_dir, subset_summary_dir)
@@ -1040,7 +1040,7 @@ def prepare_subset(
     log(LogLevel.INFO, "notebook_helpers:prepare_subset", "Preparing Subset: %s\n", subset_name)
 
     # Resolve Flight IDs.
-    subset_flights  = resolve_local_flights(subset_txt, project_root)
+    subset_flights  = resolve_local_flights(subset_txt, dataset_root)
     subset_ids_full = set(subset_flights.keys())
     subset_ids_hash = {re.sub(r'^part\d+', '', fid) for fid in subset_ids_full}
 
@@ -1094,7 +1094,7 @@ def prepare_subset(
         "samples": {
             flight_id: data
             for flight_id, data in full_gt["samples"].items()
-            if flight_id in subset_ids_hash
+            if any(flight_id.endswith(hash_id) for hash_id in subset_ids_hash)
         }
     }
 

@@ -183,7 +183,7 @@ def downloadFlights(dataset: Dataset, flight_ids: List[str]) -> None:
         print("Flight %d/%d  %s" % (idx + 1, total, flight_id))
 
         # Skip the Flight if Already Downloaded.
-        if os.path.exists("data/%s/Images/%s" %(flight_id[:5], flight_id)):
+        if os.path.exists("data/original_dataset/%s/Images/%s" %(flight_id[:5], flight_id)):
             print("            Already Downloaded. Skipping.")
             skipped += 1
             continue

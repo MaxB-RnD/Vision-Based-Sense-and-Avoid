@@ -16,7 +16,7 @@
 #                 detected airborne object. A status banner indicates whether
 #                 the current frame has a detection or not.
 #   VIDEO MODE  — Generates an annotated .mp4 for the selected flight using
-#                 the AOT library and saves it to 'data/part{N}/Videos/{id}.mp4'
+#                 the AOT library and saves it to 'data/original_dataset/part{N}/Videos/{id}.mp4'
 #
 # USAGE INSTRUCTIONS:
 #   1. Ensure Flight Images have Been Downloaded Via 'download_data.py'.
@@ -329,7 +329,7 @@ def generateVideo(flight: Any, flight_id: str) -> None:
     using the same drawBoundingBoxes() pipeline as the frame viewer, then
     writes each frame to an .mp4 at VIDEO_FPS.
 
-    Output is saved to data/part{N}/Videos/{flight_hash}.mp4.
+    Output is saved to data/original_dataset/part{N}/Videos/{flight_hash}.mp4.
 
     Args:
         flight (Any): AOT flight object from dataset.get_flight().
@@ -352,7 +352,7 @@ def generateVideo(flight: Any, flight_id: str) -> None:
     bare_id = flight_id[len(part):]
 
     # Build the Output File Path (Ensure Directory Exists).
-    output_dir = os.path.join('data', part, 'Videos')
+    output_dir = os.path.join('data', 'original_dataset', part, 'Videos')
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, bare_id + '.mp4')
 

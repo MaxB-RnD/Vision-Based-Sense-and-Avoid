@@ -91,7 +91,7 @@ def dataLoader(download: bool = True) -> Dataset:
     # Check if a Fresh Download Has Been Requested.
     if download:
         # Delete the Data SubFolders. ATO will Automatically ReDownload. 
-        for path in glob.glob("data/part*"):
+        for path in glob.glob("data/original_dataset/part*"):
             shutil.rmtree(path)
     else:
         # Do Nothing. ATO Only Loads when all Files still Exist. 
@@ -100,20 +100,20 @@ def dataLoader(download: bool = True) -> Dataset:
     try:
         # Initialise Part 1 of the Data.
         dataset = Dataset(
-            local_path='data/part1',
+            local_path='data/original_dataset/part1',
             s3_path='s3://airborne-obj-detection-challenge-training/part1/',
             prefix='part1',
             partial=PARTIAL        
         )
         # Add Part 2 of the Data. The partial argument is inherited from above.
         dataset.add(
-            local_path='data/part2',
+            local_path='data/original_dataset/part2',
             s3_path='s3://airborne-obj-detection-challenge-training/part2/',
             prefix='part2'        
         )
         # Add Part 3 of the Data. The partial argument is inherited from above.
         dataset.add(
-            local_path='data/part3',
+            local_path='data/original_dataset/part3',
             s3_path='s3://airborne-obj-detection-challenge-training/part3/',
             prefix='part3'
         )
