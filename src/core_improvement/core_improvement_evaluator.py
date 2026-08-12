@@ -319,9 +319,9 @@ def main() -> None:
         )
     
         # Print Summary to Console.
-        print("\n" + "=" * 70)
-        print("CORE BACKBONE IMPROVEMENT - FULL TEST DATASET SUMMARY".center(70))
-        print("=" * 70)
+        print("\n" + "=" * 75)
+        print("CORE BACKBONE IMPROVEMENT - FULL TEST DATASET SUMMARY".center(75))
+        print("=" * 75)
         print(summary_df.to_string(index=False))
 # ------------------------------------------------------------------------------
 
