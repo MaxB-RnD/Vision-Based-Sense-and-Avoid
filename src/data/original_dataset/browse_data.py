@@ -4,7 +4,7 @@
 # File:                    %name: browse_data.py %
 # Date Created:            %date_created: Fri Mar 06 22:48:34 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 2 %
+# CM Instance              %instance: 3 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -65,7 +65,7 @@ SELECTED_FLIGHTS_PATH = 'configs/datasets/selected_flights.txt'
 # ------------------------------------------------------------------------------
 #                               DATA DOWNLOAD
 # ------------------------------------------------------------------------------
-def dataLoader(download: bool = True) -> Dataset:
+def dataLoader(download: bool = True, data_root: str = 'data/original_dataset') -> Dataset:
     """
     Loads AOT dataset metadata from all three S3 parts without downloading images.
 
@@ -75,6 +75,7 @@ def dataLoader(download: bool = True) -> Dataset:
     Args:
         download (bool): If True, downloads metadata from S3 if not found locally.
                          If False, uses only locally cached files.
+        data_root (str): Root directory containing the dataset part folders.
 
     Returns:
         Dataset: Loaded dataset object containing all valid flights across 
@@ -91,7 +92,7 @@ def dataLoader(download: bool = True) -> Dataset:
     # Check if a Fresh Download Has Been Requested.
     if download:
         # Delete the Data SubFolders. ATO will Automatically ReDownload. 
-        for path in glob.glob("data/original_dataset/part*"):
+        for path in glob.glob(os.path.join(data_root, 'part*')):
             shutil.rmtree(path)
     else:
         # Do Nothing. ATO Only Loads when all Files still Exist. 
@@ -100,20 +101,20 @@ def dataLoader(download: bool = True) -> Dataset:
     try:
         # Initialise Part 1 of the Data.
         dataset = Dataset(
-            local_path='data/original_dataset/part1',
+            local_path=os.path.join(data_root, 'part1'),
             s3_path='s3://airborne-obj-detection-challenge-training/part1/',
             prefix='part1',
             partial=PARTIAL        
         )
         # Add Part 2 of the Data. The partial argument is inherited from above.
         dataset.add(
-            local_path='data/original_dataset/part2',
+            local_path=os.path.join(data_root, 'part2'),
             s3_path='s3://airborne-obj-detection-challenge-training/part2/',
             prefix='part2'        
         )
         # Add Part 3 of the Data. The partial argument is inherited from above.
         dataset.add(
-            local_path='data/original_dataset/part3',
+            local_path=os.path.join(data_root, 'part3'),
             s3_path='s3://airborne-obj-detection-challenge-training/part3/',
             prefix='part3'
         )

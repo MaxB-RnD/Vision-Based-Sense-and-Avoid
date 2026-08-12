@@ -90,6 +90,7 @@ from typing import Dict, List, Optional
 
 from logging_module import LogLevel, log
 from src.data.original_dataset.browse_data import dataLoader
+from src.data.original_dataset.view_data import generateVideo
 from src.data.corruption_dataset.corruptions import CORRUPTION_REGISTRY
 from src.data.corruption_dataset.severity_scheduler import buildSeveritySchedule
 
@@ -280,6 +281,71 @@ def copyImageSetFolders(flight_ids: List[str]) -> List[str]:
 
     # Return the Parts Whose ImageSets Folder Were Copied.
     return copied_parts
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
+#                       DATASET VISUALISATION
+# ------------------------------------------------------------------------------
+def visualiseFlights(flight_ids: List[str]) -> None:
+    """
+    Generates videos for three flights from each dataset part.
+    """
+    # Group the Flights by Dataset Part.
+    flights_by_part: Dict[str, List[str]] = {}
+
+    for flight_id in flight_ids:
+        part = partPrefixFromFlightId(flight_id)
+        flights_by_part.setdefault(part, []).append(flight_id)
+
+    # Randomly Select Up to Three Flights from Each Part.
+    rng = random.Random(SEED)
+    selected_flights: List[str] = []
+
+    for part, ids in sorted(flights_by_part.items()):
+        selected = ids[:]
+        rng.shuffle(selected)
+        selected_flights.extend(selected[:3])
+
+    # Load the Newly Created Corruption Dataset.
+    dataset = dataLoader(
+        download=False,
+        data_root=OUTPUT_DATA_ROOT
+    )
+
+    # Generate a Video for Each Selected Flight.
+    for idx, flight_id in enumerate(selected_flights):
+        print()
+        log(
+            LogLevel.INFO,
+            "build_corrupted_test_set:visualiseFlights",
+            "Generating Video %d/%d for Flight %s.",
+            idx + 1,
+            len(selected_flights),
+            flight_id
+        )
+
+        try:
+            # Retrieve the Flight from the Newly Generated Dataset.
+            flight = dataset.get_flight(flight_id)
+
+            # Generate the Video into the Corruption Dataset.
+            generateVideo(
+                flight,
+                flight_id,
+                output_data_root=OUTPUT_DATA_ROOT
+            )
+
+        except Exception as e:
+            # Continue with the Remaining Flights if Visualisation Fails.
+            print()
+            log(
+                LogLevel.WARNING,
+                "build_corrupted_test_set:visualiseFlights",
+                "Could Not Generate Video for Flight %s: %s. Skipping.\n",
+                flight_id,
+                str(e)
+            )
 # ------------------------------------------------------------------------------
 
 
@@ -556,6 +622,10 @@ def main() -> None:
     # Report the Location and Number of Corrupted Flights in the Manifest.
     log(LogLevel.INFO, "build_corrupted_test_set:main",
         "Manifest Written: %s (%d corrupted flights)", manifest_path, len(manifest_entries))
+
+    # Generate Videos for Three Flights from Each Dataset Part.
+    print()
+    visualiseFlights(flight_ids)
 
     # Display the Final Clean, Corrupted, and Per-Type Flight Counts.
     print()

@@ -48,7 +48,7 @@ from typing import Any
 
 from logging_module import LogLevel, log
 from src.data.original_dataset.browse_data import dataLoader
-from data.original_dataset.download_data import loadFlightIds
+from src.data.original_dataset.download_data import loadFlightIds
 
 # ------------------------------------------------------------------------------
 #                        CONFIGURATION VARIABLES
@@ -321,7 +321,7 @@ def viewFlight(flight: Any, flight_id: str) -> None:
 # ------------------------------------------------------------------------------
 #                           VIDEO GENERATOR
 # ------------------------------------------------------------------------------
-def generateVideo(flight: Any, flight_id: str) -> None:
+def generateVideo(flight: Any, flight_id: str, output_data_root: str = 'data/original_dataset') -> None:
     """
     Generates an annotated video for the given flight using OpenCV VideoWriter.
 
@@ -334,6 +334,8 @@ def generateVideo(flight: Any, flight_id: str) -> None:
     Args:
         flight (Any): AOT flight object from dataset.get_flight().
         flight_id (str): Flight ID string (e.g. 'part1abc123...').
+        output_data_root (str): Root directory of the dataset where the 
+                                Videos/ folder should be created.
 
     Returns:
         None:
@@ -352,7 +354,7 @@ def generateVideo(flight: Any, flight_id: str) -> None:
     bare_id = flight_id[len(part):]
 
     # Build the Output File Path (Ensure Directory Exists).
-    output_dir = os.path.join('data', 'original_dataset', part, 'Videos')
+    output_dir = os.path.join(output_data_root, part, 'Videos')
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, bare_id + '.mp4')
 
