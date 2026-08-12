@@ -22,7 +22,7 @@
 #   1. Ensure Flight Images have Been Downloaded Via 'download_data.py'.
 #   2. Set the Path to the Selected Flight(s) ID Text File.
 #   3. Run the Script from Project Root:
-#       - python -m src.data.view_data
+#       - python -m src.data.original_dataset.view_data
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
@@ -47,8 +47,8 @@ import numpy as np
 from typing import Any
 
 from logging_module import LogLevel, log
-from src.data.browse_data import dataLoader
-from src.data.download_data import loadFlightIds
+from src.data.original_dataset.browse_data import dataLoader
+from data.original_dataset.download_data import loadFlightIds
 
 # ------------------------------------------------------------------------------
 #                        CONFIGURATION VARIABLES

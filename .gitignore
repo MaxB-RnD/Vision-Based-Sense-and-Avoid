@@ -46,8 +46,8 @@
 **/*.onnx
 
 # Ignore Custom AOT Folders.
-/data
-model_training/
-*/results*
+/data/
 /wandb/
+*/results*
+model_training/
 # ==============================================================================

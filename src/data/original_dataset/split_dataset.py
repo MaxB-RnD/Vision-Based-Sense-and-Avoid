@@ -24,7 +24,7 @@
 #       - Default: hard_dataset_flights.txt
 #
 #   2. Run the Script from Project Root:
-#       - python -m src.data.split_dataset
+#       - python -m src.data.original_dataset.split_dataset
 #
 #   3. Optional Arguments:
 #       - --input <path>        : Input dataset file

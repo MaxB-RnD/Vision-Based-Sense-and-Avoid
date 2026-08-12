@@ -20,7 +20,7 @@
 #       - Path to the Flight ID Storage File. 
 #
 #   2. Run the Script from Project Root:    
-#       - python -m src.data.browse_data
+#       - python -m src.data.original_dataset.browse_data
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -

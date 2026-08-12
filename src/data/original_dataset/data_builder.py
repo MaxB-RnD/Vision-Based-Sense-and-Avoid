@@ -25,7 +25,7 @@
 #       - Filter Thresholds for Each Criteria.
 #
 #   2. Run the Script from Project Root:
-#       - python -m src.data.data_builder
+#       - python -m src.data.original_dataset.data_builder
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
@@ -43,7 +43,7 @@
 # ------------------------------------------------------------------------------
 
 from logging_module import LogLevel, log
-from src.data.browse_data import dataLoader, saveFlightId, bboxArea
+from src.data.original_dataset.browse_data import dataLoader, saveFlightId, bboxArea
 
 # ------------------------------------------------------------------------------
 #                           CONFIGURATION VARIABLES
