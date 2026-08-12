@@ -22,7 +22,7 @@
 # selected via a command-line argument.
 #
 # USAGE INSTRUCTIONS:
-#   1. Run the Script from this Folder:
+#   1. Run the Script from the Project Root:
 #         nohup python -m src.introspection_module.introspection_module_evaluator select_module > outputs/logs/introspection_module/introspection_module_evaluation.log 2>&1 &
 #
 #   2. Optional Environment Variables:

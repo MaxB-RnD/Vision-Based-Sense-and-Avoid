@@ -21,7 +21,7 @@
 # evaluation is selected via a command-line argument.
 #
 # USAGE INSTRUCTIONS:
-#   1. Run the Script from this Folder:
+#   1. Run the Script from the Project Root:
 #         nohup python -m src.core_improvement.core_improvement_evaluator select_model > outputs/logs/core_improvement/core_improvement_evaluation.log 2>&1 &
 #
 #   2. Optional Environment Variables:
