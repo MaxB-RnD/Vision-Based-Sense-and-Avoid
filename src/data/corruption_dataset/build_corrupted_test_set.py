@@ -25,7 +25,7 @@
 #
 # USAGE INSTRUCTIONS:
 #   1. Run the Script from the Project Root:
-#       - python -m src.data.corruption_dataset.build_corrupted_test_set
+#       - nohup python -m src.data.corruption_dataset.build_corrupted_test_set > outputs/logs/corrupt_dataset_generator.log 2>&1 &
 #
 #   2. Optional Environment Variables:
 #       - INPUT_TEST_FLIGHTS_PATH
@@ -64,6 +64,9 @@
 #       - MIN_TRACK_LENGTH_FOR_CORRUPTION
 #           Minimum number of frames required for a flight to be corrupted. Flights
 #           shorter than this threshold fall back to the clean dataset.
+#
+#   3. Then monitor from terminal with:
+#            tail -f outputs/logs/corrupt_dataset_generator.log
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
