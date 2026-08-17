@@ -103,9 +103,9 @@ def main() -> None:
         SELECTED_INTROSPECTION_MODULE = 0
 
     # Evaluation Filtering.
-    MIN_SCORE = 0.60
-    DETECTION_THRESHOLD = 0.60
-    MIN_TRACK_LEN = 30
+    MIN_SCORE = 0.6
+    DETECTION_THRESHOLD = 0.6
+    MIN_TRACK_LEN = 8
 
     # Set Path to Desired Evaluation Dataset.
     DATASET_PATH = "configs/datasets/training_subsets/test.txt"
