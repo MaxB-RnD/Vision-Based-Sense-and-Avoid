@@ -123,11 +123,14 @@ RAMP_SHAPE = 'linear'
 RAMP_LENGTH_FRAMES = 30
 PEAK_SEVERITY = 1.0
 
+# Minimum Clean Frames Before Ramp Starts.
+MIN_CLEAN_LEAD_FRAMES = 20
+
 # Fractional Range for Randomly Selecting the Corruption Onset.
 ONSET_FRACTION_RANGE = (0.30, 0.65)
 
-# Minimum Flight Length Required for Corruption.
-MIN_TRACK_LENGTH_FOR_CORRUPTION = RAMP_LENGTH_FRAMES + 20
+# Minimum Flight Length Required for Corruption (Lead-In + Ramp Duration + Post-Ramp).
+MIN_TRACK_LENGTH_FOR_CORRUPTION = MIN_CLEAN_LEAD_FRAMES + RAMP_LENGTH_FRAMES + 10
 # ------------------------------------------------------------------------------
 
 
@@ -382,13 +385,23 @@ def corruptFlight(dataset, flight_id: str, corruption_name: str) -> Optional[Dic
             flight_id, num_frames, MIN_TRACK_LENGTH_FOR_CORRUPTION)
         return None
 
-    # Choose the Onset Frame Randomly within the Configured Fraction Range.
+    # Ensure the Flight has Enough Frames to Satisfy the Clean Lead-In Plus Ramp.
+    latest_valid_onset = num_frames - RAMP_LENGTH_FRAMES - 1
+    if MIN_CLEAN_LEAD_FRAMES >= latest_valid_onset:
+        log(LogLevel.WARNING, "build_corrupted_test_set:corruptFlight",
+            "Flight %s Too Short (%d frames) for MIN_CLEAN_LEAD_FRAMES=%d + Ramp. Skipping Corruption.", flight_id, num_frames, MIN_CLEAN_LEAD_FRAMES)
+        return None
+
+    # Calculate Fraction-Based Bounds, Constrained by the Hard Clean Lead Floor.
     low_frac, high_frac = ONSET_FRACTION_RANGE
-    onset_frame = random.randint(
-        int(num_frames * low_frac),
-        max(int(num_frames * low_frac), int(num_frames * high_frac) - RAMP_LENGTH_FRAMES)
-    )
-    onset_frame = max(0, min(onset_frame, num_frames - 1))
+    earliest_onset = max(MIN_CLEAN_LEAD_FRAMES, int(num_frames * low_frac))
+    latest_onset = min(latest_valid_onset, max(earliest_onset, int(num_frames * high_frac) - RAMP_LENGTH_FRAMES))
+
+    # Ensure a Valid Integer Range for Random Selection.
+    if earliest_onset > latest_onset:
+        onset_frame = earliest_onset
+    else:
+        onset_frame = random.randint(earliest_onset, latest_onset)
 
     # Build the Per-Frame Severity Schedule for this Track.
     severity_schedule = buildSeveritySchedule(

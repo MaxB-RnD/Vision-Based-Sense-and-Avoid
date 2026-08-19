@@ -44,6 +44,11 @@ DEFAULT_FTPS_DEFAULT_THRESHOLD_   = 0.80  # Day-to-day working threshold.
 DEFAULT_FTPS_AVERAGE_RANGE_       = [round(t, 2) for t in np.arange(0.50, 1.00, 0.05)]  # mAP-style 50:5:95.
 DEFAULT_INTROSPECTION_FAILURE_THRESHOLD_ = 0.80  # Confidence threshold below which a matched detection is counted as an introspection failure.
 DEFAULT_MIN_MATCHED_FRAMES_FOR_DRIFT_ = 5        # Minimum number of matched frames required before calculating drift metrics, preventing unreliable measurements from very short track overlaps.
+DEFAULT_EARLY_TERMINATION_MARGIN_ = 3  # Matches max_coast_frames -- a track
+                                        # ending within this many frames of its
+                                        # real object's last appearance is
+                                        # explained by normal coast-then-drop
+                                        # behaviour, not a genuine failure.
 
 # Frame level detection rate calculation constants
 DEFAULT_MIN_OBJECT_AREA = 200 # minimum object area for frame level 
@@ -698,29 +703,38 @@ def compute_ftps(df_matches, min_score, num_sequences,
 # ------------------------------------------------------------------------------
 #                           INTROSPECTION METRICS
 # ------------------------------------------------------------------------------
-def augment_with_failure_onset_frame(df_matches, min_score, failure_threshold=DEFAULT_INTROSPECTION_FAILURE_THRESHOLD_):
+def augment_with_failure_onset_frame(df_matches, min_score,
+                                      failure_threshold=DEFAULT_INTROSPECTION_FAILURE_THRESHOLD_,
+                                      early_termination_margin=DEFAULT_EARLY_TERMINATION_MARGIN_):
     """
-    Computes the Failure Onset Frame per Track.
+    Computes the Failure Onset Frame per Track, using two failure types.
 
-    The Failure Onset Frame is the earliest frame t0 such that the
-    trailing unmatched-ratio, computed from t0 to the track's final frame,
-    never again drops below failure_threshold -- i.e. the earliest point
-    after which the track's failure state, evaluated over the remaining
-    trajectory, never recovers.
+    For sustained failures, the Failure Onset Frame is the earliest frame t0
+    such that the trailing unmatched-ratio, computed from t0 to the track's
+    final frame, never again drops below failure_threshold. For early
+    termination, it is the track's final submitted frame when the
+    ground-truth object remains present beyond early_termination_margin.
 
     Args:
         df_matches (pd.DataFrame): Ground-truth/detection match dataframe, must 
-                                   include 's' (confidence), 'gt_det_match', 'track_id', 
-                                   'flight_id', and 'frame' columns.
+            include 's' (confidence), 'gt_det_match', 'track_id', 'flight_id', 
+            and 'frame' columns.
+
         min_score (float): Minimum confidence score required for a detection to 
-                           count as a match. Detections below this threshold are 
-                           treated as unmatched before onset is computed.
+            count as a match. Detections below this threshold are treated as 
+            unmatched before onset is computed.
+
         failure_threshold (float): Unmatched-ratio threshold above which a track 
-                                   is considered a genuine failure.
+            is considered a genuine failure.
+
+        early_termination_margin (int): Minimum frame gap between a track's last
+            submission and the ground-truth object's last appearance to count as
+            early termination.
 
     Returns:
-        pd.DataFrame: One row per failed track, with columns flight_id, track_id, 
-                      failure_onset_frame, tot_num_frames.
+        pd.DataFrame: One row per failed track (either type), with columns
+            flight_id, track_id, failure_onset_frame, tot_num_frames,
+            failure_type ('sustained' or 'early_termination').
     """
     # Work on a Copy & Treat Any Detection Below min_score as Unmatched.
     df = df_matches.copy()
@@ -731,52 +745,102 @@ def augment_with_failure_onset_frame(df_matches, min_score, failure_threshold=DE
     df_frame_level = df.groupby(['flight_id', 'track_id', 'frame'])['gt_det_match'].max().reset_index()
     df_frame_level = df_frame_level.sort_values(['flight_id', 'track_id', 'frame'])
 
-    # Initalise Store for Onset Rows.
-    onset_rows = []
+    # Initialise Storage for Onset Rows.
+    sustained_rows = []
+    sustained_track_ids = set()
 
-    # Compute Onset Frame per Track.
+    # Compute Sustained Failure Onset per Track.
     for (flight_id, track_id), group in df_frame_level.groupby(['flight_id', 'track_id']):
         # Get Frames & GT Matches.
         frames = group['frame'].tolist()
         matches = group['gt_det_match'].tolist()
         n = len(frames)
 
-        # Skip Tracks that Never Cross the Failure Threshold Overall --
+        # Skip Tracks Below the Failure Threshold.
         overall_unmatched_ratio = 1 - (sum(matches) / n)
         if overall_unmatched_ratio < failure_threshold:
-            # Not a Genuine Failure. No Onset Frame.
-            continue 
+            # Not a Genuine Failure.
+            continue
 
-        # Scan Backward from the Track's Final Frame to Find the Earliest.
+        # Scan Backward to Find the Earliest Failure Frame.
         onset_idx = n - 1
         for i in range(n - 1, -1, -1):
-            # Count Suffix Matches.
+            # Calculate Suffix Unmatched Ratio.
             suffix = matches[i:]
             suffix_unmatched_ratio = 1 - (sum(suffix) / len(suffix))
 
-            # Stop the Loop If a Suffix Drops Back Below Threshold.
+            # Stop When the Suffix Drops Below the Threshold.
             if suffix_unmatched_ratio >= failure_threshold:
                 onset_idx = i
             else:
                 break
 
-        # Record This Track's Onset Frame.
-        onset_rows.append({
-            'flight_id': flight_id, 'track_id': track_id,
+        # Record the Sustained Failure Onset.
+        sustained_rows.append({
+            'flight_id': flight_id,
+            'track_id': track_id,
             'failure_onset_frame': frames[onset_idx],
             'tot_num_frames': n,
+            'failure_type': 'sustained',
         })
+        sustained_track_ids.add((flight_id, track_id))
 
-    # Return One Row per Failed Track. Preserve Expected Columns When No Tracks Failed.
-    return pd.DataFrame(
-        onset_rows,
-        columns=[
-            'flight_id',
-            'track_id',
-            'failure_onset_frame',
-            'tot_num_frames',
-        ],
+    # Last Frame Each Track Was Submitted.
+    df_submitted = df[df['track_id'].notna()]
+    track_last_frame = df_submitted.groupby(['flight_id', 'track_id'])['frame'].max()
+
+    # First Frame Each Track Was Submitted.
+    track_first_frame = df_submitted.groupby(['flight_id', 'track_id'])['frame'].min()
+
+    # Find the Dominant GT Object Matched by Each Track.
+    df_real_matches = df_submitted[df_submitted['gt_det_match'] == 1]
+    dominant_gt = (
+        df_real_matches.groupby(['flight_id', 'track_id', 'id'])
+        .size()
+        .reset_index(name='match_count')
+        .sort_values('match_count', ascending=False)
+        .drop_duplicates(subset=['flight_id', 'track_id'])
+        .set_index(['flight_id', 'track_id'])['id']
     )
+
+    # Last Frame Each GT Object Is Present.
+    true_object_last_frame = df.dropna(subset=['id']).groupby(['flight_id', 'id'])['frame'].max()
+
+    # Store Early Termination Failure Rows.
+    early_term_rows = []
+
+    # Check Each Track for Early Termination.
+    for (flight_id, track_id), last_frame in track_last_frame.items():
+        # Skip Tracks Already Classified as Sustained Failures.
+        if (flight_id, track_id) in sustained_track_ids:
+            continue
+
+        # Skip Tracks Without a Dominant GT Object.
+        if (flight_id, track_id) not in dominant_gt.index:
+            continue
+
+        # Shouldn't Happen, but Guard Against a Missing Lookup Regardless.
+        gt_id = dominant_gt.loc[(flight_id, track_id)]
+        if (flight_id, gt_id) not in true_object_last_frame.index:
+            continue  
+
+        # Compare Track and GT Final Frames.
+        true_end = true_object_last_frame.loc[(flight_id, gt_id)]
+        gap = true_end - last_frame
+
+        # Check for Early Termination.
+        if gap > early_termination_margin:
+            first_frame = track_first_frame.loc[(flight_id, track_id)]
+            early_term_rows.append({
+                'flight_id': flight_id,
+                'track_id': track_id,
+                'failure_onset_frame': last_frame,
+                'tot_num_frames': int(true_end - first_frame + 1),
+                'failure_type': 'early_termination',
+            })
+
+    # Combine Sustained and Early Termination Failures.
+    return pd.DataFrame(sustained_rows + early_term_rows)
 
 
 def compute_introspection_metrics(df_matches, min_score, num_sequences, failure_threshold=DEFAULT_INTROSPECTION_FAILURE_THRESHOLD_):

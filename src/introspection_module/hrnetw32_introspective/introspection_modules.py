@@ -119,7 +119,7 @@ class ConfidenceThresholdIntrospectionModule(IntrospectionModule):
     # Identifier Used to Select this Strategy within the Evaluation Framework.
     name = "confidence_threshold"
 
-    def __init__(self, threshold: float = 0.70, window: int = 1):
+    def __init__(self, threshold: float = 0.70, window: int = 3):
         # Minimum Confidence Required Before Escalation is Considered.
         self.threshold = threshold
 
@@ -262,7 +262,7 @@ class CoastCountIntrospectionModule(IntrospectionModule):
     # Identifier Used to Select this Strategy within the Evaluation Framework.
     name = "coast_count_threshold"
 
-    def __init__(self, threshold: int = 2):
+    def __init__(self, threshold: int = 3):
         # Number of Consecutive Coasted Frames Required Before Escalation.
         self.threshold = threshold
 
