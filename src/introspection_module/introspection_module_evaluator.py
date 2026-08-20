@@ -110,7 +110,7 @@ def main() -> None:
     # Set Path to Desired Evaluation Dataset.
     DATASET_PATH = "configs/datasets/training_subsets/test.txt"
     DATASET_PARTS = ["part1", "part2", "part3"]
-    DATASET_ROOT = os.path.join(PROJECT_ROOT, "data", "original_dataset")
+    DATASET_ROOT = os.path.join(PROJECT_ROOT, "data", "corruption_dataset")
 
     # Set Results Variables (Auto-Incrementing Run Directory).
     RESULTS_DIR = "outputs/results/introspection_module/" + module_list[SELECTED_INTROSPECTION_MODULE]

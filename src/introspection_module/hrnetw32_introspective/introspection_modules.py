@@ -119,7 +119,7 @@ class ConfidenceThresholdIntrospectionModule(IntrospectionModule):
     # Identifier Used to Select this Strategy within the Evaluation Framework.
     name = "confidence_threshold"
 
-    def __init__(self, threshold: float = 0.70, window: int = 5):
+    def __init__(self, threshold: float = 0.70, window: int = 3):
         # Minimum Confidence Required Before Escalation is Considered.
         self.threshold = threshold
 
@@ -172,7 +172,7 @@ class RollingConfidenceTrendIntrospectionModule(IntrospectionModule):
     name = "rolling_confidence_trend"
 
     def __init__(self, ewma_threshold: float = 0.70, ewma_alpha: float = 0.30,
-                 slope_threshold: float = -0.05, min_history: int = 5):
+                 slope_threshold: float = -0.05, min_history: int = 3):
         # Set EWMA Threshold.
         self.ewma_threshold = ewma_threshold
 
@@ -262,7 +262,7 @@ class CoastCountIntrospectionModule(IntrospectionModule):
     # Identifier Used to Select this Strategy within the Evaluation Framework.
     name = "coast_count_threshold"
 
-    def __init__(self, threshold: int = 5):
+    def __init__(self, threshold: int = 3):
         # Number of Consecutive Coasted Frames Required Before Escalation.
         self.threshold = threshold
 
