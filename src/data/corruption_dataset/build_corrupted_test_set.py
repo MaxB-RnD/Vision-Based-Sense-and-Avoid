@@ -4,7 +4,7 @@
 # File:                    %name: build_corrupted_test_set.py %
 # Date Created:            %date_created: Wed Aug 12 17:56:48 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 3 %
+# CM Instance              %instance: 4 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -113,7 +113,7 @@ OUTPUT_DATA_ROOT = os.path.join('data', 'corruption_dataset')
 SEED = 42
 
 # Fraction of Test Flights to Corrupt.
-CORRUPTED_FRACTION = 0.5
+CORRUPTED_FRACTION = 1
 
 # Corruption Types to Apply.
 ACTIVE_CORRUPTIONS = ['iso_noise', 'defocus_blur', 'colour_quantisation']

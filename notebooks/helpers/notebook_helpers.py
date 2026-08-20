@@ -4,7 +4,7 @@
 # File:                    %name: notebook_helpers.py %
 # Date Created:            %date_created: Mon Mar 23 21:38:21 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 1 %
+# CM Instance              %instance: 3 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -904,11 +904,48 @@ def build_introspection_summary(
     awlt = summary.get("awlt")
     fnr = summary.get("false_negative_rate")
     far = summary.get("false_alarm_rate")
-    num_failed = summary.get("num_failed_tracks")
     num_correct = summary.get("num_correct_tracks")
     mean_iou_slope = summary.get("mean_iou_slope")
     pct_drifting = summary.get("pct_tracks_drifting")
     num_drift_tracks = summary.get("num_eligible_drift_tracks")
+
+    # Per-Failure-Type Breakdown Metrics for Introspection -- Use .get() Rather
+    # than Direct Indexing, Since Older summary.json Files Won't Have these Keys.
+    awlt_by_type       = summary.get("awlt_by_failure_type", {})
+    fnr_by_type        = summary.get("false_negative_rate_by_failure_type", {})
+    num_failed_by_type = summary.get("num_failed_tracks_by_failure_type", {})
+
+    def _format_by_type_status(value_by_type, count_by_type, value_fmt):
+        """Build a status string showing each metric by failure type and sample count."""
+        # No Breakdown Available: Return an Empty Status String.
+        if not value_by_type:
+            return ""
+
+        # Create a Store for Seperate Error Types. 
+        parts = []
+
+        # Format the Divergence & Premature-Loss Results Using Consistent Labels.
+        for failure_type, label in (("sustained", "Divergence"), ("early_termination", "Premature")):
+            v = value_by_type.get(failure_type)
+            n = count_by_type.get(failure_type)
+
+            # Show N/A when a Metric is Unavailable for that Failure Type.
+            v_str = value_fmt(v) if v is not None else "N/A"
+
+            # Include the Number of Failed Tracks when Available.
+            n_str = f" (N={n})" if n is not None else ""
+
+            # Add the Failure Type with its Label. 
+            parts.append(f"{label}: {v_str}{n_str}")
+
+        # Combine Both Failure Types into a Single Display String.
+        return " | ".join(parts)
+
+    # Format AWLT to 2 Decimal Places for Display.
+    awlt_status = _format_by_type_status(awlt_by_type, num_failed_by_type, lambda v: f"{v:.2f}")
+
+    # Format FNR to 4 Decimal Places for Display.
+    fnr_status = _format_by_type_status( fnr_by_type, num_failed_by_type, lambda v: f"{v:.4f}")
 
     # Load FPS Stats (Written by record_fps_stats During Inference).
     fps = load_fps_stats(run_dir)
@@ -917,10 +954,10 @@ def build_introspection_summary(
     rows = [
         # Introspection Metrics.
         {"Metric": "", "Value": "", "Status": ""},
-        {"Metric": "Average Warning Lead Time (AWLT)",            "Value": f"{awlt:.2f}" if awlt is not None else "N/A",                                "Status": ""},
-        {"Metric": "False Negative Rate",                         "Value": f"{fnr:.4f}" if fnr is not None else "N/A",                                  "Status": f"N = {num_failed} Failed Tracks" if num_failed is not None else ""},
+        {"Metric": "Average Warning Lead Time (AWLT)",            "Value": f"{awlt:.2f}" if awlt is not None else "N/A",                                "Status": awlt_status},
+        {"Metric": "False Negative Rate",                         "Value": f"{fnr:.4f}" if fnr is not None else "N/A",                                  "Status": fnr_status},
         {"Metric": "False Alarm Rate (FAR)",                      "Value": f"{far:.4f}" if far is not None else "N/A",                                  "Status": f"N = {num_correct} Correct Tracks" if num_correct is not None else ""},
-        {"Metric": "Positional Divergence (Mean IoU Slope)",      "Value": f"{mean_iou_slope:.6f}" if mean_iou_slope is not None else "N/A",            "Status": f"N = {num_drift_tracks} Tracks, {pct_drifting:.1%} Drifting" if num_drift_tracks is not None else ""},
+        {"Metric": "Positional Divergence (Mean IoU Slope)",      "Value": f"{mean_iou_slope:.6f}" if mean_iou_slope is not None else "N/A",            "Status": f"N = {num_drift_tracks} Tracks | {pct_drifting:.1%} Drifting" if num_drift_tracks is not None else ""},
 
         # Detection Metrics.
         {"Metric": "", "Value": "", "Status": ""},

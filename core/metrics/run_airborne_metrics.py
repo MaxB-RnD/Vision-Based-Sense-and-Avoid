@@ -152,6 +152,18 @@ def summarize(summaries_dir):
             results['False Alarm Rate'].append(round(summary['false_alarm_rate'], 5) if summary['false_alarm_rate'] is not None else None)
             results['Mean IoU Slope'].append(summary['mean_iou_slope'])
 
+            # Introspection Metrics (Split by Failure Type).
+            awlt_by_type = summary.get('awlt_by_failure_type', {})
+            fnr_by_type = summary.get('false_negative_rate_by_failure_type', {})
+            num_failed_by_type = summary.get('num_failed_tracks_by_failure_type', {})
+            for failure_type, column_label in (('sustained', 'Divergence'), ('early_termination', 'Premature Loss')):
+                fnr_value = fnr_by_type.get(failure_type)
+                results['AWLT ({})'.format(column_label)].append(awlt_by_type.get(failure_type))
+                results['False Negative Rate ({})'.format(column_label)].append(
+                    round(fnr_value, 5) if fnr_value is not None else None)
+                results['Num Failed Tracks ({})'.format(column_label)].append(
+                    num_failed_by_type.get(failure_type))
+
             # Original Tracking Metrics.
             for dr_criteria in ['Tracking']:
                 for scenario in list(HORIZON_QUERIES.keys()):

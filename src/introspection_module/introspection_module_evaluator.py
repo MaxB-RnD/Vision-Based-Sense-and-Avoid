@@ -307,9 +307,9 @@ def main() -> None:
         )
     
         # Print Summary to Console.
-        print("\n" + "=" * 81)
-        print("INTROSPECTION MODULE - FULL TEST DATASET SUMMARY".center(81))
-        print("=" * 81)
+        print("\n" + "=" * 93)
+        print("INTROSPECTION MODULE - FULL TEST DATASET SUMMARY".center(93))
+        print("=" * 93)
         print(summary_df.to_string(index=False))
 # ------------------------------------------------------------------------------
 
