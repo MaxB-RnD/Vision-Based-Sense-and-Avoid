@@ -443,13 +443,13 @@ def augment_with_moving_most_common_track_id_count_per_encounter(df_matches, tem
                                                                         i in range(0, len(frame))]
         return pd.DataFrame(data={'track_fl_dr': values}, index=index).reindex(frame.index)
 
-    df_same_track_id_count = df_matches.groupby(['encounter_id'])
-    
+    df_same_track_id_count = df_matches.groupby('encounter_id')
+
     df_matched_track_freq = pd.DataFrame(columns=['encounter_id', 'track_fl_dr'])
     for encounter_name, group in df_same_track_id_count: 
         df_res = my_rolling_apply_char(group['matched_track_id'], temporal_window, get_most_common_freq)
         df_res = df_res.assign(encounter_id = encounter_name)
-        df_matched_track_freq = df_matched_track_freq.append(df_res)
+        df_matched_track_freq = pd.concat([df_matched_track_freq, df_res])
     df_matched_track_freq.index.name = 'frame'
     return df_matched_track_freq.reset_index()
 
