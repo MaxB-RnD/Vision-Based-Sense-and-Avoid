@@ -1,0 +1,22 @@
+Metric,Value,Status
+,,
+Average Warning Lead Time (AWLT),162.32,Divergence: N/A (N=6) | Premature: 162.32 (N=102)
+False Negative Rate,0.6852,Divergence: 0.0000 (N=6) | Premature: 0.7255 (N=102)
+False Alarm Rate (FAR),0.0005,N = 37462 Correct Tracks
+Positional Divergence (Mean IoU Slope),-0.001676,N = 175 Tracks | 49.1% Drifting
+,,
+AFDR (Airborne Flight Detection Rate),0.4469,
+Total Aircraft Detected,16426,
+Total Aircraft in Dataset,36755,
+,,
+CEDR (Continuous Encounter Detection Rate),0.3294,N = 208
+FTPS@50 (False Tracks Per Sequence),0.0214,N = 5/175 Tracks
+FTPS@80 (False Tracks Per Sequence),0.0214,N = 5/175 Tracks
+FTPS@95 (False Tracks Per Sequence),0.0214,N = 5/175 tracks
+FTPS avg(50:95),0.0214,N = 175 Eligible Tracks
+,,
+FPS Mean,10.38,
+FPS Std Dev,0.31,
+FPS Min,6.54,
+FPS Max,11.53,
+Frames Measured,49793,

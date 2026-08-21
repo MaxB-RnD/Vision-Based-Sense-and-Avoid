@@ -1,0 +1,110 @@
+{
+    "gt_encounters": "outputs/results/introspection_module/confidence_threshold/run3/gt/groundtruth_with_encounters_maxRange700_maxGap3_minEncLen30.csv",
+    "gt_det_matches": "outputs/results/introspection_module/confidence_threshold/run3/result/result_metrics_min_track_len_8/gt_det_matches_extended_iou_minObjArea_100_matchThresh_0_2_noMatchThresh_0_02.csv",
+    "target_metrics": null,
+    "target_value": null,
+    "min_det_score": 0.6000126004219055,
+    "ftps_rate_by_threshold": {
+        "50": 0.021367521367521368,
+        "80": 0.021367521367521368,
+        "95": 0.021367521367521368
+    },
+    "ftps_count_by_threshold": {
+        "50": 5,
+        "80": 5,
+        "95": 5
+    },
+    "ftps_averaged": 0.021367521367521368,
+    "ftps_num_eligible_tracks": 175,
+    "ftps_num_sequences": 234,
+    "fppi": 0.017988603751611695,
+    "far": 15.64102564102564,
+    "num_planned_intruders": 36755,
+    "num_non_planned_intruders": 24125,
+    "num_non_planned_aircraft": 11404,
+    "cedr_mean": 0.3293703094181025,
+    "cedr_num_qualifying_encounters": 208,
+    "awlt": 162.31578947368422,
+    "false_negative_rate": 0.6851851851851852,
+    "false_alarm_rate": 0.0004804868933852971,
+    "num_failed_tracks": 108,
+    "num_correct_tracks": 37462,
+    "awlt_by_failure_type": {
+        "early_termination": 162.31578947368422,
+        "sustained": null
+    },
+    "false_negative_rate_by_failure_type": {
+        "early_termination": 0.7254901960784313,
+        "sustained": 0.0
+    },
+    "num_failed_tracks_by_failure_type": {
+        "early_termination": 102,
+        "sustained": 6
+    },
+    "mean_iou_slope": -0.0016756551917260693,
+    "pct_tracks_drifting": 0.49142857142857144,
+    "num_eligible_drift_tracks": 175,
+    "max_range": 699.9811862165178,
+    "tot_aircraft_in_range": 36755,
+    "det_aircraft_in_range": 16426,
+    "fl_dr_in_range": 0.4469051829683036,
+    "thresh_area": 200.0,
+    "tot_aircraft_above_area": 16530,
+    "det_aircraft_above_area": 40975,
+    "fl_dr_above_area": 0.40341671751067726,
+    "tot_aircraft_below_area": 239,
+    "det_aircraft_below_area": 7184,
+    "fl_dr_below_area": 0.03326837416481069,
+    "Detection": {
+        "Encounters": {
+            "300": {
+                "Below Horizon": {
+                    "detected": 57,
+                    "total": 116,
+                    "dr": 0.49137931034482757
+                },
+                "Mixed": {
+                    "detected": 18,
+                    "total": 29,
+                    "dr": 0.6206896551724138
+                },
+                "Above Horizon": {
+                    "detected": 44,
+                    "total": 63,
+                    "dr": 0.6984126984126984
+                },
+                "All": {
+                    "detected": 119,
+                    "total": 208,
+                    "dr": 0.5721153846153846
+                }
+            }
+        }
+    },
+    "Tracking": {
+        "Encounters": {
+            "300": {
+                "Below Horizon": {
+                    "detected": 57,
+                    "total": 116,
+                    "dr": 0.49137931034482757
+                },
+                "Mixed": {
+                    "detected": 18,
+                    "total": 29,
+                    "dr": 0.6206896551724138
+                },
+                "Above Horizon": {
+                    "detected": 44,
+                    "total": 63,
+                    "dr": 0.6984126984126984
+                },
+                "All": {
+                    "detected": 119,
+                    "total": 208,
+                    "dr": 0.5721153846153846
+                }
+            }
+        }
+    }
+}
