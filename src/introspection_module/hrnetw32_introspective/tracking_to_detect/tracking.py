@@ -279,6 +279,9 @@ class SimpleOffsetTracker:
         # Work on a Copy to Preserve the Original Detections.
         detections = copy.deepcopy(detections)
 
+        # Track IDs Claimed by a cur_item ALREADY Processed THIS Frame.
+        claimed_track_ids_this_frame = set()
+
         for cur_item in detections:
             # Ignore Low-Confidence Detections.
             if cur_item.confidence < self.threshold_to_continue:
@@ -303,9 +306,12 @@ class SimpleOffsetTracker:
                 if len(self.prev_frames_items) < frames_offset:
                     break
 
-                # Associate with the Best Historical Detection.
+                # Associate with the Best Historical Detection. Excludes Historical Detections Already Claimed THIS Frame.
                 prev_item_distances = [
-                    self.distance(cur_item, prev_item, frames_offset) if prev_item.next_item_idx is None else 1000
+                    self.distance(cur_item, prev_item, frames_offset)
+                    if (prev_item.next_item_idx is None
+                        and prev_item.track_id not in claimed_track_ids_this_frame)
+                    else 1000
                     for prev_item in self.prev_frames_items[-frames_offset]
                 ]
 
@@ -342,6 +348,10 @@ class SimpleOffsetTracker:
                     # Allocate a New Track Identifier When Required.
                     if cur_item.track_id < 0:
                         cur_item.track_id = self.allocate_track_id()
+
+                # Claim this track_id for the Remainder of the Current Frame.
+                if cur_item.track_id >= 0:
+                    claimed_track_ids_this_frame.add(cur_item.track_id)
 
             # Add the Detection to the Tracking History.
             items_to_keep.append(cur_item)
