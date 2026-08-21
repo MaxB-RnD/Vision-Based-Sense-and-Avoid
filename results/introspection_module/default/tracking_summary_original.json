@@ -1,6 +1,6 @@
 {
-    "gt_encounters": "outputs/results/introspection_module/none/run1/gt/groundtruth_with_encounters_maxRange700_maxGap3_minEncLen30.csv",
-    "gt_det_matches": "outputs/results/introspection_module/none/run1/result/result_metrics_min_track_len_8/gt_det_matches_extended_iou_minObjArea_100_matchThresh_0_2_noMatchThresh_0_02.csv",
+    "gt_encounters": "outputs/results/introspection_module/none/run8/gt/groundtruth_with_encounters_maxRange700_maxGap3_minEncLen30.csv",
+    "gt_det_matches": "outputs/results/introspection_module/none/run8/result/result_metrics_min_track_len_8/gt_det_matches_extended_iou_minObjArea_100_matchThresh_0_2_noMatchThresh_0_02.csv",
     "target_metrics": null,
     "target_value": null,
     "min_det_score": 0.6000424504280091,
@@ -29,6 +29,18 @@
     "false_alarm_rate": 0.0,
     "num_failed_tracks": 12,
     "num_correct_tracks": 20290,
+    "awlt_by_failure_type": {
+        "early_termination": null,
+        "sustained": null
+    },
+    "false_negative_rate_by_failure_type": {
+        "early_termination": 1.0,
+        "sustained": 1.0
+    },
+    "num_failed_tracks_by_failure_type": {
+        "early_termination": 7,
+        "sustained": 5
+    },
     "mean_iou_slope": 0.00032500049125817567,
     "pct_tracks_drifting": 0.23557692307692307,
     "num_eligible_drift_tracks": 208,

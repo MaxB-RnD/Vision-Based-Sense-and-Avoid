@@ -1,6 +1,6 @@
 {
-    "gt_encounters": "outputs/results/introspection_module/coast_count_threshold/run6/gt/groundtruth_with_encounters_maxRange700_maxGap3_minEncLen30.csv",
-    "gt_det_matches": "outputs/results/introspection_module/coast_count_threshold/run6/result/result_metrics_min_track_len_8/gt_det_matches_extended_iou_minObjArea_100_matchThresh_0_2_noMatchThresh_0_02.csv",
+    "gt_encounters": "outputs/results/introspection_module/coast_count_threshold/run2/gt/groundtruth_with_encounters_maxRange700_maxGap3_minEncLen30.csv",
+    "gt_det_matches": "outputs/results/introspection_module/coast_count_threshold/run2/result/result_metrics_min_track_len_8/gt_det_matches_extended_iou_minObjArea_100_matchThresh_0_2_noMatchThresh_0_02.csv",
     "target_metrics": null,
     "target_value": null,
     "min_det_score": 0.6000424504280091,
@@ -24,11 +24,23 @@
     "num_non_planned_aircraft": 11404,
     "cedr_mean": 0.638813476039378,
     "cedr_num_qualifying_encounters": 208,
-    "awlt": null,
-    "false_negative_rate": 0.2,
-    "false_alarm_rate": 0.002709760063063507,
-    "num_failed_tracks": 5,
-    "num_correct_tracks": 20297,
+    "awlt": 43.333333333333336,
+    "false_negative_rate": 0.5833333333333334,
+    "false_alarm_rate": 0.0008871365204534253,
+    "num_failed_tracks": 12,
+    "num_correct_tracks": 20290,
+    "awlt_by_failure_type": {
+        "early_termination": 43.333333333333336,
+        "sustained": null
+    },
+    "false_negative_rate_by_failure_type": {
+        "early_termination": 0.42857142857142855,
+        "sustained": 0.8
+    },
+    "num_failed_tracks_by_failure_type": {
+        "early_termination": 7,
+        "sustained": 5
+    },
     "mean_iou_slope": 0.00032500049125817567,
     "pct_tracks_drifting": 0.23557692307692307,
     "num_eligible_drift_tracks": 208,
