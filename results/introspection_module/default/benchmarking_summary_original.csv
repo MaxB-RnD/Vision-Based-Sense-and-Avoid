@@ -1,9 +1,9 @@
 Metric,Value,Status
 ,,
-Average Warning Lead Time (AWLT),N/A,Divergence: N/A (N=5) | Premature: N/A (N=7)
-False Negative Rate,1.0000,Divergence: 1.0000 (N=5) | Premature: 1.0000 (N=7)
+Average Warning Lead Time,N/A,Divergence: N/A (N=5) | Premature Loss: N/A (N=7)
+False Negative Rate,1.0000,Divergence: 1.0000 (N=5) | Premature Loss: 1.0000 (N=7)
 False Alarm Rate (FAR),0.0000,N = 20290 Correct Tracks
-Positional Divergence (Mean IoU Slope),0.000325,N = 208 Tracks | 23.6% Drifting
+Positional Divergence (Mean IoU Slope),0.000325,"N = 208 Tracks, 23.6% Drifting"
 ,,
 AFDR (Airborne Flight Detection Rate),0.8119,
 Total Aircraft Detected,29841,
