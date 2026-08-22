@@ -819,7 +819,9 @@ def augment_with_failure_onset_frame(df_matches, min_score,
     true_object_last_frame = df.dropna(subset=['id']).groupby(['flight_id', 'id'])['frame'].max()
 
     # Frames on Which Each GT Object was Genuinely Matched by ANY Track. 
-    matched_frames_by_gt = df_real_matches.groupby(['flight_id', 'id'])['frame'].apply(lambda frames: sorted(set(frames)))
+    matched_frames_by_gt = df_real_matches.groupby(['flight_id', 'id'])['frame'].apply(
+        lambda frames: sorted(set(frames))
+    )
 
     # Store Early Termination Failure Rows.
     early_term_rows = []
@@ -850,13 +852,15 @@ def augment_with_failure_onset_frame(df_matches, min_score,
         # CANDIDATE Early Termination. Check for GT Reacquisition within Grace Period.
         reacquisition_window_end = last_frame + reacquisition_grace_period
         gt_matched_frames = matched_frames_by_gt.get((flight_id, gt_id), [])
-        was_reacquired = any(last_frame < f <= reacquisition_window_end for f in gt_matched_frames)
+        was_reacquired = any(
+            last_frame < f <= reacquisition_window_end for f in gt_matched_frames
+        )
 
-        # Successfully Reacquired Within the Grace Period. Not a Failure.
+        # Successfully Reacquired Within the Grace Period -- Not a Failure.
         if was_reacquired:
             continue
 
-        # Genuine Early Termination. No Track Picked the Object Back Up in Time.
+        # Genuine Early Termination: No Track Picked the Object Back Up in Time.
         first_frame = track_first_frame.loc[(flight_id, track_id)]
         early_term_rows.append({
             'flight_id': flight_id,
@@ -872,7 +876,8 @@ def augment_with_failure_onset_frame(df_matches, min_score,
 
 def _awlt_and_fnr_for_tracks(df_onset, first_warning):
     """
-    Shared AWLT / False Negative Rate Calculation Over a Set of Failed Tracks.
+    Shared AWLT (Mean & Median) / False Negative Rate Calculation Over a Set
+    of Failed Tracks.
 
     Factored out of compute_introspection_metrics() so the Exact Same Logic
     can be Applied Once to the Full (Pooled) Set of Failed Tracks, and Again
@@ -881,14 +886,13 @@ def _awlt_and_fnr_for_tracks(df_onset, first_warning):
     Args:
         df_onset (pd.DataFrame): Rows for the Failed Tracks to Evaluate.
             Must Include 'flight_id', 'track_id', 'failure_onset_frame'.
-
         first_warning (Dict[Tuple, int]): Maps (flight_id, track_id) to the
             First Frame on Which that Track was Ever Warned About.
 
     Returns:
-        Tuple[Optional[float], float, int, int]: (awlt, fnr, num_warned_in_advance, num_missed).
+        Tuple[Optional[float], Optional[float], float, int, int]: (awlt_mean, awlt_median, fnr, num_warned_in_advance, num_missed).
     """
-    # AWLT & False Negative Rate (Over the Supplied Failed Tracks).
+    # AWLT & False Negative Rate (Over the Supplied Failed Tracks)
     lead_times = []
     num_missed = 0
 
@@ -905,16 +909,18 @@ def _awlt_and_fnr_for_tracks(df_onset, first_warning):
 
         # Only Warnings Issued Strictly Before Failure Count Toward AWLT.
         elif t_warn < t0:
+            # Warned About STRICTLY BEFORE Onset.
             lead_times.append(t0 - t_warn)
 
     # Average Warning Lead Time Over Tracks Warned Before Failure Onset.
-    awlt = (sum(lead_times) / len(lead_times)) if lead_times else None
+    awlt_mean = (sum(lead_times) / len(lead_times)) if lead_times else None
+    awlt_median = float(np.median(lead_times)) if lead_times else None
 
     # False Negative Rate = Missed Failures / Total Failed Tracks.
     fnr = (num_missed / len(df_onset)) if len(df_onset) else 0.0
 
     # Return the Results. 
-    return awlt, fnr, len(lead_times), num_missed
+    return awlt_mean, awlt_median, fnr, len(lead_times), num_missed
 
 
 def compute_introspection_metrics(df_matches, min_score, num_sequences,
@@ -950,16 +956,18 @@ def compute_introspection_metrics(df_matches, min_score, num_sequences,
             itself, since AWLT/FNR/FAR are all ratios or means over tracks, not 
             per-sequence rates.
         failure_threshold (float): Forwarded to augment_with_failure_onset_frame() 
-            -- see function docstring.
+            -- see that function's docstring.
         early_termination_margin (int): Forwarded to augment_with_failure_onset_frame()
-            -- see function docstring.
+            -- see that function's docstring.
         reacquisition_grace_period (int): Forwarded to augment_with_failure_onset_frame()
-            -- see function docstring.
+            -- see that function's docstring.
 
     Returns:
         dict: {
-            awlt: mean lead time in frames (None if no track was ever warned about strictly 
-                  before its onset frame), pooled over ALL failure types,
+            awlt_mean: mean lead time in frames (None if no track was ever warned about strictly 
+                    before its onset frame), pooled over ALL failure types,
+            awlt_median: median lead time in frames (None if no track was ever warned about strictly 
+                    before its onset frame), pooled over ALL failure types,
             fnr: False Negative Rate, pooled over ALL failure types,
             far: False Alarm Rate,
             num_failed_tracks: total tracks FTPS/onset classifies as genuine failures,
@@ -970,6 +978,12 @@ def compute_introspection_metrics(df_matches, min_score, num_sequences,
             by_failure_type: dict keyed by failure_type ('sustained', i.e. divergence-type, and 
                              'early_termination', i.e. premature track-loss).
         }
+    
+    Raises:
+        AssertionError: if 'warning' is not present in df_matches -- this means 
+        the introspective predictor's warning field isn't flowing all the way 
+        through register_object_and_location() and normalize_json_result_to_dataframe() 
+        into the results this function reads.
     """
     # Confirm the 'warning' Column Exists Before Doing Any Real Work.
     assert is_in_df_columns(df_matches, ['warning']), (
@@ -997,16 +1011,18 @@ def compute_introspection_metrics(df_matches, min_score, num_sequences,
     num_false_alarms = sum(1 for key in correct_track_ids if key in first_warning)
     far = (num_false_alarms / len(correct_track_ids)) if correct_track_ids else 0.0
 
-    # AWLT & False Negative Rate, Pooled Over ALL Failure Types.
-    awlt, fnr, num_warned_in_advance, num_missed = _awlt_and_fnr_for_tracks(df_onset, first_warning)
+    # AWLT (Mean & Median) & False Negative Rate, Pooled Over ALL Failure Types.
+    awlt_mean, awlt_median, fnr, num_warned_in_advance, num_missed = _awlt_and_fnr_for_tracks(
+        df_onset, first_warning)
 
     # Same Calculation Again, but Restricted to Each Failure Type in Turn.
     by_failure_type = {}
     for failure_type in sorted(df_onset['failure_type'].unique()) if len(df_onset) else []:
         df_onset_type = df_onset[df_onset['failure_type'] == failure_type]
-        type_awlt, type_fnr, type_num_warned, type_num_missed = _awlt_and_fnr_for_tracks(df_onset_type, first_warning)
+        type_awlt_mean, type_awlt_median, type_fnr, type_num_warned, type_num_missed = _awlt_and_fnr_for_tracks(
+            df_onset_type, first_warning)
         by_failure_type[failure_type] = dict(
-            awlt=type_awlt, fnr=type_fnr,
+            awlt_mean=type_awlt_mean, awlt_median=type_awlt_median, fnr=type_fnr,
             num_failed_tracks=len(df_onset_type),
             num_warned_in_advance=type_num_warned,
             num_missed=type_num_missed,
@@ -1014,7 +1030,7 @@ def compute_introspection_metrics(df_matches, min_score, num_sequences,
 
     # Return All Three Pooled Metrics Plus the Per-Failure-Type Breakdown.
     return dict(
-        awlt=awlt, fnr=fnr, far=far,
+        awlt_mean=awlt_mean, awlt_median=awlt_median, fnr=fnr, far=far,
         num_failed_tracks=len(df_onset),
         num_correct_tracks=len(correct_track_ids),
         num_warned_in_advance=num_warned_in_advance,
@@ -1519,21 +1535,33 @@ def run(flags):
     summary['cedr_num_qualifying_encounters'] = int(len(df_cedr))
     log.info('CEDR (mean over %d qualifying encounters, min %d frames): %.5f',
              len(df_cedr), DEFAULT_CEDR_MIN_ENCOUNTER_FRAMES_, summary['cedr_mean'])
-    summary['awlt'] = introspection_metrics['awlt']
+    summary['awlt_mean'] = introspection_metrics['awlt_mean']
+    summary['awlt_median'] = introspection_metrics['awlt_median']
     summary['false_negative_rate'] = introspection_metrics['fnr']
     summary['false_alarm_rate'] = introspection_metrics['far']
     summary['num_failed_tracks'] = introspection_metrics['num_failed_tracks']
     summary['num_correct_tracks'] = introspection_metrics['num_correct_tracks']
-    summary['awlt_by_failure_type'] = {ft: metrics['awlt'] for ft, metrics in introspection_metrics['by_failure_type'].items()}
-    summary['false_negative_rate_by_failure_type'] = {ft: metrics['fnr'] for ft, metrics in introspection_metrics['by_failure_type'].items()}
-    summary['num_failed_tracks_by_failure_type'] = {ft: metrics['num_failed_tracks'] for ft, metrics in introspection_metrics['by_failure_type'].items()}
+    summary['awlt_mean_by_failure_type'] = {
+        ft: metrics['awlt_mean'] for ft, metrics in introspection_metrics['by_failure_type'].items()
+    }
+    summary['awlt_median_by_failure_type'] = {
+        ft: metrics['awlt_median'] for ft, metrics in introspection_metrics['by_failure_type'].items()
+    }
+    summary['false_negative_rate_by_failure_type'] = {
+        ft: metrics['fnr'] for ft, metrics in introspection_metrics['by_failure_type'].items()
+    }
+    summary['num_failed_tracks_by_failure_type'] = {
+        ft: metrics['num_failed_tracks'] for ft, metrics in introspection_metrics['by_failure_type'].items()
+    }
     summary['mean_iou_slope'] = divergence_metrics['mean_iou_slope']
     summary['pct_tracks_drifting'] = divergence_metrics['pct_tracks_drifting']
     summary['num_eligible_drift_tracks'] = divergence_metrics['num_eligible_tracks']
-    log.info('AWLT: %s | FNR: %.4f | FAR: %.4f | Mean IoU Slope: %s',
-             introspection_metrics['awlt'], introspection_metrics['fnr'],
-             introspection_metrics['far'], divergence_metrics['mean_iou_slope'])
-    log.info('By Failure Type | AWLT: %s | FNR: %s', summary['awlt_by_failure_type'], summary['false_negative_rate_by_failure_type'])
+    log.info('AWLT Mean: %s | AWLT Median: %s | FNR: %.4f | FAR: %.4f | Mean IoU Slope: %s',
+             introspection_metrics['awlt_mean'], introspection_metrics['awlt_median'],
+             introspection_metrics['fnr'], introspection_metrics['far'],
+             divergence_metrics['mean_iou_slope'])
+    log.info('By Failure Type -- AWLT Median: %s | FNR: %s',
+             summary['awlt_median_by_failure_type'], summary['false_negative_rate_by_failure_type'])
     log.info('Planned Aircraft: %d', num_planned)
     log.info('Non-Planned Airborne: %d', num_non_planned)
     log.info('Non-Planned Aircraft: %d', num_non_planned_aircraft)

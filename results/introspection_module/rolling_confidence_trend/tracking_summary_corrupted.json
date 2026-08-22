@@ -24,13 +24,18 @@
     "num_non_planned_aircraft": 11404,
     "cedr_mean": 0.3293703094181025,
     "cedr_num_qualifying_encounters": 208,
-    "awlt": 115.75,
+    "awlt_mean": 115.75,
+    "awlt_median": 12.0,
     "false_negative_rate": 0.5833333333333334,
     "false_alarm_rate": 0.0006940366237787625,
     "num_failed_tracks": 108,
     "num_correct_tracks": 37462,
-    "awlt_by_failure_type": {
+    "awlt_mean_by_failure_type": {
         "early_termination": 115.75,
+        "sustained": null
+    },
+    "awlt_median_by_failure_type": {
+        "early_termination": 12.0,
         "sustained": null
     },
     "false_negative_rate_by_failure_type": {
@@ -41,7 +46,7 @@
         "early_termination": 102,
         "sustained": 6
     },
-    "mean_iou_slope": -0.0016756551917260693,
+    "mean_iou_slope": -0.0016756551917260648,
     "pct_tracks_drifting": 0.49142857142857144,
     "num_eligible_drift_tracks": 175,
     "max_range": 699.9811862165178,
