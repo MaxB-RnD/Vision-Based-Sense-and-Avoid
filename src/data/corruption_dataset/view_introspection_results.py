@@ -41,6 +41,7 @@
 
 import os
 import json
+import subprocess
 from glob import glob
 from typing import Dict, List, Optional
 
@@ -48,6 +49,7 @@ import cv2
 import numpy as np
 
 from logging_module import LogLevel, log
+import subprocess
 
 # ------------------------------------------------------------------------------
 #                        CONFIGURATION VARIABLES
@@ -392,4 +394,346 @@ def generateIntrospectionVideo(flight_id: str, result_json_path: str, module_nam
     else:
         log(LogLevel.WARNING, "introspection_visualiser:generateIntrospectionVideo",
             "H.264 Re-encode Failed. Raw mp4v Video Kept at '%s'.", output_path)
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
+#                    SIDE-BY-SIDE VIDEO SPLICER
+# ------------------------------------------------------------------------------
+def spliceVideosSideBySide(video_paths: List[str], output_path: str,
+                           labels: Optional[List[str]] = None) -> None:
+    """
+    Places two or more mp4s side by side into a single comparison video.
+
+    Videos are composited frame-by-frame using OpenCV rather than an ffmpeg
+    filter graph. This avoids any dependency on ffmpeg's drawtext filter.
+
+    Handles:
+      - Mismatched heights: every clip is resized to the height of the first
+        video before stacking.
+      - Mismatched durations: shorter clips are frozen on their final frame
+        until the longest clip finishes.
+      - Labels: labels are burned directly onto each pane using OpenCV.
+
+    ffmpeg is used only after compositing to re-encode the resulting video
+    to H.264, matching the approach used by generateIntrospectionVideo().
+
+    Args:
+        video_paths (List[str]): Paths to the mp4s to place side by side,
+                                 in left-to-right order. Needs at least 2.
+        output_path (str): Full path (including filename) to save the
+                           combined .mp4.
+        labels (Optional[List[str]]): One label per video, in the same order
+                                      as video_paths. Defaults to each
+                                      video's filename without extension.
+
+    Returns:
+        None
+    """
+    if len(video_paths) < 2:
+        log(LogLevel.ERROR, "introspection_visualiser:spliceVideosSideBySide",
+            "Need at Least 2 Videos to Splice Side by Side, Got %d.",
+            len(video_paths))
+        return
+
+    if labels is None:
+        labels = [
+            os.path.splitext(os.path.basename(path))[0]
+            for path in video_paths
+        ]
+
+    if len(labels) != len(video_paths):
+        log(LogLevel.ERROR, "introspection_visualiser:spliceVideosSideBySide",
+            "Number of Labels (%d) Does Not Match Number of Videos (%d).",
+            len(labels), len(video_paths))
+        return
+
+    for path in video_paths:
+        if not os.path.exists(path):
+            log(LogLevel.ERROR, "introspection_visualiser:spliceVideosSideBySide",
+                "Video Not Found: '%s'.", path)
+            return
+
+    os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
+
+    # --------------------------------------------------------------------------
+    # Open Every Input Video.
+    # --------------------------------------------------------------------------
+    captures = [cv2.VideoCapture(path) for path in video_paths]
+
+    for path, cap in zip(video_paths, captures):
+        if not cap.isOpened():
+            log(LogLevel.ERROR, "introspection_visualiser:spliceVideosSideBySide",
+                "Could Not Open Input Video: '%s'.", path)
+
+            for opened_cap in captures:
+                opened_cap.release()
+
+            return
+
+    # --------------------------------------------------------------------------
+    # Determine Common Output Properties.
+    # --------------------------------------------------------------------------
+    target_height = int(captures[0].get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = captures[0].get(cv2.CAP_PROP_FPS)
+
+    if not fps or fps <= 0:
+        fps = VIDEO_FPS
+
+    if target_height <= 0:
+        log(LogLevel.ERROR, "introspection_visualiser:spliceVideosSideBySide",
+            "Could Not Determine Height of First Video '%s'.",
+            video_paths[0])
+
+        for cap in captures:
+            cap.release()
+
+        return
+
+    # --------------------------------------------------------------------------
+    # Determine Each Video's Frame Count.
+    # --------------------------------------------------------------------------
+    frame_counts = [
+        int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        for cap in captures
+    ]
+
+    max_frames = max(frame_counts)
+
+    log(LogLevel.INFO, "introspection_visualiser:spliceVideosSideBySide",
+        "Splicing %d Videos Side by Side. Target Height: %d, FPS: %.2f, "
+        "Output Frames: %d.",
+        len(video_paths), target_height, fps, max_frames)
+
+    # --------------------------------------------------------------------------
+    # Read the First Frame from Each Video.
+    #
+    # These are also used as the initial "last frame" values for freezing
+    # shorter videos.
+    # --------------------------------------------------------------------------
+    last_frames: List[Optional[np.ndarray]] = []
+
+    for index, cap in enumerate(captures):
+        ok, frame = cap.read()
+
+        if not ok or frame is None:
+            log(LogLevel.ERROR, "introspection_visualiser:spliceVideosSideBySide",
+                "Could Not Read First Frame from Video '%s'.",
+                video_paths[index])
+
+            for opened_cap in captures:
+                opened_cap.release()
+
+            return
+
+        last_frames.append(frame)
+
+        # Rewind so the first frame is processed normally in the main loop.
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+    # --------------------------------------------------------------------------
+    # Prepare Output VideoWriter.
+    #
+    # Each pane is resized proportionally to target_height. Therefore its
+    # width may differ between videos.
+    # --------------------------------------------------------------------------
+    pane_widths = []
+
+    for frame in last_frames:
+        frame_height, frame_width = frame.shape[:2]
+        pane_width = int(round(frame_width * target_height / frame_height))
+        pane_widths.append(pane_width)
+
+    output_width = sum(pane_widths)
+
+    raw_output_path = output_path.replace('.mp4', '_raw.mp4')
+
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # type: ignore[attr-defined]
+    writer = cv2.VideoWriter(
+        raw_output_path,
+        fourcc,
+        fps,
+        (output_width, target_height)
+    )
+
+    if not writer.isOpened():
+        log(LogLevel.ERROR, "introspection_visualiser:spliceVideosSideBySide",
+            "Failed to Open VideoWriter for '%s'.", raw_output_path)
+
+        for cap in captures:
+            cap.release()
+
+        return
+
+    # --------------------------------------------------------------------------
+    # OpenCV Label Configuration.
+    # --------------------------------------------------------------------------
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 1.0
+    font_thickness = 2
+    label_colour = (255, 255, 255)
+    label_background = (0, 0, 0)
+
+    frames_written = 0
+
+    # --------------------------------------------------------------------------
+    # Composite Every Frame.
+    # --------------------------------------------------------------------------
+    for frame_idx in range(max_frames):
+        panes = []
+
+        for index, cap in enumerate(captures):
+            ok, frame = cap.read()
+
+            # If this video has ended, continue displaying its final frame.
+            if ok and frame is not None:
+                last_frames[index] = frame
+            elif last_frames[index] is None:
+                log(LogLevel.WARNING,
+                    "introspection_visualiser:spliceVideosSideBySide",
+                    "Video '%s' Has No Frame Available at Frame %d.",
+                    video_paths[index], frame_idx + 1)
+                continue
+
+            frame = last_frames[index].copy()
+
+            # --------------------------------------------------------------
+            # Resize Pane to Common Height.
+            # --------------------------------------------------------------
+            frame_height, frame_width = frame.shape[:2]
+
+            if frame_height != target_height:
+                target_width = int(
+                    round(frame_width * target_height / frame_height)
+                )
+
+                frame = cv2.resize(
+                    frame,
+                    (target_width, target_height),
+                    interpolation=cv2.INTER_AREA
+                )
+
+            # --------------------------------------------------------------
+            # Draw Label Using OpenCV.
+            # --------------------------------------------------------------
+            label = labels[index]
+
+            (text_width, text_height), baseline = cv2.getTextSize(
+                label,
+                font,
+                font_scale,
+                font_thickness
+            )
+
+            padding = 10
+
+            bg_x1 = 10
+            bg_y1 = 10
+            bg_x2 = min(
+                frame.shape[1],
+                bg_x1 + text_width + (padding * 2)
+            )
+            bg_y2 = bg_y1 + text_height + baseline + (padding * 2)
+
+            cv2.rectangle(
+                frame,
+                (bg_x1, bg_y1),
+                (bg_x2, bg_y2),
+                label_background,
+                cv2.FILLED
+            )
+
+            cv2.putText(
+                frame,
+                label,
+                (bg_x1 + padding, bg_y1 + text_height + padding),
+                font,
+                font_scale,
+                label_colour,
+                font_thickness,
+                cv2.LINE_AA
+            )
+
+            panes.append(frame)
+
+        if not panes:
+            continue
+
+        # ------------------------------------------------------------------
+        # Stack All Panes Horizontally.
+        # ------------------------------------------------------------------
+        combined = np.hstack(panes)
+
+        # Make absolutely sure the final frame has the expected dimensions.
+        if combined.shape[1] != output_width or combined.shape[0] != target_height:
+            combined = cv2.resize(
+                combined,
+                (output_width, target_height),
+                interpolation=cv2.INTER_AREA
+            )
+
+        writer.write(combined)
+        frames_written += 1
+
+    # --------------------------------------------------------------------------
+    # Release OpenCV Resources.
+    # --------------------------------------------------------------------------
+    writer.release()
+
+    for cap in captures:
+        cap.release()
+
+    log(LogLevel.INFO, "introspection_visualiser:spliceVideosSideBySide",
+        "Raw Side-by-Side Video Written (%d Frames) -> '%s'.",
+        frames_written, raw_output_path)
+
+    if frames_written == 0:
+        log(LogLevel.ERROR, "introspection_visualiser:spliceVideosSideBySide",
+            "No Frames Were Written. Removing Raw Output '%s'.",
+            raw_output_path)
+
+        if os.path.exists(raw_output_path):
+            os.remove(raw_output_path)
+
+        return
+
+    # --------------------------------------------------------------------------
+    # Re-Encode to H.264 Using ffmpeg.
+    #
+    # ffmpeg is deliberately NOT used for compositing or drawtext. It is only
+    # responsible for the final codec conversion.
+    # --------------------------------------------------------------------------
+    h264_path = output_path.replace('.mp4', '_h264.mp4')
+
+    ret = subprocess.run(
+        [
+            'ffmpeg',
+            '-y',
+            '-i', raw_output_path,
+            '-vcodec', 'libx264',
+            '-preset', 'fast',
+            '-crf', '23',
+            '-loglevel', 'error',
+            h264_path
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+
+    if ret.returncode == 0 and os.path.exists(h264_path):
+        if os.path.exists(output_path):
+            os.remove(output_path)
+
+        os.rename(h264_path, output_path)
+        os.remove(raw_output_path)
+
+        log(LogLevel.INFO, "introspection_visualiser:spliceVideosSideBySide",
+            "Side-by-Side Video Re-encoded to H.264 and Saved to '%s'.",
+            output_path)
+    else:
+        log(LogLevel.WARNING, "introspection_visualiser:spliceVideosSideBySide",
+            "H.264 Re-encode Failed. Raw mp4v Video Kept at '%s'. ffmpeg Error: %s",
+            raw_output_path,
+            ret.stderr.strip())
 # ------------------------------------------------------------------------------
