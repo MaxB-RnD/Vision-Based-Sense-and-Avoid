@@ -3,8 +3,8 @@
 # ------------------------------------------------------------------------------
 # File:                    %name: build_corrupted_test_set.py %
 # Date Created:            %date_created: Wed Aug 12 17:56:48 2026 %
-# CM Version               %version: 1 %
-# CM Instance              %instance: 4 %
+# CM Version               %version: 2 %
+# CM Instance              %instance: 1 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -89,6 +89,7 @@ import random
 
 import cv2
 import shutil
+import numpy as np
 from typing import Dict, List, Optional
 
 from logging_module import LogLevel, log
@@ -96,6 +97,10 @@ from src.data.original_dataset.browse_data import dataLoader
 from src.data.original_dataset.view_data import generateVideo
 from src.data.corruption_dataset.corruptions import CORRUPTION_REGISTRY
 from src.data.corruption_dataset.severity_scheduler import buildSeveritySchedule
+from src.data.corruption_dataset.dataset_quality_metrics import (
+    getPrimaryBoundingBox, computeLocalSCR, computeBackgroundComplexity,
+    computePSNR, computeRampMonotonicity, computeRampCoverage, summariseDatasetQuality
+)
 
 # ------------------------------------------------------------------------------
 #                           CONFIGURATION VARIABLES
@@ -116,7 +121,8 @@ SEED = 42
 CORRUPTED_FRACTION = 1
 
 # Corruption Types to Apply.
-ACTIVE_CORRUPTIONS = ['iso_noise', 'defocus_blur', 'colour_quantisation']
+ACTIVE_CORRUPTIONS = ['iso_noise', 'defocus_blur', 'colour_quantisation',
+                      'near_focus', 'far_focus', 'low_light']
 
 # Ramp Configuration. See severity_scheduler.py for Shape Definitions.
 RAMP_SHAPE = 'linear'
@@ -417,6 +423,11 @@ def corruptFlight(dataset, flight_id: str, corruption_name: str) -> Optional[Dic
     output_dir = os.path.join(OUTPUT_DATA_ROOT, part, 'Images', flight_id)
     os.makedirs(output_dir, exist_ok=True)
 
+    # Prepare to Compute the Dataset Quality Metrics. 
+    scr_curve: List[Optional[float]] = [None] * num_frames
+    psnr_at_peak_values: List[float] = []
+    background_complexity: Optional[float] = None
+
     # Apply the Corruption Frame-by-Frame According to the Severity Schedule.
     frames_written = 0
     for i, frame_id in enumerate(frame_ids):
@@ -436,6 +447,21 @@ def corruptFlight(dataset, flight_id: str, corruption_name: str) -> Optional[Dic
         # Apply the Corruption Function at this Frame's Severity Level.
         corrupted_image = corrupt_fn(image, severity)
 
+        # Resolve the Primary Ground-Truth BBox for this Frame, if Any.
+        bbox = getPrimaryBoundingBox(frames[frame_id])
+
+        if bbox is not None:
+            # Track SCR on the Corrupted Frame for the Ramp/Terminal Metrics.
+            scr_curve[i] = computeLocalSCR(corrupted_image, bbox)
+
+            # Capture Background Complexity Once at the First Available Valid BBox.
+            if background_complexity is None:
+                background_complexity = computeBackgroundComplexity(image, bbox)
+
+        # Track PSNR Once the Ramp has Reached Peak Severity, for Cross-Corruption-Type Calibration.
+        if severity >= PEAK_SEVERITY:
+            psnr_at_peak_values.append(computePSNR(image, corrupted_image))
+
         # Preserve the Original Image Filename.
         original_image_path = frames[frame_id].image_path()
         output_filename = os.path.basename(original_image_path)
@@ -451,17 +477,36 @@ def corruptFlight(dataset, flight_id: str, corruption_name: str) -> Optional[Dic
             "No Frames Could be Written for Flight %s. Skipping.", flight_id)
         return None
 
+    # Derive the Terminal SCR from the "Held at Peak" Tail Region.
+    tail_start = min(onset_frame + RAMP_LENGTH_FRAMES, num_frames)
+    tail_scrs = [v for v in scr_curve[tail_start:] if v is not None]
+    terminal_scr = float(np.mean(tail_scrs)) if tail_scrs else None
+
+    # Derive Ramp Quality Metrics from the Ramp Window.
+    scr_monotonicity = computeRampMonotonicity(scr_curve, onset_frame, RAMP_LENGTH_FRAMES)
+    scr_ramp_coverage = computeRampCoverage(scr_curve, onset_frame, RAMP_LENGTH_FRAMES)
+
+    # Derive Peak Quality Metrics.
+    psnr_at_peak = float(np.mean(psnr_at_peak_values)) if psnr_at_peak_values else None
+
     # Build & Return the Manifest Entry for this Flight.
     return {
-        "flight_id":        flight_id,
-        "corruption_type":  corruption_name,
-        "num_frames":       num_frames,
-        "frames_written":   frames_written,
-        "onset_frame":      onset_frame,
-        "ramp_shape":       RAMP_SHAPE,
-        "ramp_length":      RAMP_LENGTH_FRAMES,
-        "peak_severity":    PEAK_SEVERITY,
-        "output_dir":       output_dir,
+        "flight_id":              flight_id,
+        "corruption_type":        corruption_name,
+        "num_frames":             num_frames,
+        "frames_written":         frames_written,
+        "onset_frame":            onset_frame,
+        "ramp_shape":             RAMP_SHAPE,
+        "ramp_length":            RAMP_LENGTH_FRAMES,
+        "peak_severity":          PEAK_SEVERITY,
+        "output_dir":             output_dir,
+
+        # No-Inference Dataset Quality Metrics.
+        "terminal_scr":           terminal_scr,
+        "scr_monotonicity":       scr_monotonicity,
+        "scr_ramp_coverage":      scr_ramp_coverage,
+        "background_complexity":  background_complexity,
+        "psnr_at_peak":           psnr_at_peak,
     }
 # ------------------------------------------------------------------------------
 
@@ -626,6 +671,20 @@ def main() -> None:
     # Report the Location and Number of Corrupted Flights in the Manifest.
     log(LogLevel.INFO, "build_corrupted_test_set:main",
         "Manifest Written: %s (%d corrupted flights)", manifest_path, len(manifest_entries))
+
+    # Summarise Dataset-Wide Quality Metrics Across All Corrupted Flights.
+    quality_summary = summariseDatasetQuality(manifest_entries)
+
+    # Store the Summary Alongside the Other Dataset Records.
+    quality_summary_path = os.path.join(OUTPUT_RECORDS_DIR, "dataset_quality_summary.json")
+
+    # Write the Quality Summary as Formatted JSON for Easy Inspection.
+    with open(quality_summary_path, 'w') as f:
+        json.dump(quality_summary, f, indent=2)
+
+    # Confirm where the Quality Summary was Written.
+    log(LogLevel.INFO, "build_corrupted_test_set:main",
+        "Dataset Quality Summary Written: %s", quality_summary_path)
 
     # Generate Videos for Three Flights from Each Dataset Part.
     visualiseFlights(flight_ids)
