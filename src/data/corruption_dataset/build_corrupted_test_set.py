@@ -86,11 +86,12 @@
 import os
 import json
 import random
+import argparse
 
 import cv2
 import shutil
 import numpy as np
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from logging_module import LogLevel, log
 from src.data.original_dataset.browse_data import dataLoader
@@ -565,13 +566,82 @@ def writeFlightListFile(flight_ids: List[str], filepath: str, description: str) 
 # ------------------------------------------------------------------------------
 #                               MAIN EXECUTION
 # ------------------------------------------------------------------------------
-def main() -> None:
+def main(input_path: Optional[str] = None,
+         output_records_dir: Optional[str] = None,
+         output_data_root: Optional[str] = None,
+         seed: Optional[int] = None,
+         corrupted_fraction: Optional[float] = None,
+         active_corruptions: Optional[List[str]] = None,
+         ramp_shape: Optional[str] = None,
+         ramp_length_frames: Optional[int] = None,
+         peak_severity: Optional[float] = None,
+         min_clean_lead_frames: Optional[int] = None,
+         onset_fraction_range: Optional[Tuple[float, float]] = None) -> None:
     """
     Entry point for building the corrupted introspection test set.
+
+    Each argument is optional. When an argument is left as None, the
+    corresponding module-level configuration value is preserved. This allows
+    the pipeline to be used with the default configuration, with selective
+    overrides from Python, or through the command-line interface used by
+    sweep_corruption_dataset.sh for dataset-tuning ablations.
+
+    Args:
+        input_path (Optional[str]): Overrides INPUT_TEST_FLIGHTS_PATH.
+        output_records_dir (Optional[str]): Overrides OUTPUT_RECORDS_DIR.
+        output_data_root (Optional[str]): Overrides OUTPUT_DATA_ROOT.
+        seed (Optional[int]): Overrides SEED.
+        corrupted_fraction (Optional[float]): Overrides CORRUPTED_FRACTION.
+        active_corruptions (Optional[List[str]]): Overrides ACTIVE_CORRUPTIONS.
+        ramp_shape (Optional[str]): Overrides RAMP_SHAPE.
+        ramp_length_frames (Optional[int]): Overrides RAMP_LENGTH_FRAMES.
+        peak_severity (Optional[float]): Overrides PEAK_SEVERITY.
+        min_clean_lead_frames (Optional[int]): Overrides MIN_CLEAN_LEAD_FRAMES.
+        onset_fraction_range (Optional[Tuple[float, float]]): Overrides
+            ONSET_FRACTION_RANGE.
+
+    Returns:
+        None
     """
+    # These Configuration Values are Intentionally Module-Level Because the
+    # Rest of the Pipeline Reads them Directly. Declare them Global so any
+    # Explicitly Supplied Arguments Update the Values Used Downstream.
+    global INPUT_TEST_FLIGHTS_PATH, OUTPUT_RECORDS_DIR, OUTPUT_DATA_ROOT, SEED, \
+        CORRUPTED_FRACTION, ACTIVE_CORRUPTIONS, RAMP_SHAPE, RAMP_LENGTH_FRAMES, \
+        PEAK_SEVERITY, MIN_CLEAN_LEAD_FRAMES, ONSET_FRACTION_RANGE, \
+        MIN_TRACK_LENGTH_FOR_CORRUPTION
+
+    # Apply Only Explicitly Supplied Overrides. Leaving an Argument as None 
+    # Preserves the Existing Module-Level Configuration Value.
+    if input_path is not None:
+        INPUT_TEST_FLIGHTS_PATH = input_path
+    if output_records_dir is not None:
+        OUTPUT_RECORDS_DIR = output_records_dir
+    if output_data_root is not None:
+        OUTPUT_DATA_ROOT = output_data_root
+    if seed is not None:
+        SEED = seed
+    if corrupted_fraction is not None:
+        CORRUPTED_FRACTION = corrupted_fraction
+    if active_corruptions is not None:
+        ACTIVE_CORRUPTIONS = active_corruptions
+    if ramp_shape is not None:
+        RAMP_SHAPE = ramp_shape
+    if ramp_length_frames is not None:
+        RAMP_LENGTH_FRAMES = ramp_length_frames
+    if peak_severity is not None:
+        PEAK_SEVERITY = peak_severity
+    if min_clean_lead_frames is not None:
+        MIN_CLEAN_LEAD_FRAMES = min_clean_lead_frames
+    if onset_fraction_range is not None:
+        ONSET_FRACTION_RANGE = tuple(onset_fraction_range)
+ 
+    # Recompute the Derived Minimum Track Length Whenever Either of its Inputs May Have Changed.
+    MIN_TRACK_LENGTH_FOR_CORRUPTION = MIN_CLEAN_LEAD_FRAMES + RAMP_LENGTH_FRAMES + 10
+ 
     # Print a Blank Line for Cleaner Console Output Spacing.
     print()
-
+ 
     # Validate that All Configured Corruption Types Exist in the Registry.
     for name in ACTIVE_CORRUPTIONS:
         if name not in CORRUPTION_REGISTRY:
@@ -579,31 +649,31 @@ def main() -> None:
                 "ACTIVE_CORRUPTIONS Contains Unknown Key '%s'. Available: %s"
                 % (name, list(CORRUPTION_REGISTRY.keys()))
             )
-
+ 
     # Load the Flight IDs from the Test Split.
     log(LogLevel.INFO, "build_corrupted_test_set:main", "Reading: %s", INPUT_TEST_FLIGHTS_PATH)
     flight_ids = parseFlightIds(INPUT_TEST_FLIGHTS_PATH)
     log(LogLevel.INFO, "build_corrupted_test_set:main", "Found: %d flight IDs in test.txt", len(flight_ids))
-
+ 
     # Assign Each Flight to a Corruption Type OR the Clean Set.
     assignment = assignCorruptions(flight_ids, ACTIVE_CORRUPTIONS, CORRUPTED_FRACTION, SEED)
-
+ 
     # Load the Dataset Metadata Without Triggering a Fresh Download.
     dataset = dataLoader(download=False)
-
+ 
     # Initialise Containers for the Manifest and Flight Subsets.
     manifest_entries = []
     corrupted_by_type: Dict[str, List[str]] = {name: [] for name in ACTIVE_CORRUPTIONS}
     clean_flights: List[str] = []
-
+ 
     # Get the Total Number of Flights to Process. 
     total = len(flight_ids)
-
+ 
     # Process Each Flight According to its Assigned Corruption or Clean Status.
     for idx, flight_id in enumerate(flight_ids):
         # Retrieve the Corruption Assignment for the Current Flight.
         corruption_name = assignment[flight_id]
-
+ 
         # This Flight was Assigned to the Clean Set.
         if corruption_name is None:
             # Copy the Original Flight Unchanged into the Merged Output Dataset.
@@ -611,27 +681,27 @@ def main() -> None:
             copyCleanFlight(flight_id)
             clean_flights.append(flight_id)
             continue
-
+ 
         # This Flight was Assigned to a Corruption Type.
         print("Flight %d/%d  %s  -->  %s" % (idx + 1, total, flight_id, corruption_name))
         entry = corruptFlight(dataset, flight_id, corruption_name)
-
+ 
         # Fall Back to Clean if the Flight Could Not Be Corrupted.
         if entry is None:
             copyCleanFlight(flight_id)
             clean_flights.append(flight_id)
             continue
-
+ 
         # Record the Successful Corruption in the Manifest.
         manifest_entries.append(entry)
         corrupted_by_type[corruption_name].append(flight_id)
-
+ 
     # Copy the ImageSets Folder for Each Part Used by the Test Split.
     copied_parts = copyImageSetFolders(flight_ids)
     print()
     log(LogLevel.INFO, "build_corrupted_test_set:main",
         "Copied ImageSet folders for %d parts to: %s", len(copied_parts), OUTPUT_DATA_ROOT)
-
+ 
     # Write a Flight List for Each Corruption Type.
     print()
     for corruption_name, ids in corrupted_by_type.items():
@@ -643,7 +713,7 @@ def main() -> None:
                 "introspection gradual-degradation test set." % corruption_name
             ),
         )
-
+ 
     # Write the Flight List for the Clean Set.
     writeFlightListFile(
         clean_flights,
@@ -653,7 +723,7 @@ def main() -> None:
             "portion of the introspection gradual-degradation test set."
         ),
     )
-
+ 
     # Write the Corruption Configuration and Per-Flight Results to JSON.
     manifest_path = os.path.join(OUTPUT_RECORDS_DIR, "corruption_manifest.json")
     with open(manifest_path, 'w') as f:
@@ -667,35 +737,118 @@ def main() -> None:
             "onset_fraction_range": list(ONSET_FRACTION_RANGE),
             "flights": manifest_entries,
         }, f, indent=2)
-
+ 
     # Report the Location and Number of Corrupted Flights in the Manifest.
     log(LogLevel.INFO, "build_corrupted_test_set:main",
         "Manifest Written: %s (%d corrupted flights)", manifest_path, len(manifest_entries))
-
-    # Summarise Dataset-Wide Quality Metrics Across All Corrupted Flights.
+ 
+    # Summarise Dataset-Wide Quality Metrics Across All Corrupted Flights & Write
+    # to Disk Alongside the Manifest.
     quality_summary = summariseDatasetQuality(manifest_entries)
-
-    # Store the Summary Alongside the Other Dataset Records.
     quality_summary_path = os.path.join(OUTPUT_RECORDS_DIR, "dataset_quality_summary.json")
-
-    # Write the Quality Summary as Formatted JSON for Easy Inspection.
     with open(quality_summary_path, 'w') as f:
         json.dump(quality_summary, f, indent=2)
-
-    # Confirm where the Quality Summary was Written.
+ 
     log(LogLevel.INFO, "build_corrupted_test_set:main",
         "Dataset Quality Summary Written: %s", quality_summary_path)
-
+ 
     # Generate Videos for Three Flights from Each Dataset Part.
     visualiseFlights(flight_ids)
-
+ 
     # Display the Final Clean, Corrupted, and Per-Type Flight Counts.
     print()
     log(LogLevel.INFO, "build_corrupted_test_set:main", "Done.  Clean: %d  |  Corrupted: %d  (%s)  |  Total: %d.\n",
         len(clean_flights), len(manifest_entries), ", ".join("%s: %d" % (k, len(v)) for k, v in corrupted_by_type.items()), total)
 # ------------------------------------------------------------------------------
 
-
-# Call the Main Function
+ 
+# Call the Main Function.
 if __name__ == "__main__":
-    main()
+    # Build the Command-Line Interface. Every Flag Defaults to None, so an
+    # Unset Flag Falls Back to the Module-Level CONFIGURATION VARIABLE.
+    parser = argparse.ArgumentParser(
+        description='Build the ramping-corruption introspection test set from test.txt. '
+                    'Every flag is optional; anything left unset uses the CONFIGURATION '
+                    'VARIABLES defined at the top of this file.'
+    )
+    # Optional Path to the Source Test Split.
+    parser.add_argument('--input', default=None,
+                        help='Path to the source test.txt flight split.')
+
+    # Optional Directory for Generated Flight Lists, Manifest & Quality Summary.
+    parser.add_argument('--output-records-dir', default=None,
+                        help='Directory for the flight lists, manifest, and quality summary.')
+
+    # Optional Root Directory for the Generated Dataset. Generation is Non-Destructive.
+    parser.add_argument('--output-data-root', default=None,
+                        help='Root directory for the generated (non-destructive) dataset.')
+
+    # Optional Seed Used to Make Flight & Corruption-Type Assignment Reproducible.
+    parser.add_argument('--seed', type=int, default=None,
+                        help='Random seed for flight/corruption-type assignment.')
+
+    # Optional Fraction of Test Flights to Corrupt.
+    parser.add_argument('--corrupted-fraction', type=float, default=None,
+                        help='Fraction of test flights to corrupt (0.0-1.0). 0.0 reproduces '
+                            'the original, uncorrupted dataset.')
+
+    # Optional Set of Corruption Types Used to Populate the Corrupted Flight Pool.
+    parser.add_argument('--active-corruptions', nargs='+', default=None,
+                        choices=list(CORRUPTION_REGISTRY.keys()),
+                        help='Corruption types to distribute the corrupted pool across.')
+
+    # Optional Shape Controlling How Corruption Severity Increases Over Time.
+    parser.add_argument('--ramp-shape', default=None,
+                        help='Severity ramp shape (see severity_scheduler.RAMP_SHAPE_REGISTRY).')
+
+    # Optional Number of Frames Used to Increase Severity from Zero to its Peak.
+    parser.add_argument('--ramp-length-frames', type=int, default=None,
+                        help='Number of frames over which severity ramps from 0 to peak.')
+
+    # Optional Maximum Severity Reached After the Ramp Completes.
+    parser.add_argument('--peak-severity', type=float, default=None,
+                        help='Maximum severity reached once the ramp completes.')
+
+    # Optional Minimum Number of Clean Frames Required Before Corruption Can Begin.
+    parser.add_argument('--min-clean-lead-frames', type=int, default=None,
+                        help='Minimum clean frames required before the ramp is allowed to start.')
+
+    # Optional Lower & Upper Bounds for the Randomly Selected Corruption Onset Fraction.
+    parser.add_argument('--onset-fraction-low', type=float, default=None,
+                        help='Lower bound of the onset fraction range.')
+    parser.add_argument('--onset-fraction-high', type=float, default=None,
+                        help='Upper bound of the onset fraction range.')
+
+    # Parse the Supplied Command-Line Arguments.
+    args = parser.parse_args()
+
+    # Convert the Two Optional Onset-Fraction Arguments into the Single Range
+    # Expected by main(). Only Construct the Override when at Least One Bound
+    # was Explicitly Supplied. Otherwise, main() can use the configured range.
+    resolved_onset_range = None
+    if args.onset_fraction_low is not None or args.onset_fraction_high is not None:
+        resolved_onset_range = (
+            args.onset_fraction_low
+            if args.onset_fraction_low is not None
+            else ONSET_FRACTION_RANGE[0],
+            args.onset_fraction_high
+            if args.onset_fraction_high is not None
+            else ONSET_FRACTION_RANGE[1],
+        )
+
+    # Run the Dataset-Generation Pipeline Using the Supplied CLI Overrides.
+    # Any Argument Left as None is Resolved by main() Against the Module-Level
+    # Configuration Values.
+    main(
+        input_path=args.input,
+        output_records_dir=args.output_records_dir,
+        output_data_root=args.output_data_root,
+        seed=args.seed,
+        corrupted_fraction=args.corrupted_fraction,
+        active_corruptions=args.active_corruptions,
+        ramp_shape=args.ramp_shape,
+        ramp_length_frames=args.ramp_length_frames,
+        peak_severity=args.peak_severity,
+        min_clean_lead_frames=args.min_clean_lead_frames,
+        onset_fraction_range=resolved_onset_range,
+    )
