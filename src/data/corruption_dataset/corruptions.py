@@ -45,19 +45,19 @@ ISO_NOISE_PEAK_WORST = 6.0
 ISO_NOISE_GAUSSIAN_STD_MAX = 22.0
 
 # Maximum Defocus Blur Kernel Size.
-DEFOCUS_MAX_KERNEL = 25
+DEFOCUS_MAX_KERNEL = 55
 
 # Near & Far Focus Kernel Sizes.
-NEAR_FOCUS_MAX_KERNEL = 15
-FAR_FOCUS_MAX_KERNEL = 35
+NEAR_FOCUS_MAX_KERNEL = 45
+FAR_FOCUS_MAX_KERNEL = 70
 
 # Colour Quantisation Bit Depth Range.
 QUANT_BITS_CLEAN = 8
 QUANT_BITS_WORST = 2
 
 # Low Light Parameters.
-LOW_LIGHT_BRIGHTNESS_MIN = 0.35
-LOW_LIGHT_NOISE_STD_MAX = 14.0
+LOW_LIGHT_BRIGHTNESS_MIN = 0.55
+LOW_LIGHT_NOISE_STD_MAX = 11.0
 # ------------------------------------------------------------------------------
 
 
