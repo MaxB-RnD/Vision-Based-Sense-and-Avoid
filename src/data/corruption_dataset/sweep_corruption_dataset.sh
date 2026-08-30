@@ -5,7 +5,7 @@
 # File:                    %name: sweep_corruption_dataset.sh %
 # Date Created:            %date_created: Sat Aug 29 23:12:45 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 1 %
+# CM Instance              %instance: 2 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -65,15 +65,21 @@ LOG_DIR="outputs/logs/corruption_dataset"
 
 # Python Module Used to Build Each Dataset.
 BUILD_MODULE="src.data.corruption_dataset.build_corrupted_test_set"
+# ------------------------------------------------------------------------------
 
 
 # --------------------------------------------------------------------------
 #                              SWEEP ARRAYS
 # --------------------------------------------------------------------------
+# Run Once to Collect the Uncorrupted Baseline Metrics.
+RUN_BASELINE=true
+
+# Corrupt All Test Flights for Maximum Statistical Power During the Sweep.
+SWEEP_CORRUPTED_FRACTION="1.0"
+
 # Parameters Varied by the Sweep.
-CORRUPTED_FRACTIONS=("0.0" "0.5" "1.0")
-RAMP_SHAPES=("linear")
-RAMP_LENGTHS=("15")
+RAMP_SHAPES=("linear" "sigmoid")
+RAMP_LENGTHS=("10" "20" "30" "50" "80" "160")
 
 # Parameters Held Fixed Across All Runs.
 ACTIVE_CORRUPTIONS="iso_noise defocus_blur colour_quantisation near_focus far_focus low_light"
@@ -125,10 +131,10 @@ runOnce() {
     local extra_flags=("$@")
 
     # Remove Outputs from the Previous Run.
-    echo "Removing previous generated dataset: $DATA_OUTPUT_ROOT"
+    echo "Removing Previous Generated Dataset: $DATA_OUTPUT_ROOT"
     rm -rf "$DATA_OUTPUT_ROOT"
 
-    echo "Removing previous generated records: $RECORDS_OUTPUT_DIR"
+    echo "Removing Previous Generated Records: $RECORDS_OUTPUT_DIR"
     rm -rf "$RECORDS_OUTPUT_DIR"
 
     # Create a New Run Directory & Log File.
@@ -150,11 +156,11 @@ runOnce() {
 
     # Save the Parameters Before Starting so Failed Runs are Still Traceable.
     python3 -c "
-    import json, sys
-    flags = sys.argv[1:]
-    with open('$run_dir/run_params.json', 'w') as f:
-        json.dump({'run_name': '$run_name', 'flags': flags}, f, indent=2)
-    " "${extra_flags[@]}"
+import json, sys
+flags = sys.argv[1:]
+with open('$run_dir/run_params.json', 'w') as f:
+    json.dump({'run_name': '$run_name', 'flags': flags}, f, indent=2)
+" "${extra_flags[@]}"
 
     # Run the Builder & Redirect All Output to the Run Log.
     python3 -m "$BUILD_MODULE" \
@@ -166,7 +172,7 @@ runOnce() {
 
     # Stop this Run if the Builder Failed.
     if [ $status -ne 0 ]; then
-        echo " $run_name FAILED with exit code $status at $(date). Check $log_file for details."
+        echo " $run_name FAILED with Exit Code $status at $(date). Check $log_file for Details."
         cp "$log_file" "$run_dir/build.log" 2>/dev/null
         return 1
     fi
@@ -176,7 +182,7 @@ runOnce() {
     cp "$log_file" "$run_dir/build.log"
 
     # Report the Completed Run.
-    echo " Finished $run_name at $(date). Results saved to: $run_dir"
+    echo " Finished $run_name at $(date). Results Saved to: $run_dir"
     echo
 
     return 0
@@ -197,48 +203,67 @@ done
 
 # Run Once with the Builder's Default Configuration when No Sweep is Requested.
 if [ "$SWEEP_MODE" = false ]; then
-    echo "No --sweep flag supplied. Running once with build_corrupted_test_set.py's own defaults."
+    echo "No --sweep Flag Supplied. Running Once with build_corrupted_test_set.py's Own Defaults."
     runOnce
     echo "============================================================"
-    echo " Single run complete at $(date)."
+    echo " Single Run Complete at $(date)."
     echo "============================================================"
     exit $?
 fi
 
-# Report the Total Number of Parameter Combinations.
-echo "Sweep mode. Grid size: ${#CORRUPTED_FRACTIONS[@]} corrupted-fraction(s) x " \
-     "${#RAMP_SHAPES[@]} ramp-shape(s) x ${#RAMP_LENGTHS[@]} ramp-length(s) = " \
-     "$(( ${#CORRUPTED_FRACTIONS[@]} * ${#RAMP_SHAPES[@]} * ${#RAMP_LENGTHS[@]} )) run(s)."
+# Calculate the Number of Configurations in the Sweep Grid.
+GRID_SIZE=$(( ${#RAMP_SHAPES[@]} * ${#RAMP_LENGTHS[@]} ))
+
+# Add the Baseline Run if Enabled.
+TOTAL_RUNS=$GRID_SIZE
+if [ "$RUN_BASELINE" = true ]; then
+    TOTAL_RUNS=$((TOTAL_RUNS + 1))
+fi
+
+# Print the Total Number of Runs Before Starting the Sweep.
+echo "Sweep Mode. ${#RAMP_SHAPES[@]} Ramp-Shape(s) x ${#RAMP_LENGTHS[@]} Ramp-Length(s) = $GRID_SIZE Grid Run(s), Plus Baseline: $RUN_BASELINE. Total: $TOTAL_RUNS Run(s)."
 echo
 
 # Track How Many Sweep Runs Fail.
 FAILED_RUNS=0
 
+# Run the Uncorrupted Baseline Once Before the Sweep.
+if [ "$RUN_BASELINE" = true ]; then
+    runOnce \
+        --corrupted-fraction "0.0" \
+        --seed "$SEED" \
+        --active-corruptions $ACTIVE_CORRUPTIONS
+
+    # Record the Failure but Continue with the Sweep.
+    if [ $? -ne 0 ]; then
+        FAILED_RUNS=$((FAILED_RUNS + 1))
+        echo " Continuing to the Sweep Grid Despite the Baseline Failure Above."
+    fi
+fi
+
 # Iterate Over Every Combination in the Parameter Grid.
-for fraction in "${CORRUPTED_FRACTIONS[@]}"; do
-    for shape in "${RAMP_SHAPES[@]}"; do
-        for length in "${RAMP_LENGTHS[@]}"; do
-            # Run the Current Parameter Combination.
-            runOnce \
-                --corrupted-fraction "$fraction" \
-                --ramp-shape "$shape" \
-                --ramp-length-frames "$length" \
-                --peak-severity "$PEAK_SEVERITY" \
-                --seed "$SEED" \
-                --active-corruptions $ACTIVE_CORRUPTIONS
-            
-            # Record the Failure & Continue with the Next Combination.
-            if [ $? -ne 0 ]; then
-                FAILED_RUNS=$((FAILED_RUNS + 1))
-                echo " Continuing to the next combination despite the failure above."
-            fi
-        done
+for shape in "${RAMP_SHAPES[@]}"; do
+    for length in "${RAMP_LENGTHS[@]}"; do
+        # Run the Current Parameter Combination.
+        runOnce \
+            --corrupted-fraction "$SWEEP_CORRUPTED_FRACTION" \
+            --ramp-shape "$shape" \
+            --ramp-length-frames "$length" \
+            --peak-severity "$PEAK_SEVERITY" \
+            --seed "$SEED" \
+            --active-corruptions $ACTIVE_CORRUPTIONS
+        
+        # Record the Failure & Continue with the Next Combination.
+        if [ $? -ne 0 ]; then
+            FAILED_RUNS=$((FAILED_RUNS + 1))
+            echo " Continuing to the Next Combination Despite the Failure Above."
+        fi
     done
 done
 
 # Print the Final Sweep Summary.
 echo "============================================================"
-echo " Sweep complete at $(date). Failed runs: $FAILED_RUNS."
-echo " Results under: $RESULTS_BASE_DIR"
+echo " Sweep Complete at $(date). Failed Runs: $FAILED_RUNS / $TOTAL_RUNS."
+echo " Results Under: $RESULTS_BASE_DIR"
 echo "============================================================"
 # ------------------------------------------------------------------------------
