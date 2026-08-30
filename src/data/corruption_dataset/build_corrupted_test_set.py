@@ -4,7 +4,7 @@
 # File:                    %name: build_corrupted_test_set.py %
 # Date Created:            %date_created: Wed Aug 12 17:56:48 2026 %
 # CM Version               %version: 2 %
-# CM Instance              %instance: 1 %
+# CM Instance              %instance: 2 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -100,7 +100,8 @@ from src.data.corruption_dataset.corruptions import CORRUPTION_REGISTRY
 from src.data.corruption_dataset.severity_scheduler import buildSeveritySchedule
 from src.data.corruption_dataset.dataset_quality_metrics import (
     getPrimaryBoundingBox, computeLocalSCR, computeBackgroundComplexity,
-    computePSNR, computeRampMonotonicity, computeRampCoverage, summariseDatasetQuality
+    computePSNR, computeRampMonotonicity, computeRampCoverage, 
+    summariseDatasetQuality, summariseValues
 )
 
 # ------------------------------------------------------------------------------
@@ -233,16 +234,18 @@ def partPrefixFromFlightId(flight_id: str) -> str:
     return flight_id[:5]
 
 
-def copyCleanFlight(flight_id: str) -> None:
+def copyCleanFlight(dataset, flight_id: str) -> Optional[Dict]:
     """
     Copies a clean flight from the original dataset into the merged
     corruption dataset without modifying any of the original files.
 
     Args:
+        dataset: Loaded AOT Dataset object.
         flight_id (str): Full flight ID (e.g. 'part1abc123...').
 
     Returns:
-        None
+        A dictionary containing the flight ID and calculated background
+        complexity, or None if the source flight directory is missing.
     """
     # Resolve the Dataset Part from the Flight ID.
     part = partPrefixFromFlightId(flight_id)
@@ -256,10 +259,48 @@ def copyCleanFlight(flight_id: str) -> None:
         log(
             LogLevel.WARNING, "build_corrupted_test_set:copyCleanFlight",
             "Source directory does not exist for clean flight %s: %s", flight_id, source_dir)
-        return
+        return None
 
     # Copy the Flight Without Modifying the Original Dataset.
     shutil.copytree(source_dir, output_dir, dirs_exist_ok=True)
+
+    # Calculate Complexity from the First Valid Frame.
+    background_complexity = None
+    try:
+        # Load the Flight So We Can Inspect its Frames.
+        flight = dataset.get_flight(flight_id)
+
+        # Check Frames Until we Find One Suitable for the Calculation.
+        for frame_id, frame in flight.frames.items():
+            # Get the Primary Bounding Box for the Frame.
+            bbox = getPrimaryBoundingBox(frame)
+
+            # Skip Frames Without a Valid Bounding Box.
+            if bbox is None:
+                continue
+
+            try:
+                # Load the Frame Image as a NumPy Array.
+                image = frame.image(type='numpy')
+            except Exception:
+                # Skip Frames Whose Images Cannot be Loaded.
+                continue
+
+            # Calculate Complexity Using the Image & Bounding Box.
+            background_complexity = computeBackgroundComplexity(image, bbox)
+
+            # Stop After Finding a Valid Result.
+            if background_complexity is not None:
+                break
+    
+    except Exception as e:
+        # Complexity is Optional, So Keep the Copied Flight.
+        log(
+            LogLevel.WARNING, "build_corrupted_test_set:copyCleanFlight",
+            "Could Not Compute Background Complexity for Clean Flight %s: %s", flight_id, str(e))
+
+    # Return the Clean-Flight Quality Entry.
+    return {"flight_id": flight_id, "background_complexity": background_complexity}
 
 
 def copyImageSetFolders(flight_ids: List[str]) -> List[str]:
@@ -663,35 +704,40 @@ def main(input_path: Optional[str] = None,
  
     # Initialise Containers for the Manifest and Flight Subsets.
     manifest_entries = []
+    clean_manifest_entries: List[Dict] = []
     corrupted_by_type: Dict[str, List[str]] = {name: [] for name in ACTIVE_CORRUPTIONS}
     clean_flights: List[str] = []
- 
+
     # Get the Total Number of Flights to Process. 
     total = len(flight_ids)
- 
+
     # Process Each Flight According to its Assigned Corruption or Clean Status.
     for idx, flight_id in enumerate(flight_ids):
         # Retrieve the Corruption Assignment for the Current Flight.
         corruption_name = assignment[flight_id]
- 
+
         # This Flight was Assigned to the Clean Set.
         if corruption_name is None:
             # Copy the Original Flight Unchanged into the Merged Output Dataset.
             print("Flight %d/%d  %s  -->  clean" % (idx + 1, total, flight_id))
-            copyCleanFlight(flight_id)
+            clean_entry = copyCleanFlight(dataset, flight_id)
             clean_flights.append(flight_id)
+            if clean_entry is not None:
+                clean_manifest_entries.append(clean_entry)
             continue
- 
+
         # This Flight was Assigned to a Corruption Type.
         print("Flight %d/%d  %s  -->  %s" % (idx + 1, total, flight_id, corruption_name))
         entry = corruptFlight(dataset, flight_id, corruption_name)
- 
+
         # Fall Back to Clean if the Flight Could Not Be Corrupted.
         if entry is None:
-            copyCleanFlight(flight_id)
+            clean_entry = copyCleanFlight(dataset, flight_id)
             clean_flights.append(flight_id)
+            if clean_entry is not None:
+                clean_manifest_entries.append(clean_entry)
             continue
- 
+
         # Record the Successful Corruption in the Manifest.
         manifest_entries.append(entry)
         corrupted_by_type[corruption_name].append(flight_id)
@@ -736,19 +782,28 @@ def main(input_path: Optional[str] = None,
             "peak_severity": PEAK_SEVERITY,
             "onset_fraction_range": list(ONSET_FRACTION_RANGE),
             "flights": manifest_entries,
+            "clean_flights": clean_manifest_entries,
         }, f, indent=2)
- 
+
     # Report the Location and Number of Corrupted Flights in the Manifest.
     log(LogLevel.INFO, "build_corrupted_test_set:main",
         "Manifest Written: %s (%d corrupted flights)", manifest_path, len(manifest_entries))
- 
-    # Summarise Dataset-Wide Quality Metrics Across All Corrupted Flights & Write
-    # to Disk Alongside the Manifest.
+
+    # Summarise Quality Metrics for the Corrupted Flights.
     quality_summary = summariseDatasetQuality(manifest_entries)
+
+    # Collect Background Complexity Values for Clean Flights.
+    clean_complexities = [e["background_complexity"] for e in clean_manifest_entries
+                          if e.get("background_complexity") is not None]
+
+    # Add Clean-Flight Complexity for Comparison with Corrupted Flights.
+    quality_summary["clean_background_complexity"] = summariseValues(clean_complexities)
+
+    # Write the Quality Summary Alongside the Manifest.
     quality_summary_path = os.path.join(OUTPUT_RECORDS_DIR, "dataset_quality_summary.json")
-    with open(quality_summary_path, 'w') as f:
-        json.dump(quality_summary, f, indent=2)
- 
+    with open(quality_summary_path, 'w') as f: json.dump(quality_summary, f, indent=2)
+
+    # Log the Output Path for Reference.
     log(LogLevel.INFO, "build_corrupted_test_set:main",
         "Dataset Quality Summary Written: %s", quality_summary_path)
  
@@ -761,7 +816,7 @@ def main(input_path: Optional[str] = None,
         len(clean_flights), len(manifest_entries), ", ".join("%s: %d" % (k, len(v)) for k, v in corrupted_by_type.items()), total)
 # ------------------------------------------------------------------------------
 
- 
+
 # Call the Main Function.
 if __name__ == "__main__":
     # Build the Command-Line Interface. Every Flag Defaults to None, so an

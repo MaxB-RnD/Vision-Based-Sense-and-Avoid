@@ -4,7 +4,7 @@
 # File:                    %name: dataset_quality_metrics.py %
 # Date Created:            %date_created: Sat Aug 29 16:18:24 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 1 %
+# CM Instance              %instance: 2 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -428,7 +428,7 @@ def computeRampMonotonicity(scr_curve: List[Optional[float]], onset_frame: int, 
 # ------------------------------------------------------------------------------
 #                METRIC 5 -- DATASET-WIDE COVERAGE / SPREAD
 # ------------------------------------------------------------------------------
-def _summariseValues(values: List[float]) -> Optional[Dict]:
+def summariseValues(values: List[float]) -> Optional[Dict]:
     """
     Computes summary statistics for a list of numeric values.
 
@@ -483,11 +483,11 @@ def summariseDatasetQuality(manifest_entries: List[Dict]) -> Dict:
 
     # Return the Combined Summary.
     return {
-        "terminal_scr":          _summariseValues(terminal_scrs),
-        "background_complexity": _summariseValues(complexities),
-        "scr_monotonicity":      _summariseValues(monotonicities),
-        "scr_ramp_coverage":     _summariseValues(coverages),
-        "onset_frame":           _summariseValues(onsets),
-        "psnr_at_peak":          _summariseValues(psnr_at_peaks),
-    }
+            "terminal_scr":          summariseValues(terminal_scrs),
+            "background_complexity": summariseValues(complexities),
+            "scr_monotonicity":      summariseValues(monotonicities),
+            "scr_ramp_coverage":     summariseValues(coverages),
+            "onset_frame":           summariseValues(onsets),
+            "psnr_at_peak":          summariseValues(psnr_at_peaks),
+        }
 # ------------------------------------------------------------------------------
