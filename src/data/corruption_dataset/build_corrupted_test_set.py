@@ -10,7 +10,7 @@
 # -                          D E S C R I P T I O N                             -
 # ------------------------------------------------------------------------------
 # Builds a gradually-degrading introspection test dataset from the existing
-# test.txt split by applying continuous, ramping image corruptions to a
+# train.txt split by applying continuous, ramping image corruptions to a
 # configurable portion of the flights.
 #
 # Flights selected for corruption are processed frame-by-frame using the
@@ -29,7 +29,7 @@
 #
 #   2. Optional Environment Variables:
 #       - INPUT_TEST_FLIGHTS_PATH
-#           Path to the test.txt flight split used as the source population.
+#           Path to the train.txt flight split used as the source population.
 #
 #       - OUTPUT_RECORDS_DIR
 #           Directory where the generated flight lists and corruption manifest are
@@ -108,7 +108,7 @@ from src.data.corruption_dataset.dataset_quality_metrics import (
 #                           CONFIGURATION VARIABLES
 # ------------------------------------------------------------------------------
 # Source Test Flight List.
-INPUT_TEST_FLIGHTS_PATH = 'configs/datasets/training_subsets/test.txt'
+INPUT_TEST_FLIGHTS_PATH = 'configs/datasets/training_subsets/train.txt'
 
 # Output Directory for Flight Lists & the Corruption Manifest.
 OUTPUT_RECORDS_DIR = 'configs/datasets/corruption_subsets'
@@ -147,7 +147,7 @@ MIN_TRACK_LENGTH_FOR_CORRUPTION = MIN_CLEAN_LEAD_FRAMES + RAMP_LENGTH_FRAMES + 1
 # ------------------------------------------------------------------------------
 def parseFlightIds(filepath: str) -> List[str]:
     """
-    Reads flight IDs from a dataset text file (same format as test.txt).
+    Reads flight IDs from a dataset text file (same format as train.txt).
 
     Only lines beginning with 'part' are considered valid flight IDs. All
     header, comment, or malformed lines are ignored.
@@ -183,7 +183,7 @@ def assignCorruptions(flight_ids: List[str], corruption_names: List[str],
     corruption_names so each corruption type gets a roughly equal share.
 
     Args:
-        flight_ids (List[str]): All candidate flight IDs (from test.txt).
+        flight_ids (List[str]): All candidate flight IDs (from train.txt).
         corruption_names (List[str]): Corruption type keys to distribute across.
         corrupted_fraction (float): Fraction of flight_ids to corrupt.
         seed (int): Random seed for reproducibility.
@@ -694,7 +694,7 @@ def main(input_path: Optional[str] = None,
     # Load the Flight IDs from the Test Split.
     log(LogLevel.INFO, "build_corrupted_test_set:main", "Reading: %s", INPUT_TEST_FLIGHTS_PATH)
     flight_ids = parseFlightIds(INPUT_TEST_FLIGHTS_PATH)
-    log(LogLevel.INFO, "build_corrupted_test_set:main", "Found: %d flight IDs in test.txt", len(flight_ids))
+    log(LogLevel.INFO, "build_corrupted_test_set:main", "Found: %d flight IDs in train.txt", len(flight_ids))
  
     # Assign Each Flight to a Corruption Type OR the Clean Set.
     assignment = assignCorruptions(flight_ids, ACTIVE_CORRUPTIONS, CORRUPTED_FRACTION, SEED)
@@ -755,7 +755,7 @@ def main(input_path: Optional[str] = None,
             ids,
             filepath=os.path.join(OUTPUT_RECORDS_DIR, "%s_flights.txt" % corruption_name),
             description=(
-                "Flight IDs from test.txt that were corrupted with '%s' for the\n"
+                "Flight IDs from train.txt that were corrupted with '%s' for the\n"
                 "introspection gradual-degradation test set." % corruption_name
             ),
         )
@@ -765,7 +765,7 @@ def main(input_path: Optional[str] = None,
         clean_flights,
         filepath=os.path.join(OUTPUT_RECORDS_DIR, "clean_flights.txt"),
         description=(
-            "Flight IDs from test.txt that were left uncorrupted, forming the 'good'\n"
+            "Flight IDs from train.txt that were left uncorrupted, forming the 'good'\n"
             "portion of the introspection gradual-degradation test set."
         ),
     )
@@ -822,13 +822,13 @@ if __name__ == "__main__":
     # Build the Command-Line Interface. Every Flag Defaults to None, so an
     # Unset Flag Falls Back to the Module-Level CONFIGURATION VARIABLE.
     parser = argparse.ArgumentParser(
-        description='Build the ramping-corruption introspection test set from test.txt. '
+        description='Build the ramping-corruption introspection test set from train.txt. '
                     'Every flag is optional; anything left unset uses the CONFIGURATION '
                     'VARIABLES defined at the top of this file.'
     )
     # Optional Path to the Source Test Split.
     parser.add_argument('--input', default=None,
-                        help='Path to the source test.txt flight split.')
+                        help='Path to the source train.txt flight split.')
 
     # Optional Directory for Generated Flight Lists, Manifest & Quality Summary.
     parser.add_argument('--output-records-dir', default=None,

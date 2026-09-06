@@ -9,7 +9,7 @@
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
 # ------------------------------------------------------------------------------
-# Helper module for generating visualisations of introspection module results.
+# Helper module for generating visualisations of introsp ection module results.
 #
 # Provides notebook-callable functionality for creating annotated videos of
 # flight sequences, allowing predicted object locations, tracking behaviour,
@@ -44,26 +44,28 @@ import os
 import json
 import subprocess
 from glob import glob
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
 
 from logging_module import LogLevel, log
+from src.data.corruption_dataset.dataset_quality_metrics import getPrimaryBoundingBox
+from src.data.corruption_dataset.severity_scheduler import buildSeveritySchedule
 
 # ------------------------------------------------------------------------------
 #                        CONFIGURATION VARIABLES
 # ------------------------------------------------------------------------------
 # Paths & Environment Variables. 
-DEFAULT_DATASET_ROOT = 'data/corruption_dataset'
+DEFAULT_DATASET_ROOT = 'data/original_dataset'
 
 # Video Settings.
 VIDEO_FPS = 10
 
 # Bounding Box (BGR).
-BB_COLOUR_DETECTED = (0, 0, 211)     # Red.
-BB_COLOUR_COASTED  = (0, 140, 255)   # Orange.
+BB_COLOUR_DETECTED = (0, 0, 211)     # Red. Covers Both Detected and Coasted Predictions -- no Longer Distinguished.
 BB_COLOUR_WARNING  = (211, 0, 211)   # Magenta.
+BB_COLOUR_GT       = (0, 211, 0)     # Green. Ground-Truth Target Box.
 BB_THICKNESS = 4
 
 # Bounding Box Labels.
@@ -74,10 +76,37 @@ BB_LABEL_LINE_GAP   = 12
 # Status Banner.
 BANNER_HEIGHT = 80
 BANNER_FONT_SCALE = 1.0
-BANNER_COLOUR_WARNING   = (211, 0, 211)  # Magenta.
-BANNER_COLOUR_COASTED   = (0, 140, 255)  # Orange.
-BANNER_COLOUR_DETECTION = (0, 0, 211)    # Red.
-BANNER_COLOUR_EMPTY     = (60, 60, 60)   # Grey.
+BANNER_TEXT_THICKNESS = 2
+BANNER_FONT = cv2.FONT_HERSHEY_SIMPLEX
+BANNER_TEXT_COLOUR = (255, 255, 255)
+BANNER_COLUMN_GAP = 40  # Pixels Between Fixed Banner Columns.
+
+BANNER_COLOUR_WARNING    = (211, 0, 211)  # Magenta.
+BANNER_COLOUR_DETECTION  = (0, 0, 211)    # Red. Covers Both Detected and Coasted -- no Longer Distinguished.
+BANNER_COLOUR_EMPTY      = (60, 60, 60)   # Grey. No GT Target Present -- Nothing to Detect.
+BANNER_COLOUR_TRACK_LOST = (251, 121, 0)  # Yellow. GT Target Present but No Prediction -- a Real Failure.
+                                          # Deliberately Far from Red/Magenta/Grey/Green so it Cannot be
+                                          # Mistaken for Any Other Status at a Glance.
+
+# Fixed-Width Status Slot. Every Possible Status String is Measured Once at
+# Import Time; the Widest one Sets the Slot Width so the Frame Counter Before
+# it and the Severity/Module/Flight ID After it Never Shift Position,
+# Regardless of Which Status is Currently Showing (see addIntrospectionBanner).
+_STATUS_STRINGS = ["No Object", "TRACK LOST / GT TARGET PRESENT", "DETECTION", "INTROSPECTION WARNING"]
+_STATUS_WIDTHS = [
+    cv2.getTextSize(s, BANNER_FONT, BANNER_FONT_SCALE, BANNER_TEXT_THICKNESS)[0][0]
+    for s in _STATUS_STRINGS
+]
+BANNER_STATUS_SLOT_WIDTH = max(_STATUS_WIDTHS) + 20
+
+# Fixed-Width Severity Slot. "Severity: X.XX" is Always the Same Character
+# Pattern (One Digit, Decimal Point, Two Digits), so a Single Reference
+# String is Sufficient to Size the Slot -- Reserved Even When Severity is
+# None (Clean Flights), so Module Name/Flight ID Don't Shift Between
+# Corrupted and Clean Videos.
+BANNER_SEVERITY_SLOT_WIDTH = cv2.getTextSize(
+    "Severity: 0.00", BANNER_FONT, BANNER_FONT_SCALE, BANNER_TEXT_THICKNESS
+)[0][0] + 20
 # ------------------------------------------------------------------------------
 
 
@@ -172,6 +201,56 @@ def loadIntrospectionResults(result_json_path: str) -> Dict[str, List[dict]]:
 
     # Return Lookup Dictionary.
     return lookup
+
+
+def loadGroundTruthForFlight(dataset, flight_id: str) -> Dict[str, Optional[Tuple[int, int, int, int]]]:
+    """
+    Loads the ground-truth target bbox for every frame of a flight, indexed
+    by image filename to match the same key used for predicted results.
+
+    Reuses getPrimaryBoundingBox from dataset_quality_metrics.py -- the same
+    largest-object bbox resolution already used and tested for the dataset
+    quality metrics, so ground truth is read the same way in both places.
+
+    Args:
+        dataset: Loaded AOT Dataset object.
+        flight_id (str): Full flight ID (e.g. 'part1abc123...').
+
+    Returns:
+        Dict[str, Optional[Tuple[int, int, int, int]]]: Mapping of image
+            filename -> (x1, y1, x2, y2) ground-truth bbox, or None for
+            frames with no ground-truth target. Empty dict if the flight's
+            metadata could not be loaded.
+    """
+    # Attempt to Load the Flight's Metadata & Frames.
+    try:
+        flight = dataset.get_flight(flight_id)
+        frames = flight.frames
+    except Exception as e:
+        log(LogLevel.WARNING, "introspection_visualiser:loadGroundTruthForFlight",
+            "Could Not Load Ground Truth for Flight %s: %s. GT Overlay will be Unavailable.",
+            flight_id, str(e))
+        return {}
+
+    # Build the Filename -> BBox Lookup.
+    gt_lookup: Dict[str, Optional[Tuple[int, int, int, int]]] = {}
+    for frame_id, frame in frames.items():
+        try:
+            image_filename = os.path.basename(frame.image_path())
+        except Exception:
+            # Fall Back to the Frame ID Itself if image_path() is Unavailable.
+            image_filename = frame_id
+
+        gt_lookup[image_filename] = getPrimaryBoundingBox(frame)
+
+    # Display How Many Frames Have a Ground-Truth Target.
+    present_count = sum(1 for bbox in gt_lookup.values() if bbox is not None)
+    log(LogLevel.INFO, "introspection_visualiser:loadGroundTruthForFlight",
+        "Loaded Ground Truth for Flight %s: %d / %d Frames have a Target.",
+        flight_id, present_count, len(gt_lookup))
+
+    # Return the Completed Lookup.
+    return gt_lookup
 # ------------------------------------------------------------------------------
 
 
@@ -184,8 +263,10 @@ def drawPredictedBoxes(image: np.ndarray, detections: List[dict]) -> np.ndarray:
 
     Bounding box coordinates are read from the result fields 'x', 'y', 'w',
     and 'h', which contain the top-left and bottom-right coordinates
-    respectively. Box colour indicates the detection status, with warnings
-    shown in the warning colour.
+    respectively. Box colour indicates only whether an introspection warning
+    fired on that track this frame -- detected and coasted predictions are
+    drawn identically, since distinguishing them visually added confusion
+    without adding useful information for reviewing these videos.
 
     Args:
         image (np.ndarray): OpenCV image array to draw onto (modified in place).
@@ -210,17 +291,12 @@ def drawPredictedBoxes(image: np.ndarray, detections: List[dict]) -> np.ndarray:
         x1, y1 = int(x1), int(y1)
         x2, y2 = int(x2), int(y2)
 
-        # Read the Detection Source and Warning Status.
-        source  = det.get('source', 'DETECTED')
+        # Read the Warning Status. Source (Detected/Coasted) No Longer
+        # Affects Colour -- Only Whether a Warning Fired Matters Here.
         warning = bool(det.get('warning', False))
 
-        # Set the Box Colour Based on the Detection Status.
-        if warning:
-            colour = BB_COLOUR_WARNING
-        elif source == 'COASTED':
-            colour = BB_COLOUR_COASTED
-        else:
-            colour = BB_COLOUR_DETECTED
+        # Set the Box Colour Based on the Warning Status.
+        colour = BB_COLOUR_WARNING if warning else BB_COLOUR_DETECTED
 
         # Draw the Bounding Box.
         cv2.rectangle(image, (x1, y1), (x2, y2), colour, BB_THICKNESS)
@@ -258,12 +334,55 @@ def drawPredictedBoxes(image: np.ndarray, detections: List[dict]) -> np.ndarray:
     return image
 
 
-def addIntrospectionBanner(image: np.ndarray, frame_num: int, total_frames: int,
-                           detections: List[dict], flight_id: str, module_name: str) -> np.ndarray:
+def drawGroundTruthBox(image: np.ndarray, bbox: Tuple[int, int, int, int]) -> np.ndarray:
     """
-    Adds a coloured status banner to the bottom of the image, escalating from
-    grey (no predicted object) to orange (coasted) to red (detection) to 
-    magenta (introspection warning fired on at least one track this frame).
+    Draws the ground-truth target bounding box, in a colour distinct from any
+    predicted box, so ground truth and prediction can be visually compared at
+    a glance -- including the case where there is no predicted box to compare
+    against at all.
+
+    Args:
+        image (np.ndarray): OpenCV image array to draw onto (modified in place).
+        bbox (Tuple[int, int, int, int]): Ground-truth (x1, y1, x2, y2).
+
+    Returns:
+        np.ndarray: Annotated image.
+    """
+    # Unpack & Draw the Ground-Truth Box.
+    x1, y1, x2, y2 = bbox
+    cv2.rectangle(image, (x1, y1), (x2, y2), BB_COLOUR_GT, BB_THICKNESS)
+
+    # Label the Box so it isn't Confused with a Prediction.
+    label = "GT"
+    (label_w, label_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX,
+                                            BB_LABEL_FONT_SCALE, BB_LABEL_THICKNESS)
+    label_x, label_y = x1, max(y1 - 8, label_h + 4)
+
+    cv2.rectangle(image, (label_x - 2, label_y - label_h - 4),
+                 (label_x + label_w + 4, label_y + 4), BB_COLOUR_GT, cv2.FILLED)
+    cv2.putText(image, label, (label_x, label_y), cv2.FONT_HERSHEY_SIMPLEX,
+               BB_LABEL_FONT_SCALE, (255, 255, 255), BB_LABEL_THICKNESS, cv2.LINE_AA)
+
+    # Return the Marked-Up Frame.
+    return image
+
+
+def addIntrospectionBanner(image: np.ndarray, frame_num: int, total_frames: int,
+                           detections: List[dict], flight_id: str, module_name: str,
+                           gt_present: bool = False, severity: Optional[float] = None) -> np.ndarray:
+    """
+    Adds a coloured status banner to the bottom of the image: grey for no
+    ground-truth target (nothing to detect), yellow for a ground-truth
+    target present but no prediction (a genuine tracking failure), red for
+    an active prediction (detected or coasted -- no longer visually
+    distinguished from each other), and magenta for an introspection warning.
+
+    Each piece of banner text is drawn at a fixed column position rather than
+    concatenated into one string. The status text specifically is centred
+    within a fixed-width slot sized to the widest possible status string, so
+    the frame counter before it and the severity/module/flight ID after it
+    never shift position frame to frame, regardless of which status is
+    currently showing or how its length compares to the others.
 
     Args:
         image (np.ndarray): OpenCV image to annotate.
@@ -273,6 +392,15 @@ def addIntrospectionBanner(image: np.ndarray, frame_num: int, total_frames: int,
         flight_id (str): Flight ID string for display.
         module_name (str): Name of the introspection module that produced
                            these results, shown in the banner for context.
+        gt_present (bool): Whether a ground-truth target exists in this frame.
+                          Distinguishes "nothing to detect" from "target
+                          present but not predicted" when there are no
+                          detections -- see the Status Wording note below.
+        severity (Optional[float]): This frame's corruption severity in
+                                    [0, 1], if available. The column is
+                                    reserved either way so later columns
+                                    don't shift between corrupted and clean
+                                    flights -- just left blank when None.
 
     Returns:
         np.ndarray: Image with banner appended at the bottom.
@@ -283,31 +411,69 @@ def addIntrospectionBanner(image: np.ndarray, frame_num: int, total_frames: int,
     # Create the Empty Banner.
     banner = np.zeros((BANNER_HEIGHT, w, 3), dtype=np.uint8)
 
-    # Check the Detection Status for the Frame.
+    # Check the Detection Status for the Frame. Source (Detected/Coasted) No
+    # Longer Affects Status -- Only Whether Anything was Predicted at all.
     has_detection = bool(detections)
     has_warning = any(bool(d.get('warning', False)) for d in detections)
-    has_coasted = any(d.get('source', 'DETECTED') == 'COASTED' for d in detections)
 
     # Set the Banner Colour and Status.
+    #
+    # STATUS WORDING: "No Object" and "Track Lost" are Deliberately Different
+    # Strings, not Just Different Colours -- Conflating them Previously Meant
+    # a Frame with Nothing to Detect Looked Identical, on Inspection of the
+    # Text Alone, to a Frame where the Tracker Genuinely Dropped a Visible
+    # Target. The Latter is the Actual Failure Condition Worth Highlighting.
     if has_warning:
         colour, status_str = BANNER_COLOUR_WARNING, "INTROSPECTION WARNING"
-    elif has_coasted:
-        colour, status_str = BB_COLOUR_COASTED, "COASTED"
     elif has_detection:
         colour, status_str = BANNER_COLOUR_DETECTION, "DETECTION"
+    elif gt_present:
+        colour, status_str = BANNER_COLOUR_TRACK_LOST, "TRACK LOST / GT TARGET PRESENT"
     else:
         colour, status_str = BANNER_COLOUR_EMPTY, "No Object"
 
     # Apply the Status Colour to the Banner.
     banner[:] = colour
 
-    # Create the Banner Label.
-    label = "Frame %d / %d  |  %s  |  %s  |  %s" % (
-        frame_num, total_frames, status_str, module_name, flight_id
-    )
+    # Baseline Y Position for All Banner Text.
+    baseline_y = 50
 
-    # Draw the Label onto the Banner.
-    cv2.putText(banner, label, (20, 50), cv2.FONT_HERSHEY_SIMPLEX,
+    # Column 1 -- Frame Counter. Zero-Padded to total_frames' Digit Width, so
+    # its Rendered Width (and Therefore Every Column After It) Never Jitters
+    # from One Frame to the Next Within this Video.
+    digit_width = len(str(total_frames))
+    frame_text = "Frame %0*d / %d  |" % (digit_width, frame_num, total_frames)
+    frame_col_x = 20
+    cv2.putText(banner, frame_text, (frame_col_x, baseline_y), BANNER_FONT,
+               BANNER_FONT_SCALE, BANNER_TEXT_COLOUR, BANNER_TEXT_THICKNESS, cv2.LINE_AA)
+    frame_text_width = cv2.getTextSize(frame_text, BANNER_FONT, BANNER_FONT_SCALE,
+                                       BANNER_TEXT_THICKNESS)[0][0]
+
+    # Column 2 -- Status. Centred within its Fixed-Width Slot (see
+    # BANNER_STATUS_SLOT_WIDTH), rather than Left-Aligned, per the Padding
+    # Request -- Shorter Statuses Sit in the Middle of the Same Slot Longer
+    # Ones Occupy, instead of Hugging the Left Edge.
+    status_slot_x = frame_col_x + frame_text_width + BANNER_COLUMN_GAP
+    status_text_width = cv2.getTextSize(status_str, BANNER_FONT, BANNER_FONT_SCALE,
+                                        BANNER_TEXT_THICKNESS)[0][0]
+    status_x = status_slot_x + max(0, (BANNER_STATUS_SLOT_WIDTH - status_text_width) // 2)
+    cv2.putText(banner, status_str, (status_x, baseline_y), BANNER_FONT,
+               BANNER_FONT_SCALE, BANNER_TEXT_COLOUR, BANNER_TEXT_THICKNESS, cv2.LINE_AA)
+
+    # Column 3 -- Severity. Fixed Slot Width Reserved Whether or not a Value
+    # is Actually Shown, so Column 4 Never Shifts Between Corrupted and
+    # Clean Flights.
+    severity_slot_x = status_slot_x + BANNER_STATUS_SLOT_WIDTH + BANNER_COLUMN_GAP
+    if severity is not None:
+        severity_text = "|  Severity: %.2f  |" % severity
+        cv2.putText(banner, severity_text, (severity_slot_x, baseline_y), BANNER_FONT,
+                   BANNER_FONT_SCALE, BANNER_TEXT_COLOUR, BANNER_TEXT_THICKNESS, cv2.LINE_AA)
+
+    # Column 4 -- Module Name & Flight ID. Both are Constant for the Entire
+    # Video, so There's no Jitter Risk Here Regardless of Length.
+    trailer_x = severity_slot_x + BANNER_SEVERITY_SLOT_WIDTH + BANNER_COLUMN_GAP
+    trailer_text = "%s  |  %s" % (module_name, flight_id)
+    cv2.putText(banner, trailer_text, (trailer_x, baseline_y), BANNER_FONT,
                 BANNER_FONT_SCALE, (255, 255, 255), 2, cv2.LINE_AA)
 
     # Append the Banner to the Bottom of the Image.
@@ -320,7 +486,8 @@ def addIntrospectionBanner(image: np.ndarray, frame_num: int, total_frames: int,
 # ------------------------------------------------------------------------------
 def generateIntrospectionVideo(flight_id: str, result_json_path: str, module_name: str,
                                output_path: str, dataset_root: str = DEFAULT_DATASET_ROOT,
-                               video_fps: int = VIDEO_FPS) -> None:
+                               video_fps: int = VIDEO_FPS, dataset=None,
+                               manifest_entry: Optional[Dict] = None) -> None:
     """
     Generates an annotated video covering every frame of a flight, with the
     introspection module's predicted results overlaid where available.
@@ -334,6 +501,19 @@ def generateIntrospectionVideo(flight_id: str, result_json_path: str, module_nam
         dataset_root (str): Root directory containing '{part}/Images/...'.
                             Defaults to DEFAULT_DATASET_ROOT.
         video_fps (int): Output video frame rate. Defaults to VIDEO_FPS.
+        dataset: Optional loaded AOT Dataset object. When supplied, the
+                ground-truth target box is drawn every frame and the status
+                banner correctly distinguishes "no object" from "track lost
+                while a ground-truth target is present". When omitted
+                (default), the video is generated exactly as before, with no
+                ground-truth overlay.
+        manifest_entry (Optional[Dict]): This flight's entry from
+                                        corruption_manifest.json (needs
+                                        'onset_frame', 'ramp_length',
+                                        'ramp_shape', 'peak_severity'). When
+                                        supplied, the banner displays this
+                                        frame's corruption severity. Omit for
+                                        clean/uncorrupted flights.
 
     Returns:
         None:
@@ -344,6 +524,29 @@ def generateIntrospectionVideo(flight_id: str, result_json_path: str, module_nam
 
     # Load the Predicted Results for the Flight.
     results_lookup = loadIntrospectionResults(result_json_path)
+
+    # Load Ground Truth, if a Dataset was Supplied. Falls Back to an Empty
+    # Lookup Otherwise -- Every Frame will then Show as "No Object" when
+    # Nothing was Predicted, Matching the Previous Behaviour Exactly.
+    gt_lookup: Dict[str, Optional[Tuple[int, int, int, int]]] = {}
+    if dataset is not None:
+        gt_lookup = loadGroundTruthForFlight(dataset, flight_id)
+
+    # Build the Per-Frame Severity Schedule, if a Manifest Entry was Supplied.
+    severity_schedule: Optional[List[float]] = None
+    if manifest_entry is not None:
+        try:
+            severity_schedule = buildSeveritySchedule(
+                num_frames=total_frames,
+                onset_frame=manifest_entry['onset_frame'],
+                ramp_length=manifest_entry['ramp_length'],
+                peak_severity=manifest_entry.get('peak_severity', 1.0),
+                shape=manifest_entry.get('ramp_shape', 'linear'),
+            )
+        except Exception as e:
+            log(LogLevel.WARNING, "introspection_visualiser:generateIntrospectionVideo",
+                "Could Not Build Severity Schedule for Flight %s: %s. Severity will not be Shown.",
+                flight_id, str(e))
 
     # Ensure the Output Directory Exists.
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -368,9 +571,11 @@ def generateIntrospectionVideo(flight_id: str, result_json_path: str, module_nam
                 "Could Not Load Image '%s'. Skipping.", image_path)
             continue
 
-        # Look Up Predictions for the Current Frame.
+        # Look Up Predictions, Ground Truth, and Severity for the Current Frame.
         img_name = os.path.basename(image_path)
         detections = results_lookup.get(img_name, [])
+        gt_bbox = gt_lookup.get(img_name)
+        severity = severity_schedule[frame_idx] if severity_schedule is not None else None
 
         # Initialise the VideoWriter from the First Valid Frame.
         if writer is None:
@@ -389,13 +594,19 @@ def generateIntrospectionVideo(flight_id: str, result_json_path: str, module_nam
             log(LogLevel.INFO, "introspection_visualiser:generateIntrospectionVideo",
                 "Writing %d Frames at %dx%d  %d fps.", total_frames, w, h, video_fps)
 
+        # Draw the Ground-Truth Box First, so Predicted Boxes are Drawn on Top
+        # and Remain Fully Visible when the Two Overlap.
+        if gt_bbox is not None:
+            image = drawGroundTruthBox(image, gt_bbox)
+
         # Draw Predicted Bounding Boxes when Detections are Present.
         if detections:
             image = drawPredictedBoxes(image, detections)
 
         # Add the Introspection Status Banner.
         image = addIntrospectionBanner(image, frame_idx + 1, total_frames,
-                                       detections, flight_id, module_name)
+                                       detections, flight_id, module_name,
+                                       gt_present=(gt_bbox is not None), severity=severity)
 
         # Write the Annotated Frame to the Video.
         writer.write(image)
