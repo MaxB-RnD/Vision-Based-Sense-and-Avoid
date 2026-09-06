@@ -79,14 +79,14 @@ BANNER_FONT_SCALE = 1.0
 BANNER_TEXT_THICKNESS = 2
 BANNER_FONT = cv2.FONT_HERSHEY_SIMPLEX
 BANNER_TEXT_COLOUR = (255, 255, 255)
-BANNER_COLUMN_GAP = 40  # Pixels Between Fixed Banner Columns.
+BANNER_COLUMN_GAP = 20  # Pixels Between Fixed Banner Columns. Tightened from 40 for a
+                        # less loose banner overall.
 
 BANNER_COLOUR_WARNING    = (211, 0, 211)  # Magenta.
 BANNER_COLOUR_DETECTION  = (0, 0, 211)    # Red. Covers Both Detected and Coasted -- no Longer Distinguished.
 BANNER_COLOUR_EMPTY      = (60, 60, 60)   # Grey. No GT Target Present -- Nothing to Detect.
-BANNER_COLOUR_TRACK_LOST = (251, 121, 0)  # Yellow. GT Target Present but No Prediction -- a Real Failure.
-                                          # Deliberately Far from Red/Magenta/Grey/Green so it Cannot be
-                                          # Mistaken for Any Other Status at a Glance.
+BANNER_COLOUR_TRACK_LOST = (0, 121, 251)  # Orange (BGR). Deliberately Far from Red/Magenta/Grey/Green
+                                          # so it Cannot be Mistaken for Any Other Status at a Glance.
 
 # Fixed-Width Status Slot. Every Possible Status String is Measured Once at
 # Import Time; the Widest one Sets the Slot Width so the Frame Counter Before
@@ -99,14 +99,31 @@ _STATUS_WIDTHS = [
 ]
 BANNER_STATUS_SLOT_WIDTH = max(_STATUS_WIDTHS) + 20
 
-# Fixed-Width Severity Slot. "Severity: X.XX" is Always the Same Character
-# Pattern (One Digit, Decimal Point, Two Digits), so a Single Reference
-# String is Sufficient to Size the Slot -- Reserved Even When Severity is
-# None (Clean Flights), so Module Name/Flight ID Don't Shift Between
-# Corrupted and Clean Videos.
+# Format String Used for the Severity Column, Defined Once and Reused for
+# Both Measuring the Slot Width Below and Drawing the Actual Text in
+# addIntrospectionBanner -- a Single Source of Truth Means the Reserved
+# Slot can Never Undersize the Text Actually Drawn into it.
+BANNER_SEVERITY_FORMAT = "|  Severity: %.2f  |"
 BANNER_SEVERITY_SLOT_WIDTH = cv2.getTextSize(
-    "Severity: 0.00", BANNER_FONT, BANNER_FONT_SCALE, BANNER_TEXT_THICKNESS
+    BANNER_SEVERITY_FORMAT % 0.0, BANNER_FONT, BANNER_FONT_SCALE, BANNER_TEXT_THICKNESS
 )[0][0] + 20
+
+
+# Top-Left Overlay (Warning Lead Time + True-Onset Marker). Drawn on the
+# Frame Itself (not the Bottom Banner -- the Banner is Already at Capacity).
+AWLT_FONT = cv2.FONT_HERSHEY_SIMPLEX
+AWLT_FONT_SCALE = 0.8
+AWLT_TEXT_THICKNESS = 2
+AWLT_TEXT_COLOUR = (255, 255, 255)
+AWLT_BG_COLOUR = (60, 60, 60)  # Grey, Matching BANNER_COLOUR_EMPTY for Visual Consistency.
+AWLT_MARGIN = 12
+AWLT_LINE_GAP = 8
+
+# True-Onset Marker Text Colour. Same Green as the Ground-Truth Box
+# (BB_COLOUR_GT) so it Reads as "This is About the Ground-Truth Target",
+# Consistent with the Rest of the Palette, rather than Introducing a Fifth
+# Distinct Colour Just for This.
+ONSET_TEXT_COLOUR = BB_COLOUR_GT
 # ------------------------------------------------------------------------------
 
 
@@ -172,7 +189,9 @@ def loadIntrospectionResults(result_json_path: str) -> Dict[str, List[dict]]:
 
     Expected format is a flat list of frame entries:
         [{"img_name": "...png", "detections": [{"track_id", "x", "y", "w", "h",
-                                                  "n", "s", "source", "warning"}]}, ...]
+                                                  "n", "s", "source", "warning",
+                                                  "introspection_score",
+                                                  "introspection_threshold"}]}, ...]
 
     Args:
         result_json_path (str): Path to the flight's result.json file.
@@ -257,6 +276,40 @@ def loadGroundTruthForFlight(dataset, flight_id: str) -> Dict[str, Optional[Tupl
 # ------------------------------------------------------------------------------
 #                    ANNOTATION HELPERS (Boxes + Banner)
 # ------------------------------------------------------------------------------
+def _fitTextScale(text: str, font: int, max_width: int, base_scale: float,
+                  thickness: int, min_scale: float = 0.45) -> Tuple[float, int]:
+    """
+    Shrinks the font scale for a piece of text until it fits within
+    max_width, so long strings (e.g. long flight IDs) never run off the
+    edge of the frame instead of silently being clipped by OpenCV.
+
+    Args:
+        text (str): Text to be measured/drawn.
+        font (int): OpenCV font face.
+        max_width (int): Maximum allowed pixel width for the rendered text.
+        base_scale (float): Preferred/starting font scale.
+        thickness (int): Text thickness used for measurement.
+        min_scale (float): Floor below which the scale will not shrink
+                           further -- past this point the text is left at
+                           min_scale even if it is still too wide, rather
+                           than shrinking to the point of being unreadable.
+
+    Returns:
+        Tuple[float, int]: (scale to use, rendered width at that scale).
+    """
+    # Start at the Preferred Scale and Measure the Text.
+    scale = base_scale
+    (text_width, _), _ = cv2.getTextSize(text, font, scale, thickness)
+
+    # Shrink the Scale in Small Steps Until the Text Fits, or the Floor is Hit.
+    while text_width > max_width and scale > min_scale:
+        scale = round(scale - 0.05, 2)
+        (text_width, _), _ = cv2.getTextSize(text, font, scale, thickness)
+
+    # Return the Final Scale and its Rendered Width.
+    return scale, text_width
+
+
 def drawPredictedBoxes(image: np.ndarray, detections: List[dict]) -> np.ndarray:
     """
     Draws predicted bounding boxes and labels for all detections in a frame.
@@ -301,33 +354,53 @@ def drawPredictedBoxes(image: np.ndarray, detections: List[dict]) -> np.ndarray:
         # Draw the Bounding Box.
         cv2.rectangle(image, (x1, y1), (x2, y2), colour, BB_THICKNESS)
 
-        # Read the Track ID and Confidence Score.
+        # Read the Track ID. Raw Confidence ('s') is No Longer Shown on its
+        # own -- it's Superseded Below by the Continuous Introspection Score,
+        # which is the Value Actually Driving Escalation Decisions.
         track_id = det.get('track_id', '?')
-        score = det.get('s', None)
-        score_str = ("%.2f" % score) if score is not None else "N/A"
 
-        # Create the Two-Line Box Label.
+        # Read the Continuous Introspection Score for this Track/Frame,
+        # Populated by the Active Introspection Module (see
+        # introspection_modules.py's get_score()). Falls Back to "N/A" for
+        # any Older result.json Files Written Before this Field Existed.
+        introspection_score = det.get('introspection_score', None)
+        introspection_str = ("%.2f" % introspection_score) if introspection_score is not None else "N/A"
+
+        # Read the Alarm Threshold the Introspection Score is Compared
+        # Against (see introspection_modules.py's get_threshold()). Fixed
+        # per Module/Signal (Not User-Configurable at Runtime), but Still
+        # Worth Displaying Alongside the Score it's Compared To.
+        introspection_threshold = det.get('introspection_threshold', None)
+        threshold_str = ("%.2f" % introspection_threshold) if introspection_threshold is not None else "N/A"
+
+        # Create the Three-Line Box Label: Track ID, then Introspection
+        # Score, then the Alarm Threshold it's Compared Against.
         line1 = "ID: " + str(track_id)
-        line2 = score_str
+        line2 = "Score: " + introspection_str
+        line3 = "Threshold: " + threshold_str
 
         # Calculate the Label Dimensions.
         (w1, h1), _ = cv2.getTextSize(line1, font, BB_LABEL_FONT_SCALE, BB_LABEL_THICKNESS)
         (w2, h2), _ = cv2.getTextSize(line2, font, BB_LABEL_FONT_SCALE, BB_LABEL_THICKNESS)
+        (w3, h3), _ = cv2.getTextSize(line3, font, BB_LABEL_FONT_SCALE, BB_LABEL_THICKNESS)
 
         # Position the Label Below the Bounding Box.
         label_x = x1
         line1_y = y2 + h1 + 4
         line2_y = line1_y + h2 + BB_LABEL_LINE_GAP
+        line3_y = line2_y + h3 + BB_LABEL_LINE_GAP
 
-        # Draw the Label Background.
+        # Draw the Label Background, Sized to Fit All Three Lines.
         bg_x1, bg_y1 = label_x - 2, y2 + 2
-        bg_x2, bg_y2 = label_x + max(w1, w2) + 4, line2_y + 4
+        bg_x2, bg_y2 = label_x + max(w1, w2, w3) + 4, line3_y + 4
         cv2.rectangle(image, (bg_x1, bg_y1), (bg_x2, bg_y2), colour, cv2.FILLED)
 
-        # Draw the Track ID and Confidence Score.
+        # Draw the Track ID, Introspection Score, and Alarm Threshold.
         cv2.putText(image, line1, (label_x, line1_y), font, BB_LABEL_FONT_SCALE,
                     (255, 255, 255), BB_LABEL_THICKNESS, cv2.LINE_AA)
         cv2.putText(image, line2, (label_x, line2_y), font, BB_LABEL_FONT_SCALE,
+                    (255, 255, 255), BB_LABEL_THICKNESS, cv2.LINE_AA)
+        cv2.putText(image, line3, (label_x, line3_y), font, BB_LABEL_FONT_SCALE,
                     (255, 255, 255), BB_LABEL_THICKNESS, cv2.LINE_AA)
 
     # Return the Marked-Up Frame. 
@@ -367,12 +440,89 @@ def drawGroundTruthBox(image: np.ndarray, bbox: Tuple[int, int, int, int]) -> np
     return image
 
 
+def addTopLeftOverlay(image: np.ndarray, warning_lead_time: Optional[float],
+                      show_onset_marker: bool = False) -> np.ndarray:
+    """
+    Draws a single grey-background box in the top-left corner of the frame,
+    containing the Warning Lead Time for this flight/run, and -- once the
+    true failure onset frame has been reached -- a second line marking that
+    fact. Both live in the same box rather than separate overlays, since a
+    single flight only ever needs one top-left status area.
+
+    The onset line persists from the onset frame through to the end of the
+    video (rather than flashing for a single frame), on the reasoning that
+    someone scrubbing through the video benefits from knowing "we are past
+    the point of failure onset" for the remainder, not just catching a
+    single-frame flag.
+
+    Args:
+        image (np.ndarray): OpenCV image to annotate.
+        warning_lead_time (Optional[float]): Warning lead time in seconds
+                                             for this flight/run -- i.e. how
+                                             far ahead of the true failure
+                                             onset the introspection module
+                                             raised its warning (or how far
+                                             behind, if negative). This is a
+                                             single-flight value, not a
+                                             dataset-wide average. Pass None
+                                             until the value has been
+                                             computed and piped in -- the
+                                             overlay still renders, showing
+                                             "N/A", so the layout doesn't
+                                             shift once a real value is
+                                             available.
+        show_onset_marker (bool): True from the true failure onset frame
+                                  onward for this flight. Adds a second line,
+                                  in the same green used for the ground-truth
+                                  box, stating that onset has occurred.
+
+    Returns:
+        np.ndarray: Annotated image.
+    """
+    # Build the Warning Lead Time Line.
+    lead_time_text = ("Warning Lead Time: %.2fs" % warning_lead_time) if warning_lead_time is not None \
+        else "Warning Lead Time: N/A"
+    lines: List[Tuple[str, Tuple[int, int, int]]] = [(lead_time_text, AWLT_TEXT_COLOUR)]
+
+    # Add the True-Onset Line, Only Once the Onset Frame has been Reached.
+    if show_onset_marker:
+        lines.append(("TRUE FAILURE ONSET FRAME", ONSET_TEXT_COLOUR))
+
+    # Measure Every Line so the Background Plate can be Sized to Fit Whichever
+    # Lines are Currently Showing.
+    sizes = [cv2.getTextSize(text, AWLT_FONT, AWLT_FONT_SCALE, AWLT_TEXT_THICKNESS) for text, _ in lines]
+    line_widths = [size[0][0] for size in sizes]
+    line_heights = [size[0][1] for size in sizes]
+    max_baseline = max(size[1] for size in sizes)
+
+    # Position in the Top-Left Corner, With a Small Margin.
+    x1, y1 = AWLT_MARGIN, AWLT_MARGIN
+    box_width = max(line_widths) + 2 * AWLT_MARGIN
+    box_height = sum(line_heights) + max_baseline + (len(lines) - 1) * AWLT_LINE_GAP + 2 * AWLT_MARGIN
+    x2, y2 = x1 + box_width, y1 + box_height
+
+    # Draw a Solid Background Plate so the Text Stays Legible Over any
+    # Underlying Imagery, Regardless of How Many Lines are Showing.
+    cv2.rectangle(image, (x1, y1), (x2, y2), AWLT_BG_COLOUR, cv2.FILLED)
+
+    # Draw Each Line in Turn.
+    text_x = x1 + AWLT_MARGIN
+    text_y = y1 + AWLT_MARGIN + line_heights[0]
+    for (text, colour), height in zip(lines, line_heights):
+        cv2.putText(image, text, (text_x, text_y), AWLT_FONT, AWLT_FONT_SCALE,
+                    colour, AWLT_TEXT_THICKNESS, cv2.LINE_AA)
+        text_y += height + AWLT_LINE_GAP
+
+    # Return the Marked-Up Frame.
+    return image
+
+
 def addIntrospectionBanner(image: np.ndarray, frame_num: int, total_frames: int,
                            detections: List[dict], flight_id: str, module_name: str,
                            gt_present: bool = False, severity: Optional[float] = None) -> np.ndarray:
     """
     Adds a coloured status banner to the bottom of the image: grey for no
-    ground-truth target (nothing to detect), yellow for a ground-truth
+    ground-truth target (nothing to detect), orange for a ground-truth
     target present but no prediction (a genuine tracking failure), red for
     an active prediction (detected or coasted -- no longer visually
     distinguished from each other), and magenta for an introspection warning.
@@ -465,16 +615,22 @@ def addIntrospectionBanner(image: np.ndarray, frame_num: int, total_frames: int,
     # Clean Flights.
     severity_slot_x = status_slot_x + BANNER_STATUS_SLOT_WIDTH + BANNER_COLUMN_GAP
     if severity is not None:
-        severity_text = "|  Severity: %.2f  |" % severity
+        severity_text = BANNER_SEVERITY_FORMAT % severity
         cv2.putText(banner, severity_text, (severity_slot_x, baseline_y), BANNER_FONT,
                    BANNER_FONT_SCALE, BANNER_TEXT_COLOUR, BANNER_TEXT_THICKNESS, cv2.LINE_AA)
 
     # Column 4 -- Module Name & Flight ID. Both are Constant for the Entire
-    # Video, so There's no Jitter Risk Here Regardless of Length.
+    # Video, so There's no Jitter Risk Here Regardless of Length. Flight IDs
+    # (Especially part2/part3 Hashes) can be Long Enough to Run Past the
+    # Right Edge of the Frame at the Default Scale, so the Font is Shrunk
+    # Just for This Column, Just Enough to Keep it Fully On-Screen.
     trailer_x = severity_slot_x + BANNER_SEVERITY_SLOT_WIDTH + BANNER_COLUMN_GAP
     trailer_text = "%s  |  %s" % (module_name, flight_id)
+    trailer_max_width = max(w - trailer_x - 10, 10)
+    trailer_scale, _ = _fitTextScale(trailer_text, BANNER_FONT, trailer_max_width,
+                                     BANNER_FONT_SCALE, BANNER_TEXT_THICKNESS)
     cv2.putText(banner, trailer_text, (trailer_x, baseline_y), BANNER_FONT,
-                BANNER_FONT_SCALE, (255, 255, 255), 2, cv2.LINE_AA)
+                trailer_scale, (255, 255, 255), BANNER_TEXT_THICKNESS, cv2.LINE_AA)
 
     # Append the Banner to the Bottom of the Image.
     return np.vstack([image, banner])
@@ -487,7 +643,9 @@ def addIntrospectionBanner(image: np.ndarray, frame_num: int, total_frames: int,
 def generateIntrospectionVideo(flight_id: str, result_json_path: str, module_name: str,
                                output_path: str, dataset_root: str = DEFAULT_DATASET_ROOT,
                                video_fps: int = VIDEO_FPS, dataset=None,
-                               manifest_entry: Optional[Dict] = None) -> None:
+                               manifest_entry: Optional[Dict] = None,
+                               warning_lead_time: Optional[float] = None,
+                               onset_frame: Optional[int] = None) -> None:
     """
     Generates an annotated video covering every frame of a flight, with the
     introspection module's predicted results overlaid where available.
@@ -514,6 +672,29 @@ def generateIntrospectionVideo(flight_id: str, result_json_path: str, module_nam
                                         supplied, the banner displays this
                                         frame's corruption severity. Omit for
                                         clean/uncorrupted flights.
+        warning_lead_time (Optional[float]): This flight/run's warning lead
+                                             time in seconds -- how far ahead
+                                             of the true failure onset the
+                                             introspection module raised its
+                                             warning. Shown as a top-left
+                                             overlay on every frame. This is
+                                             the single-flight value for the
+                                             example in this video, not a
+                                             dataset-wide average -- keep
+                                             that distinction in mind if this
+                                             is later renamed/reused as part
+                                             of an aggregate metric. Pass
+                                             None (default) until the value
+                                             has been computed -- the overlay
+                                             still renders, showing "N/A".
+        onset_frame (Optional[int]): 1-indexed frame number of the true
+                                     failure onset for this flight, if
+                                     known. From this frame onward, the
+                                     top-left overlay gains a second line
+                                     (in the same green as the ground-truth
+                                     box) stating that onset has occurred.
+                                     Pass None (default) to omit the marker
+                                     entirely.
 
     Returns:
         None:
@@ -602,6 +783,12 @@ def generateIntrospectionVideo(flight_id: str, result_json_path: str, module_nam
         # Draw Predicted Bounding Boxes when Detections are Present.
         if detections:
             image = drawPredictedBoxes(image, detections)
+
+        # Add the Top-Left Overlay (Warning Lead Time + True-Onset Marker,
+        # Once Reached). Drawn Regardless of Whether warning_lead_time has
+        # been Piped in Yet, so Layout Stays Consistent Frame to Frame.
+        show_onset_marker = onset_frame is not None and (frame_idx + 1) >= onset_frame
+        image = addTopLeftOverlay(image, warning_lead_time, show_onset_marker)
 
         # Add the Introspection Status Banner.
         image = addIntrospectionBanner(image, frame_idx + 1, total_frames,
