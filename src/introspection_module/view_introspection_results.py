@@ -169,7 +169,7 @@ def resolveFlightImagePaths(flight_id: str, dataset_root: str = DEFAULT_DATASET_
     )
 
 
-def loadIntrospectionResults(result_json_path: str) -> Dict[str, List[dict]]:
+def loadIntrospectionResults(result_json_path: str) -> Tuple[Dict[str, List[dict]], Optional[int], Optional[float]]:
     """
     Loads a per-flight result.json and indexes it by img_name for fast lookup.
 
@@ -177,20 +177,37 @@ def loadIntrospectionResults(result_json_path: str) -> Dict[str, List[dict]]:
         [{"img_name": "...png", "detections": [{"track_id", "x", "y", "w", "h",
                                                   "n", "s", "source", "warning",
                                                   "introspection_score",
-                                                  "introspection_threshold"}]}, ...]
+                                                  "introspection_threshold",
+                                                  "failure_onset_frame",
+                                                  "warning_lead_time_seconds"}]}, ...]
+
+    'failure_onset_frame' and 'warning_lead_time_seconds' are only present
+    once run_airborne_metrics.py has been run with --raw-results-dir set,
+    since they depend on ground truth (see
+    calculate_airborne_metrics.write_introspection_outcomes_to_results()).
+    They will be None on every detection for results that predate that step,
+    or for flights/tracks that were never classified as a genuine failure.
 
     Args:
         result_json_path (str): Path to the flight's result.json file.
 
     Returns:
-        Dict[str, List[dict]]: Mapping of img_name --> that frame's detections.
-                               Empty dict if the file is missing or fails to load.
+        Tuple[Dict[str, List[dict]], Optional[int], Optional[float]]:
+            - Mapping of img_name --> that frame's detections. Empty dict
+              if the file is missing or fails to load.
+            - The flight's failure onset frame (1-indexed), taken as the
+              EARLIEST onset frame across any track in the flight that was
+              classified as a genuine failure. None if no track failed, or
+              if onset data hasn't been written back into this file yet.
+            - The warning lead time (in seconds) associated with that same
+              onset frame's track, or None if that track was never warned
+              about in advance (or onset data isn't present).
     """
     # Check that the Results File Exists.
     if not os.path.exists(result_json_path):
         log(LogLevel.WARNING, "introspection_visualiser:loadIntrospectionResults",
             "Results File Not Found: %s. All Frames will Show as 'No Object'.", result_json_path)
-        return {}
+        return {}, None, None
 
     # Load the Raw Results from JSON.
     with open(result_json_path, 'r') as f:
@@ -200,12 +217,26 @@ def loadIntrospectionResults(result_json_path: str) -> Dict[str, List[dict]]:
     lookup: Dict[str, List[dict]] = {entry.get('img_name', ''): entry.get('detections', [])
                                      for entry in raw_entries}
 
+    # Derive the Flight-Level Onset Frame & its Associated Warning Lead Time
+    # Directly from the Fields Stamped onto Each Detection. If Multiple
+    # Tracks in this Flight Failed, the Earliest Onset is Used -- that's the
+    # Point at which the Flight FIRST Had a Genuine Failure in Progress.
+    onset_frame: Optional[int] = None
+    warning_lead_time: Optional[float] = None
+    for detections in lookup.values():
+        for det in detections:
+            det_onset = det.get('failure_onset_frame')
+            if det_onset is not None and (onset_frame is None or det_onset < onset_frame):
+                onset_frame = det_onset
+                warning_lead_time = det.get('warning_lead_time_seconds')
+
     # Display the Number of Frames with Results.
     log(LogLevel.INFO, "introspection_visualiser:loadIntrospectionResults",
-        "Loaded Results for %d Frames from '%s'.", len(lookup), result_json_path)
+        "Loaded Results for %d Frames from '%s'. Onset Frame: %s.",
+        len(lookup), result_json_path, onset_frame)
 
-    # Return Lookup Dictionary.
-    return lookup
+    # Return Lookup Dictionary, Plus the Derived Onset Frame & Lead Time.
+    return lookup, onset_frame, warning_lead_time
 
 
 def loadGroundTruthForFlight(dataset, flight_id: str) -> Dict[str, Optional[Tuple[int, int, int, int]]]:
@@ -599,10 +630,14 @@ def generateIntrospectionVideo(flight_id: str, result_json_path: str, module_nam
         video_fps (int): Output video frame rate. Defaults to VIDEO_FPS.
         dataset: Optional loaded AOT Dataset object.
         manifest_entry (Optional[Dict]): This flight's entry from corruption_manifest.json.
-        warning_lead_time (Optional[float]): This flight/run's warning lead time 
-                                             in seconds.
-        onset_frame (Optional[int]): 1-indexed frame number of the true failure 
-                                     onset for this flight, if known.
+        warning_lead_time (Optional[float]): Explicit override for this flight's warning 
+                                             lead time in seconds. Normally left as None,
+                                             in which case it is read directly from
+                                             result.json (see loadIntrospectionResults()).
+        onset_frame (Optional[int]): Explicit override for the 1-indexed frame number of
+                                     the true failure onset for this flight. Normally left
+                                     as None, in which case it is read directly from
+                                     result.json (see loadIntrospectionResults()).
 
     Returns:
         None:
@@ -611,8 +646,15 @@ def generateIntrospectionVideo(flight_id: str, result_json_path: str, module_nam
     image_paths = resolveFlightImagePaths(flight_id, dataset_root)
     total_frames = len(image_paths)
 
-    # Load the Predicted Results for the Flight.
-    results_lookup = loadIntrospectionResults(result_json_path)
+    # Load the Predicted Results for the Flight, Including the Onset Frame &
+    # Warning Lead Time Already Stamped into result.json by
+    # write_introspection_outcomes_to_results(). Explicit Function
+    # Arguments (if Supplied) Take Priority Over the Values in the File.
+    results_lookup, results_onset_frame, results_warning_lead_time = loadIntrospectionResults(result_json_path)
+    if onset_frame is None:
+        onset_frame = results_onset_frame
+    if warning_lead_time is None:
+        warning_lead_time = results_warning_lead_time
 
     # Load Ground Truth, if a Dataset was Supplied.
     gt_lookup: Dict[str, Optional[Tuple[int, int, int, int]]] = {}

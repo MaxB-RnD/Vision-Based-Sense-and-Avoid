@@ -46,6 +46,12 @@ def add_flags(parser):
                         help='Will be used if specified')   
     parser.add_argument('--enc-max-range', '-f', default=DEFAULT_MAX_RANGE_M,
                         help='Max range of intruder in the encounters')
+    parser.add_argument('--raw-results-dir', default=None,
+                        help='Path to the run directory containing one result.json per flight '
+                        '(e.g. outputs/results/introspection_module/<module>/run0), used to write '
+                        'failure_onset_frame / warning_lead_time_seconds back into each flight\'s '
+                        'result.json for visualisation. Defaults to the parent of --results-folder, '
+                        'which matches the directory layout produced by introspection_module_evaluator.py.')
  
 def call_script(script_handler, args_list):
     parser = argparse.ArgumentParser()
@@ -69,7 +75,7 @@ def call_match_calculation(groundtruth, result_file, min_track_len, min_score=No
     return call_script(match_groundtruth_results, args_list)
 
 def call_metrics_with_target_far(gt_det_match_result_path, encounters,
-                                                          far=None, min_score=0):
+                                                          far=None, min_score=0, raw_results_dir=None):
     args_list = ['--encounters-with-groundtruth-filename', encounters, 
                  '--groundtruth-results-matches-filename', gt_det_match_result_path, 
                  '--target-metrics', 'far', 
@@ -77,22 +83,29 @@ def call_metrics_with_target_far(gt_det_match_result_path, encounters,
                  '--use-track-fl-dr']
     if far is not None:
         args_list += ['--target-value', str(far)]
+    if raw_results_dir is not None:
+        args_list += ['--raw-results-dir', raw_results_dir]
     return call_metrics_calculation(args_list)
 
-def call_metrics_with_target_fppi(gt_det_match_result_path, encounters, fppi, min_score=0):
-    return call_metrics_calculation(['--encounters-with-groundtruth-filename', encounters, 
-                                     '--groundtruth-results-matches-filename', gt_det_match_result_path,
-                                     '--target-metrics', 'fppi', 
-                                     '--min-det-score', str(min_score),
-                                     '--target-value', str(fppi),
-                                     '--use-track-fl-dr'])
+def call_metrics_with_target_fppi(gt_det_match_result_path, encounters, fppi, min_score=0, raw_results_dir=None):
+    args_list = ['--encounters-with-groundtruth-filename', encounters, 
+                 '--groundtruth-results-matches-filename', gt_det_match_result_path,
+                 '--target-metrics', 'fppi', 
+                 '--min-det-score', str(min_score),
+                 '--target-value', str(fppi),
+                 '--use-track-fl-dr']
+    if raw_results_dir is not None:
+        args_list += ['--raw-results-dir', raw_results_dir]
+    return call_metrics_calculation(args_list)
 
-def call_metrics_with_score(gt_det_match_result_path, encounters, score=None):
+def call_metrics_with_score(gt_det_match_result_path, encounters, score=None, raw_results_dir=None):
     args_list = ['--encounters-with-groundtruth-filename', encounters, 
                  '--groundtruth-results-matches-filename', gt_det_match_result_path,
                  '--use-track-fl-dr']
     if score is not None:
         args_list += ['--detection-score-threshold', str(score)]
+    if raw_results_dir is not None:
+        args_list += ['--raw-results-dir', raw_results_dir]
     return call_metrics_calculation(args_list)
 
 def calculate_airborne_encounters(groundtruth, output_dir):
@@ -203,7 +216,14 @@ def run(flags):
     if not os.path.exists(encounters_gt_path):
         encounters_gt_path = calculate_airborne_encounters(groundtruth_path, flags.dataset_folder)
         groundtruth_path = _change_to_csv(groundtruth_path) # for acceleration of other evaluations
-    
+
+    # Resolve where each Flight's Raw (Per-Flight) result.json Lives, so
+    # failure_onset_frame / warning_lead_time_seconds can be Written Back
+    # into it. Defaults to the Parent of --results-folder, which Matches the
+    # Directory Layout Produced by introspection_module_evaluator.py (e.g.
+    # results-folder = <run_dir>/result, so raw results live in <run_dir>/<flight_id>/).
+    raw_results_dir = flags.raw_results_dir or os.path.dirname(os.path.normpath(flags.results_folder))
+
     result_files = glob(os.path.join(flags.results_folder, '*.json*')) 
 
     for result_file in result_files:
@@ -228,10 +248,11 @@ def run(flags):
         # now perform metrics calculation for baseline far
         if flags.baseline_far:
             _, summary_json = call_metrics_with_target_far(gt_det_matches_filename, encounters_gt_path, 
-                                                        min_score=min_score, far=flags.baseline_far)
+                                                        min_score=min_score, far=flags.baseline_far,
+                                                        raw_results_dir=raw_results_dir)
         else:
             _, summary_json = call_metrics_with_score(gt_det_matches_filename, encounters_gt_path,
-                                                                                score=min_score)
+                                                        score=min_score, raw_results_dir=raw_results_dir)
         # copy summary for directory of summaires
         shutil.copyfile(summary_json, os.path.join(summaries_dir, 
                 os.path.basename(summary_json.replace('summary', '{}_summary'.format(exp_name)))))  
@@ -239,7 +260,8 @@ def run(flags):
         # now perform metrics calculation for baseline fppi
         if flags.baseline_fppi:
             _, summary_json = call_metrics_with_target_fppi(gt_det_matches_filename, encounters_gt_path, 
-                                                       fppi=flags.baseline_fppi, min_score=min_score)
+                                                       fppi=flags.baseline_fppi, min_score=min_score,
+                                                       raw_results_dir=raw_results_dir)
             shutil.copyfile(summary_json, os.path.join(summaries_dir, 
                 os.path.basename(summary_json.replace('summary', '{}_summary'.format(exp_name)))))
                        

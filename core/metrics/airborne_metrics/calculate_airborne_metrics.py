@@ -53,6 +53,9 @@ DEFAULT_EARLY_TERMINATION_MARGIN_ = 3       # A track ending within this many fr
 DEFAULT_REACQUISITION_GRACE_PERIOD_ = 3     # A track that terminates but whose real object is picked back up 
                                             # by ANY track (same or new track_id) within this many frames is a 
                                             # successful reacquisition, not a premature-termination failure.
+DEFAULT_FRAME_RATE_HZ_ = 10.0                # Matches FAST_DETECTION_WINDOW_ (30 frames == 3 secs) and the
+                                            # visualiser's VIDEO_FPS. Used only to express warning_lead_time
+                                            # in seconds when writing it back into result.json.
 
 # Frame level detection rate calculation constants
 DEFAULT_MIN_OBJECT_AREA = 200 # minimum object area for frame level 
@@ -126,6 +129,12 @@ def add_flags(parser):
                         'contribute to the encounter level detection rate calculation')
     parser.add_argument('--fl-dr-temporal-win', type=int, default=DEFAULT_TEMPORAL_WINDOW_FOR_FL_DR_,  
                         help='Temporal window for moving frame level detection rate')
+    parser.add_argument('--raw-results-dir', default=None,
+                        help='Path to the run directory containing one result.json per flight '
+                        '(NOT --groundtruth-results-matches-filename\'s stitched/metrics-format '
+                        'file). When provided, each failed track\'s failure_onset_frame and '
+                        'warning_lead_time_seconds are written back into that flight\'s raw '
+                        'result.json for visualisation. Skipped entirely if omitted.')
     parser.add_argument('--min-fl-dr', type=float, default=DEFAULT_MIN_FL_DR_,
                          help='Minimum frame level detection rate within the temporal window')
 
@@ -1029,6 +1038,14 @@ def compute_introspection_metrics(df_matches, min_score, num_sequences,
         )
 
     # Return All Three Pooled Metrics Plus the Per-Failure-Type Breakdown.
+    #
+    # NOTE: 'df_onset' and 'first_warning' are Included Here so that Callers
+    # (see write_introspection_outcomes_to_results() below) can Stamp Each
+    # Failed Track's Failure Onset Frame & Warning Lead Time Back into the
+    # Original Per-Flight result.json Files for Visualisation. These Two
+    # Keys are NOT JSON-Serialisable as-is (a DataFrame and a Tuple-Keyed
+    # Dict) and Must be Popped Off Before this Summary is Written to Disk
+    # -- See run() Below.
     return dict(
         awlt_mean=awlt_mean, awlt_median=awlt_median, fnr=fnr, far=far,
         num_failed_tracks=len(df_onset),
@@ -1037,7 +1054,111 @@ def compute_introspection_metrics(df_matches, min_score, num_sequences,
         num_missed=num_missed,
         num_false_alarms=num_false_alarms,
         by_failure_type=by_failure_type,
+        df_onset=df_onset,
+        first_warning=first_warning,
     )
+
+
+def write_introspection_outcomes_to_results(df_onset, first_warning, raw_results_dir,
+                                             frame_rate_hz=DEFAULT_FRAME_RATE_HZ_):
+    """
+    Stamps Each Failed Track's Failure Onset Frame & Warning Lead Time Back
+    into its Flight's Raw Per-Flight result.json File on Disk.
+
+    This is a Necessarily Separate, After-the-Fact Step: Failure Onset Frame
+    is a Ground-Truth-Dependent Quantity (Computed by 
+    augment_with_failure_onset_frame() from the GT/Detection Match
+    Dataframe), so it Cannot be Known by the Predictor at Inference Time the
+    Way introspection_score/introspection_threshold Can. It Only Exists Once
+    Metrics have been Computed, so it has to be Written Back into the
+    Results Afterwards.
+
+    Only Detections Belonging to a Genuinely Failed Track (per 
+    augment_with_failure_onset_frame()) are Stamped. All Other Detections in
+    the File get Explicit `None` Values for Both Fields, so the Schema is
+    Consistent Whether or not a Given Detection Belongs to a Failed Track.
+
+    Args:
+        df_onset (pd.DataFrame): One Row per Failed Track, as Returned by
+            augment_with_failure_onset_frame() / compute_introspection_metrics()
+            ['df_onset']. Must Include 'flight_id', 'track_id', 'failure_onset_frame'.
+        first_warning (Dict[Tuple, int]): Maps (flight_id, track_id) to the First
+            Frame that Track was Ever Warned About, as Returned by
+            compute_introspection_metrics()['first_warning'].
+        raw_results_dir (str): Path to the Run Directory Containing One
+            Subdirectory per Flight (each with its own result.json), e.g.
+            'outputs/results/introspection_module/coast_count_threshold/run0'.
+            This is the SAME Directory the Visualiser Reads From -- NOT the
+            Stitched/Metrics-Format result.json Used for GT Matching.
+        frame_rate_hz (float): Frame Rate Used Only to Convert Warning Lead
+            Time from Frames into Seconds for Display. Defaults to
+            DEFAULT_FRAME_RATE_HZ_.
+
+    Returns:
+        int: Number of Flights whose result.json was Successfully Updated.
+    """
+    # Nothing to Do if the Raw Results Directory Wasn't Supplied.
+    if not raw_results_dir:
+        log.warning('No raw_results_dir Supplied -- Skipping Introspection '
+                    'Outcome Write-Back. failure_onset_frame / '
+                    'warning_lead_time_seconds will NOT Appear in result.json.')
+        return 0
+
+    # Build a Lookup of (flight_id, track_id) -> (failure_onset_frame, warning_lead_time_seconds).
+    # Only Genuinely Failed Tracks are Included; Everything Else Defaults to None Below.
+    onset_lookup = {}
+    for row in df_onset.itertuples():
+        key = (row.flight_id, row.track_id)
+        t0 = row.failure_onset_frame
+        t_warn = first_warning.get(key)
+
+        # Only a Warning Issued STRICTLY BEFORE Onset Counts as a Genuine
+        # Advance Warning -- Matches the AWLT Definition in
+        # _awlt_and_fnr_for_tracks() above.
+        lead_time_seconds = None
+        if t_warn is not None and t_warn < t0:
+            lead_time_seconds = (t0 - t_warn) / frame_rate_hz
+
+        onset_lookup[key] = (int(t0), lead_time_seconds)
+
+    # Group Onset Rows by Flight so We Only Open Each result.json Once.
+    flights_with_failures = {flight_id for flight_id, _ in onset_lookup.keys()}
+
+    updated_count = 0
+    for flight_id in flights_with_failures:
+        result_path = os.path.join(raw_results_dir, str(flight_id), 'result.json')
+
+        # Skip Flights Whose Raw Results File Isn't Where We Expect -- Log
+        # Loudly, Since a Silent Miss Here Means the Visualiser Quietly
+        # Shows 'N/A' for a Flight that Should Have Onset Data.
+        if not os.path.exists(result_path):
+            log.warning('Could Not Find Raw result.json for Flight %s at %s -- '
+                        'Skipping Introspection Outcome Write-Back for this Flight.',
+                        flight_id, result_path)
+            continue
+
+        with open(result_path, 'r') as f:
+            entries = json.load(f)
+
+        # Stamp Every Detection in the File. Detections Belonging to a
+        # Failed Track get the Real Values; Everything Else Explicitly
+        # Gets None so the Field is Always Present.
+        for entry in entries:
+            for det in entry.get('detections', []):
+                key = (flight_id, det.get('track_id'))
+                onset_frame, lead_time_seconds = onset_lookup.get(key, (None, None))
+                det['failure_onset_frame'] = onset_frame
+                det['warning_lead_time_seconds'] = lead_time_seconds
+
+        with open(result_path, 'w') as f:
+            json.dump(entries, f)
+
+        updated_count += 1
+
+    log.info('Wrote failure_onset_frame / warning_lead_time_seconds Back into '
+             '%d / %d Flights\' result.json Files.', updated_count, len(flights_with_failures))
+
+    return updated_count
 
 
 def compute_positional_divergence(df_matches, min_score, min_matched_frames=DEFAULT_MIN_MATCHED_FRAMES_FOR_DRIFT_):
@@ -1455,6 +1576,15 @@ def run(flags):
     # Making Introspection Metrics.
     introspection_metrics = compute_introspection_metrics(df_gt_det_matches, thresh_score, num_sequences)
     divergence_metrics = compute_positional_divergence(df_gt_det_matches, thresh_score)
+
+    # Write failure_onset_frame / warning_lead_time_seconds Back into Each
+    # Flight's Raw result.json, so the Visualiser can Read them Directly
+    # Rather than Having the Notebook Source them Separately. Only Runs if
+    # --raw-results-dir was Supplied. 'df_onset' / 'first_warning' are Popped
+    # off Here so they Never Reach the JSON-Serialised Summary Below.
+    df_onset = introspection_metrics.pop('df_onset')
+    first_warning = introspection_metrics.pop('first_warning')
+    write_introspection_outcomes_to_results(df_onset, first_warning, flags.raw_results_dir)
 
     # saving intermidiate results
     log.info('Saving results')

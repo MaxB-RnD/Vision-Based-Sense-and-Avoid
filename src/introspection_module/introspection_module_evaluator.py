@@ -277,12 +277,19 @@ def main() -> None:
     metrics_script = os.path.join(PROJECT_ROOT, "core/metrics/run_airborne_metrics.py")
 
     # Call the Competition Metrics Script.
+    #
+    # --raw-results-dir Points at the Run Directory (One Subfolder per
+    # Flight, each with its own result.json) so that Once GT Matching has
+    # Run, failure_onset_frame / warning_lead_time_seconds can be Written
+    # Back into Each Flight's result.json for the Visualiser to Pick up
+    # Directly -- Rather than the Notebook Sourcing them Separately.
     subprocess.run(
         [
             "python3", metrics_script,
-            "--dataset-folder",   EVAL_GT_DIR,
-            "--results-folder",   EVAL_RESULT_DIR,
-            "--summaries-folder", EVAL_SUMMARY_DIR,
+            "--dataset-folder",    EVAL_GT_DIR,
+            "--results-folder",    EVAL_RESULT_DIR,
+            "--summaries-folder",  EVAL_SUMMARY_DIR,
+            "--raw-results-dir",   os.path.join(RESULTS_DIR, run_name),
             "--min-score", str(MIN_SCORE),
             "--min-track-len", str(MIN_TRACK_LEN),
         ],

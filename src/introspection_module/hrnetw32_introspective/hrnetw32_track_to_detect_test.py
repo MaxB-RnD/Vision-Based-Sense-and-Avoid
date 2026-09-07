@@ -661,7 +661,10 @@ class HRNetW32TrackToDetectPredictor(AirbornePredictor):
         confidence : float,
         img_name   : str,
         source = 'DETECTED',
-        warning = False
+        warning = False,
+        introspection_score = None,
+        introspection_threshold = None,
+        **extra_introspection_fields,
     ) -> None:
         """
         Wraps register_object_and_location with MIN_TRACK_LEN and MIN_SCORE
@@ -681,6 +684,18 @@ class HRNetW32TrackToDetectPredictor(AirbornePredictor):
             source (str): The type of frame detected for tracking (Detected or Coast).
             warning (bool): Whether the introspection module flagged this track as
                             unreliable on this frame (True) or not (False).
+            introspection_score (Optional[float]): The introspection strategy's
+                            continuous decision signal for this track/frame (e.g.
+                            confidence, EWMA, or coast count), for visualisation
+                            and debugging. None if the active strategy has none
+                            to report yet (e.g. NullIntrospectionModule).
+            introspection_threshold (Optional[float]): The threshold the above
+                            score was compared against to reach the warning
+                            decision. None under the same conditions as above.
+            **extra_introspection_fields: Any additional strategy-specific
+                            diagnostic fields (e.g. 'introspection_slope' for
+                            RollingConfidenceTrendIntrospectionModule) to be
+                            written straight through to the results file.
 
         Raises:
             Exception: If the same track_id is registered twice for img_name.
@@ -711,7 +726,11 @@ class HRNetW32TrackToDetectPredictor(AirbornePredictor):
         self.visited_frame[img_name].append(track_id)
 
         # Commit the Detection to the Results.
-        self.register_object_and_location(class_name, track_id, bbox, confidence, img_name, source=source, warning=warning)
+        self.register_object_and_location(
+            class_name, track_id, bbox, confidence, img_name, source=source, warning=warning,
+            introspection_score=introspection_score, introspection_threshold=introspection_threshold,
+            **extra_introspection_fields,
+        )
 
 
     def inference(self, flight_id: str) -> None:
@@ -759,7 +778,16 @@ class HRNetW32TrackToDetectPredictor(AirbornePredictor):
             prev_frame = frame
 
             # Register Each Detection through the Filter/Format Layer.
+            _KNOWN_DET_KEYS = {
+                "class_name", "track_id", "bbox", "confidence", "source",
+                "warning", "coast_count", "introspection_score", "introspection_threshold",
+            }
             for det in detections:
+                # Collect any Strategy-Specific Diagnostic Fields Beyond the
+                # Standard Set (e.g. 'introspection_slope'), so New
+                # Introspection Modules Don't Require Changes Here.
+                extra_fields = {k: v for k, v in det.items() if k not in _KNOWN_DET_KEYS}
+
                 self._proxy_register(
                     class_name = det.get("class_name", "airborne"),
                     track_id   = int(det["track_id"]),
@@ -768,6 +796,9 @@ class HRNetW32TrackToDetectPredictor(AirbornePredictor):
                     img_name   = frame_name,
                     source     = det.get("source", "DETECTED"),
                     warning    = det.get("warning", False),
+                    introspection_score     = det.get("introspection_score"),
+                    introspection_threshold = det.get("introspection_threshold"),
+                    **extra_fields,
                 )
 
 

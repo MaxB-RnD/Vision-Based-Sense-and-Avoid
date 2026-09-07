@@ -68,6 +68,49 @@ class IntrospectionModule:
         raise NotImplementedError
 
 
+    def get_score_and_threshold(self, track_state: Dict):
+        """
+        Returns this Strategy's Continuous Decision Signal & the Threshold it 
+        is Being Compared Against for the Current Frame.
+
+        This is Separate from should_escalate() so that the Underlying Score
+        (Not Just the Final True/False Decision) can be Written Through to
+        result.json for Downstream Visualisation/Debugging. Every Concrete
+        Strategy Should Override this so that 'introspection_score' and
+        'introspection_threshold' are Populated in the Final Results.
+
+        Args:
+            track_state (Dict): Per-track signals accumulated so far this
+                                flight. Same input as should_escalate().
+
+        Returns:
+            Tuple[Optional[float], Optional[float]]: (score, threshold). Either 
+                may be None if the Strategy has Not Yet Accumulated Enough 
+                History to Report a Value for this Track/Frame.
+        """
+        # Base Class has No Score to Report. Subclasses Should Override.
+        return None, None
+
+
+    def get_extra_diagnostics(self, track_state: Dict) -> Dict:
+        """
+        Optional Additional Per-Track Diagnostic Values to Write Through to
+        result.json, for Strategies whose Escalation Decision Combines More
+        than One Signal (e.g. an OR of Two Independent Checks) where a Single
+        Score/Threshold Pair Doesn't Tell the Whole Story.
+
+        Args:
+            track_state (Dict): Per-track signals accumulated so far this
+                                flight. Same input as should_escalate().
+
+        Returns:
+            Dict: Extra {field_name: value} Pairs to Merge into the Detection
+                  Record. Empty by Default -- Most Strategies Don't Need this.
+        """
+        # No Extra Diagnostics by Default.
+        return {}
+
+
     def reset(self) -> None:
         """
         Resets any Internal State Held by the Introspection Module.
@@ -100,6 +143,11 @@ class NullIntrospectionModule(IntrospectionModule):
     # Always Returns False so that No Tracks are Escalated to the Ensemble Model.
     def should_escalate(self, track_state: Dict) -> bool:
         return False
+
+
+    # No Decision Signal to Report -- this is the Control Condition.
+    def get_score_and_threshold(self, track_state: Dict):
+        return None, None
 # ------------------------------------------------------------------------------
 
 
@@ -144,6 +192,26 @@ class ConfidenceThresholdIntrospectionModule(IntrospectionModule):
         # Escalate Only if Every Confidence Value in the Selected Window
         # Remains Below the Threshold.
         return all(c < self.threshold for c in recent_history)
+
+
+    def get_score_and_threshold(self, track_state: Dict):
+        """
+        Reports the Track's Most Recent Confidence Value Against the Fixed
+        Threshold this Strategy Escalates On.
+
+        Note this is a Single-Frame Reading, not the Windowed all()
+        Condition should_escalate() Actually Applies -- it's the Clearest
+        Single Number to Show Alongside the Escalation Decision.
+        """
+        # Retrieve the Confidence Values Recorded for this Track.
+        history: List[float] = track_state.get('confidence_history', [])
+
+        # Nothing Recorded Yet for this Track.
+        if not history:
+            return None, self.threshold
+
+        # Report the Most Recent Confidence Reading Against the Threshold.
+        return history[-1], self.threshold
 # ------------------------------------------------------------------------------
 
 
@@ -247,6 +315,46 @@ class RollingConfidenceTrendIntrospectionModule(IntrospectionModule):
 
         # Neither Signal Fired. No Escalation.
         return False
+
+
+    def get_score_and_threshold(self, track_state: Dict):
+        """
+        Reports the EWMA-Smoothed Confidence as the Canonical Score, Since it's
+        the More 'Confidence-Like' of the Two Signals this Strategy Combines.
+        The Slope Signal is Reported Separately via get_extra_diagnostics(),
+        Since a Single Score/Threshold Pair Can't Represent an OR of Two
+        Independent Checks Without Being Misleading (e.g. Escalation can Fire
+        on Slope Alone While EWMA Sits Comfortably Above its Threshold).
+        """
+        # Retrieve the Confidence Values Recorded for this Track.
+        history: List[float] = track_state.get('confidence_history', [])
+
+        # Not Enough History Yet to Report a Meaningful EWMA.
+        if len(history) < self.min_history:
+            return None, self.ewma_threshold
+
+        # Report the Smoothed Confidence Estimate Against its Threshold.
+        return self._compute_ewma(history), self.ewma_threshold
+
+
+    def get_extra_diagnostics(self, track_state: Dict) -> Dict:
+        """
+        Reports the Confidence Trend Slope Alongside its Own Threshold, Since
+        Escalation can be Triggered by Slope Alone Even when EWMA (the
+        Primary Score) has Not Crossed its Threshold.
+        """
+        # Retrieve the Confidence Values Recorded for this Track.
+        history: List[float] = track_state.get('confidence_history', [])
+
+        # Not Enough History Yet to Report a Meaningful Slope.
+        if len(history) < self.min_history:
+            return {'introspection_slope': None, 'introspection_slope_threshold': self.slope_threshold}
+
+        # Report the Confidence Trend Slope Against its Threshold.
+        return {
+            'introspection_slope': self._compute_slope(history),
+            'introspection_slope_threshold': self.slope_threshold,
+        }
 # ------------------------------------------------------------------------------
 
 
@@ -275,6 +383,15 @@ class CoastCountIntrospectionModule(IntrospectionModule):
         # Return True Once the Number of Consecutive Coasted Frames Meets or
         # Exceeds the Configured Escalation Threshold.
         return coast_count >= self.threshold
+
+
+    def get_score_and_threshold(self, track_state: Dict):
+        """
+        Reports the Track's Current Consecutive Coast Count Against the
+        Configured Escalation Threshold.
+        """
+        # Coast Count is Read Directly from Track State, Same as should_escalate().
+        return float(track_state.get('coast_count', 0)), float(self.threshold)
 # ------------------------------------------------------------------------------
 
 
