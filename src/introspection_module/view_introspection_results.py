@@ -214,8 +214,11 @@ def loadIntrospectionResults(result_json_path: str) -> Tuple[Dict[str, List[dict
         raw_entries = json.load(f)
 
     # Index Results by Image Name for Fast Frame Lookup.
-    lookup: Dict[str, List[dict]] = {entry.get('img_name', ''): entry.get('detections', [])
-                                     for entry in raw_entries}
+    lookup: Dict[str, List[dict]] = {}
+
+    for entry in raw_entries:
+        img_name = entry.get('img_name', '')
+        lookup.setdefault(img_name, []).extend(entry.get('detections', []))
 
     # Derive the Flight-Level Onset Frame & its Associated Warning Lead Time
     # Directly from the Fields Stamped onto Each Detection. If Multiple
