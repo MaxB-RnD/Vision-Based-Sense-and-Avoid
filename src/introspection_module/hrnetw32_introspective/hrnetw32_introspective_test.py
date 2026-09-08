@@ -4,7 +4,7 @@
 # File:                    %name: hrnetw32_introspective_test.py %
 # Date Created:            %date_created: Tue Jul 30 17:45:43 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 2 %
+# CM Instance              %instance: 3 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -262,17 +262,13 @@ class HRNetW32IntrospectivePredictor(HRNetW32TrackToDetectPredictor):
             self._update_track_history(track_id, confidence, source, coast_count)
             track_state = self._build_track_state(track_id, coast_count)
 
-            # Read the Continuous Score & Threshold Behind this Frame's
-            # Escalation Decision, so it can be Written Through to
-            # result.json for Downstream Visualisation/Debugging -- Separate
-            # from the True/False Decision Itself.
+            # Read the Continuous Score & Threshold Behind this Frame's Escalation Decision.
             introspection_score, introspection_threshold = self.introspection_module.get_score_and_threshold(track_state)
             det["introspection_score"] = introspection_score
             det["introspection_threshold"] = introspection_threshold
 
-            # Merge in any Strategy-Specific Extra Diagnostics (e.g. the
-            # Slope Signal for RollingConfidenceTrendIntrospectionModule).
-            # Empty for Strategies that Don't Override get_extra_diagnostics().
+            # Merge in any Strategy-Specific Extra Diagnostics. Empty for Strategies 
+            # that Don't Override get_extra_diagnostics().
             det.update(self.introspection_module.get_extra_diagnostics(track_state))
 
             # Escalate the Track if Requested by the Introspection Strategy.      

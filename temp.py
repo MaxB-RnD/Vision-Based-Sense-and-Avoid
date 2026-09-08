@@ -1,23 +1,48 @@
 # ------------------------------------------------------------------------------
 # -               V E R S I O N   I D E N T I F I C A T I O N                  -
 # ------------------------------------------------------------------------------
-# File:                    %name: hrnetw32_introspective_test.py %
-# Date Created:            %date_created: Tue Jul 30 17:45:43 2026 %
+# File:                    %name: hrnetw32_track_to_detect_test.py %
+# Date Created:            %date_created: Thur Jul 16 17:09:23 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 2 %
+# CM Instance              %instance: 3 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
 # ------------------------------------------------------------------------------
-# Implements the introspective version of the HRNet-W32 Tracking-to-Detect
-# (T2D) predictor. This predictor extends the existing T2D pipeline by 
-# introducing an introspection module that evaluates the state of each active 
-# track and determines whether it should be escalated to a heavyweight ensemble 
-# model. The underlying tracking, detection, and coasting behaviour provided by 
-# the T2D predictor remains unchanged. The design allows different introspection 
-# strategies to be evaluated while preserving the original T2D pipeline as the 
-# baseline. This enables direct comparison of performance and computational 
-# overhead between standard T2D inference and introspection-driven inference.
+# Inference entrypoint for the HRNet-W32 backbone, tracking-to-detect variant.
+# Runs the same HRNet-W32 backbone and weights as hrnet_w32_test.py, isolating
+# the individual backbone's contribution for the complexity vs AFDR experiment
+# (H1). The offset tracker here additionally coasts confirmed tracks through
+# up to 3 consecutive frames with no matching detection using motion
+# prediction, rather than dropping the track immediately (see
+# hrnetw32_track_to_detect/tracking.py for the full mechanism).
+#
+# USAGE INSTRUCTIONS:
+#   1. Run the Script from the Project Root:
+#       - python -m src.introspection_module.hrnetw32_introspective.hrnetw32_track_to_detect_test
+#
+#   2. Optional Environment Variables:
+#       - DEBUG_MODEL_INIT=1
+#           Enables verbose/debug logging during model initialisation.
+#
+#       - MODEL_PATH=/path/to/checkpoint.pt
+#           Overrides the default segmentation model checkpoint path.
+#
+#       - MIN_TRACK_LEN=30
+#           Minimum track length before detections are committed to results.
+#
+#       - MIN_SCORE=0.6
+#           Minimum confidence score required for final output detections.
+#
+#       - DETECTION_THRESHOLD=0.6
+#           Detection threshold passed directly to the segmentation model.
+#           Should generally be <= MIN_SCORE.
+#
+#   3. Tracking-to-Detect Behaviour:
+#       Coasting is fixed at 3 consecutive frames maximum, with confidence
+#       decaying by 0.9 per coasted frame (see max_coast_frames / coast_decay
+#       on the SimpleOffsetTracker in inference_setup()). This is not exposed as 
+#       an environment variable.
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
@@ -34,285 +59,736 @@
 # prohibited.
 # ------------------------------------------------------------------------------
 
+import os
+import sys
+import cv2
 import time
 import torch
+import numpy as np
 
-from typing import Any, Dict, List
-from logging_module import LogLevel, log
+import logging
+import warnings
 
-from src.introspection_module.hrnetw32_introspective.hrnetw32_track_to_detect_test import HRNetW32TrackToDetectPredictor
-from src.introspection_module.hrnetw32_introspective.introspection_modules import IntrospectionModule, NullIntrospectionModule
+from tqdm import tqdm
+from typing import List, Dict, Any
+from logging_module import LogLevel, log, set_level
 
+sys.path.insert(0, os.path.dirname(__file__))
+from notebooks.helpers.notebook_helpers import record_fps_stats
+from src.introspection_module.winning_solution_star.evaluator.airborne_detection import AirbornePredictor
 
 # ------------------------------------------------------------------------------
 #                           CONFIGURATION VARIABLES
 # ------------------------------------------------------------------------------
-# Number of recent observations retained for each track. These values are
-# used by the introspection module when making escalation decisions.
-TRACK_HISTORY_LEN = 10
+# Path to the Fine-Tuned Model Checkpoint Directory.
+MODEL_PATH = os.getenv("MODEL_PATH", "configs/models/introspection_module/hrnetw32/HRNetW32_Complete.pt")
+
+# Minimum Number of Frames a Track Must Span Before Being Committed to Results.
+MIN_TRACK_LEN = int(os.getenv("MIN_TRACK_LEN", 30))
+
+# Minimum Confidence Score Required for a Detection to Be Committed to Results.
+MIN_SCORE = float(os.getenv("MIN_SCORE", 0.6))
+
+# Detection Confidence Threshold Passed Directly to the Model.
+# NOTE: Set Equal to or Lower than MIN_SCORE.
+DETECTION_THRESHOLD = float(os.getenv("DETECTION_THRESHOLD", 0.6))
 # ------------------------------------------------------------------------------
 
 
 # ------------------------------------------------------------------------------
-#     HRNET-W32 TRACK-TO-DETECT INTROSPECTIVE PREDICTOR CLASS
+#                  HRNET-W32 TRACKING TO DETECT PREDICTOR CLASS
 # ------------------------------------------------------------------------------
-class HRNetW32IntrospectivePredictor(HRNetW32TrackToDetectPredictor):
+class HRNetW32TrackToDetectPredictor(AirbornePredictor):
     """
-    Extends the HRNet-W32 Tracking-to-Detect Predictor with an Introspection
-    Module.
-
-    The predictor maintains a short history for each active track and provides
-    this information to the selected introspection strategy. If the strategy
-    determines that a track requires additional processing, the track can be
-    escalated to the heavyweight ensemble model while leaving the remainder of
-    the T2D pipeline unchanged.
+    Inference predictor for the HRNet-W32 backbone, using a tracking-to-detect
+    offset tracker that bridges brief detection gaps via motion prediction
+    (coasting) instead of dropping a track the moment a frame is missed.
+    Implements inference_setup() and run_model_on_frame() from the
+    ModelPredictor template. All other pipeline methods are inherited.
     """
-    # Set the Default Introspection Strategy.
-    introspection_module: IntrospectionModule = NullIntrospectionModule()
-
+    # These are Required by AirbornePredictor But Not Used in this Adapter.
+    training_data_path = None
+    test_data_path     = None
+    vocabulary_path    = None
 
     def inference_setup(self) -> None:
         """
-        Initialises the predictor and any resources required for introspection.
-
-        The standard T2D pipeline is initialised through the base class. If the
-        selected introspection strategy is capable of requesting escalation, the
-        ensemble detector is also loaded.
-
-        Returns:
-            None
+        Loads all models into GPU memory before any flights are processed.
+        Called once automatically before inference begins.
         """
-        # Initialise the Standard T2D Predictor.
-        super().inference_setup()
-        print()
+        # Import Modules Required Only During Inference Setup.
+        # Keeping these Imports Local can Reduce Startup/Import Overhead.
+        from src.introspection_module.hrnetw32_introspective.tracking_to_detect.prediction_structure import (
+            DetectedItem
+        )
 
-        # Store the Recent History for Each Active Track.
-        self.track_history: Dict[int, Dict[str, List]] = {}
+        from src.introspection_module.hrnetw32_introspective.tracking_to_detect import (
+            models_segmentation,
+            models_transformation,
+            offset_grid_to_transform,
+            seg_prediction_to_items,
+            tracking,
+        )
 
-        # Initialise Counters Used for Reporting.
-        self.num_escalations: int = 0
-        self.num_frames_processed: int = 0
+        # Suppress torch.compile / inductor verbosity:
+        #   - TypedStorage deprecation warning from select_algorithm.py.
+        #   - AUTOTUNE addmm benchmarking tables.
+        #   - Autotune Choices Stats JSON lines.
+        logging.getLogger("torch._inductor").setLevel(logging.ERROR)
+        logging.getLogger("torch._inductor.select_algorithm").setLevel(logging.ERROR)
+        logging.getLogger("torch._dynamo").setLevel(logging.ERROR)
+        warnings.filterwarnings(
+            "ignore",
+            message="TypedStorage is deprecated",
+            category=UserWarning,
+        )
 
-        ### TODO: Restore Conditional Ensemble Loading.
-        self._ensemble_detector = None
+        # Check if the Code Has Been Called in Debug Mode.
+        if os.getenv("DEBUG_MODEL_INIT"):
+            set_level(log_level=LogLevel.DEBUG)
 
-        # Load the Ensemble Detector Only When it may be Required.
-        log(LogLevel.INFO, "hrnetw32_introspective:inference_setup",
-            "Introspection Module 'none' Selected. Ensemble NOT Loaded.")
+        # Set the Device to GPU if Available.
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        log(LogLevel.DEBUG, "hrnet_w32:inference_setup", "Device: %s", self.device)
 
-        # Log the Selected Introspection Strategy.
-        log(LogLevel.INFO, "hrnetw32_introspective:inference_setup",
-            "HRNetW32IntrospectivePredictor Ready (Introspection: %s).",
-            self.introspection_module.name)
-
-
-    def flight_started(self) -> None:
-        """
-        Resets per-flight state before processing a new flight.
-
-        This includes clearing the stored track history and resetting the selected
-        introspection strategy.
-
-        Returns:
-            None
-        """
-        # Reset the Base Predictor State.
-        super().flight_started()
-
-        # Clear the Stored Track History.
-        self.track_history = {}
-
-        # Reset the Active Introspection Strategy.
-        self.introspection_module.reset()
-
-
-    def _update_track_history(self, track_id: int, confidence: float, source: str, coast_count: int) -> None:
-        """
-        Updates the stored history for an active track. Only the most recent 
-        TRACK_HISTORY_LEN observations are retained.
-
-        Args:
-            track_id (int): Unique identifier for the active track.
-            confidence (float): Confidence score assigned to the track.
-            source (str): Source of the detection (e.g. DETECTED or COASTED).
-            coast_count (int): Number of consecutive coasted frames.
-
-        Returns:
-            None
-        """
-        # Create a History Entry for New Tracks.
-        if track_id not in self.track_history:
-            self.track_history[track_id] = {
-                'confidence_history': [],
-                'source_history': [],
-                'coast_count_history': [],
-            }
-
-        # Record the Latest Track Information.
-        history = self.track_history[track_id]
-        history['confidence_history'].append(float(confidence))
-        history['source_history'].append(source)
-        history['coast_count_history'].append(int(coast_count))
-
-        # Retain Only the Most Recent Observations.
-        for key in ('confidence_history', 'source_history', 'coast_count_history'):
-            history[key] = history[key][-TRACK_HISTORY_LEN:]
-
-
-    def _build_track_state(self, track_id: int, coast_count: int) -> Dict:
-        """
-        Builds the track state passed to the introspection strategy. The returned
-        dictionary contains the recent history and current status of the 
-        specified track.
-
-        Args:
-            track_id (int): Unique identifier of the track.
-            coast_count (int): Current number of consecutive coasted frames.
-
-        Returns:
-            Dict: Dictionary containing the track history and current state used
-                  by the introspection module.
-        """
-        # Retrieve Stored History for the Track, or Use an Empty History if it is New.
-        history = self.track_history.get(track_id, {
-            'confidence_history': [], 'source_history': [], 'coast_count_history': [],
-        })
-
-        # Package Track Information into the Format Expected by the Introspection Module.
-        return {
-            'confidence_history': history['confidence_history'],
-            'source_history': history['source_history'],
-            'coast_count_history': history['coast_count_history'],
-            'coast_count': coast_count,
+        # Configuration Dictionary for the HRNetW32 Segmentation Model.
+        seg_cfg = {
+            "base_model_name"       : "hrnet_w32",
+            "input_frames"          : 2,
+            "feature_location"      : "",
+            "combine_outputs_dim"   : 512,
+            "combine_outputs_kernel": 1,
+            "output_binary_mask"    : True,
+            "output_above_horizon"  : True,
+            "pred_scale"            : 8,
         }
 
+        # Create the Segmentation Model Architecture.
+        self.model_seg = models_segmentation.HRNetSegmentation(
+            cfg=seg_cfg, pretrained=False
+        )
 
-    def _run_ensemble_on_track(self, det: Dict, frame: Any, prev_frame: Any) -> Dict:
+        # Check if the Pretrained Checkpoint Exists.
+        if os.path.exists(MODEL_PATH):
+            # Load Checkpoint Onto the Selected Device.
+            ckpt  = torch.load(MODEL_PATH, map_location=self.device,
+                               weights_only=False)
+
+            # Extract State Dictionary.
+            state = ckpt.get("model_state_dict", ckpt)
+            state = {k.replace("_orig_mod.", ""): v for k, v in state.items()}
+
+            # Load Weights into the Model.
+            self.model_seg.load_state_dict(state, strict=False)
+            log(LogLevel.INFO, "hrnetw32_ttd:inference_setup",
+                "Segmentation Weights Loaded: %s", MODEL_PATH)
+
+        else:
+            # Warn if Checkpoint is Missing. Model Will Run with Random/Untrained Weights.
+            log(LogLevel.WARNING, "hrnet_w32:inference_setup",
+                "Checkpoint Not Found: %s. Using Random Weights.", MODEL_PATH)
+
+        # Move Model Onto Inference Device.
+        self.model_seg = self.model_seg.to(self.device)
+
+        # Set Model to Evaluation Mode.
+        self.model_seg.eval()
+
+        # Keep a Raw Model Reference for FLOPs Measurement. Avoids the Dynamo Object Conflict.
+        self._model_seg_raw = self.model_seg
+
+        # Compile for Faster Repeated Inference.
+        self.model_seg = torch.compile(self.model_seg, mode="max-autotune")
+
+        # Directory Containing Transformation Model Weights.
+        models_dir = "configs/models/introspection_module"
+
+        # Create Transform Estimation Model.
+        self._model_transform_raw = models_transformation.TrEstimatorTsmCached(
+            cfg=dict(base_model_name="resnet34", weight_scale=3), pretrained=False
+        )
+
+        # Load Pretrained Transformation Model Weights.
+        self._model_transform_raw.load_state_dict(
+            torch.load(
+                f"{models_dir}/ResNet34_Transforms_Original.pth",
+                map_location=self.device, weights_only=False
+            )["model_state_dict"]
+        )
+
+        # Move Transform Model to Inference Device.
+        self._model_transform_raw = self._model_transform_raw.to(self.device)
+
+        # Set Transform Model to Evaluation Mode.
+        self._model_transform_raw.eval()
+
+        # Prevent Adding Cache Branch into Compiled Graph & Breaking CUDA Graph Capture.
+        self.model_transform = self._model_transform_raw
+        log(LogLevel.INFO, "hrnetw32_ttd:inference_setup", "Transform Model Loaded.")
+
+        # Tracker Used to Maintain Object Identities Between Frames.
+        self._offset_tracker = tracking.SimpleOffsetTracker(
+            min_track_size        = 8,
+            threshold_to_find     = 0.6,
+            threshold_to_continue = 0.6,
+            threshold_distance    = 40,
+            min_distance          = 1000,
+            max_coast_frames      = 3,
+            coast_decay           = 0.9,
+        )
+
+        # Store Last Known DetectedItem per Confirmed track_id.
+        self.active_tracks: dict = {}
+
+        # Store Frame Processing Times for Performance Monitoring.
+        self.frame_times: List[float] = []
+        log(LogLevel.INFO, "hrnetw32_ttd:inference_setup", "HRNetW32TrackToDetectPredictor Ready.")
+
+        # Store Helper Modules/Functions as Instance Members for Reuse.
+        self._offset_grid_to_transform = offset_grid_to_transform
+        self._seg_prediction_to_items  = seg_prediction_to_items
+        self._tracking                 = tracking
+        self._DetectedItem             = DetectedItem
+
+
+    def get_complexity_targets(self) -> List[dict]:
         """
-        Runs the ensemble detector for an escalated track. Currently this method
-        acts as a placeholder and returns the original detection unchanged while
-        recording that an escalation occurred.
-
-        Args:
-            det (Dict): Detection associated with the current track.
-            frame (Any): Current video frame.
-            prev_frame (Any): Previous video frame.
+        Declares the models and input shapes to be measured by
+        measure_predictor_complexity() in notebook_helpers.py. Returns one
+        entry per model.
 
         Returns:
-            Dict: Detection result. Currently identical to the input detection.
+            List[dict]: Each entry has keys:
+                model        : torch.nn.Module to profile.
+                input_shape  : (B, C, H, W) dummy input shape.
+                label        : Human-readable name for logging.
         """
-        # Record that an Escalation Request Occurred.
-        self.num_escalations += 1
+        return [
+            {
+                "model"       : self._model_seg_raw,
+                "input_shape" : (1, 2, 512, 512),
+                "label"       : "HRNet-W32 (segmentation)",
+            },
+            {
+                "model"          : self._model_transform_raw.flops_model,
+                "input_shape"    : None,
+                "input_override" : (
+                    torch.zeros(1, 1024, 1024),  # prev_frame.
+                    torch.zeros(1, 1024, 1024),  # cur_frame.
+                ),
+                "label"       : "ResNet34-TSM Transform (model_transform)",
+            },
+        ]
 
-        ### TODO: No Ensemble Call Happens Here Right Now.
-        #         self._ensemble_detector is always None (see inference_setup()),
-        #         so there's nothing to call yet.
-        
 
-        # Return the Original Detection Until Ensemble Processing is Implemented.
-        return det
-    
-
-    def run_model_on_frame(self, frame: Any, prev_frame: Any, frame_name: str, flight_id: str) -> List[Dict]:
+    def run_model_on_frame(
+        self,
+        frame     : Any,
+        prev_frame: Any,
+        frame_name: str,
+        flight_id : str
+    ) -> List[Dict]:
         """
-        Processes a single frame using the T2D pipeline and evaluates each track
-        using the selected introspection strategy. If the introspection module 
-        requests escalation, the corresponding track is passed to the ensemble
-        processing stage. Frame timing is also updated to include the additional
-        introspection overhead.
+        Run the model on a single frame and return detected objects.
 
         Args:
-            frame (Any): Current video frame.
-            prev_frame (Any): Previous video frame.
-            frame_name (str): Name or identifier of the current frame.
-            flight_id (str): Identifier of the current flight.
+            frame: Current frame as a numpy array (BGR format).
+            prev_frame: Previous frame, or None if this is the first frame.
+            frame_name: Name of the current frame file.
+            flight_id: Identifier for the flight sequence.
 
         Returns:
-            List[Dict]: Detection results for the current frame.
+            List[Dict]: A list of detections, where each detection contains:
+                - track_id: Unique identifier for the object.
+                - bbox: Bounding box coordinates.
+                - confidence: Detection confidence score (0-1).
+                - class_name: Label of the detected object.
         """
-        # Skip Processing when No Previous Frame is Available.
+        # Cannot Estimate Motion or Perform Temporal Inference Without a Previous Frame.
         if prev_frame is None:
             return []
 
-        # Start Timing Before the Complete Inference Pipeline.
+        # Convert Frames to Grayscale.
+        frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
+        prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY) if len(prev_frame.shape) == 3 else prev_frame
+
+        # Start Frame Processing Timer.
         if torch.cuda.is_available():
             torch.cuda.synchronize()
         t0 = time.perf_counter()
 
-        # Run the Standard T2D Detection, Tracking, and Coasting Pipeline.
-        detections = HRNetW32TrackToDetectPredictor.run_model_on_frame(
-            self, frame, prev_frame, frame_name, flight_id
+        # Estimate Frame-to-Frame Transform.
+        prev_tr = self._estimate_transform(prev_gray, frame_gray)
+
+        # Build Two-Frame Model Input.
+        h, w = frame_gray.shape
+        padding = (16 + 32 + 64) // 2   # = 56
+
+        # Allocate Input Tensor.
+        if not hasattr(self, "_input_buffer"):
+            self._input_buffer = np.zeros((1, 2, h, w + padding * 2), dtype=np.uint8)
+        X = self._input_buffer
+
+        # Warp the Previous Frame into Alignment with the Current Frame.
+        prev_aligned = cv2.warpAffine(prev_gray, prev_tr[:2, :], dsize=(w, h),
+                                       flags=cv2.INTER_LINEAR)
+
+        # Insert Aligned Previous Frame into Model Input.
+        X[0, 0, :, padding:-padding] = prev_aligned
+
+        # Insert Current Frame into Model Input.
+        X[0, 1, :, padding:-padding] = frame_gray
+
+        # Convert Input Array into Normalised PyTorch Tensor.
+        X_t = torch.from_numpy(X).float().to(self.device, dtype=torch.float16).mul_(1.0 / 255.0)
+
+        # Disable Gradients During Inference for Efficiency.
+        with torch.no_grad():
+            with torch.amp.autocast(self.device.type):
+                # Run Segmentation Model Forward Pass.
+                pred = self.model_seg(X_t)
+
+        # Pull All Outputs in One Shot (Avoids 5 PCIe Round-Trips).
+        out_keys = ["mask", "offset", "size", "tracking", "distance", "above_horizon"]
+        cpu_preds = {k: pred[k][0].cpu() for k in out_keys}
+
+        # Extract Model Outputs.
+        mask          = torch.sigmoid(cpu_preds["mask"][0].float()).numpy()
+        offset        = cpu_preds["offset"].float().numpy()
+        size          = cpu_preds["size"].float().numpy()
+        tracking_out  = cpu_preds["tracking"].float().numpy()
+        distance      = cpu_preds["distance"][0].float().numpy()
+        above_horizon = cpu_preds["above_horizon"][0].float().numpy()
+
+        # Remove Border Artefacts.
+        border_x = padding // 8 + 4
+        border_y = 4
+
+        # Zero Out Unreliable Border Regions.
+        mask[:border_y, :]      = 0.0
+        mask[-border_y - 4:, :] = 0.0
+        mask[:, :border_x]      = 0.0
+        mask[:, -border_x:]     = 0.0
+
+        # Convert Heatmaps into Detection Candidates.
+        detected = self._seg_prediction_to_items.pred_to_items(
+            comb_pred     = mask,
+            offset        = offset,
+            size          = size,
+            tracking      = tracking_out,
+            distance      = distance,
+            above_horizon = above_horizon,
+            conf_threshold = DETECTION_THRESHOLD,
+            pred_scale    = 8,
+            x_offset      = -padding,
         )
-        self.num_frames_processed += 1
 
-        # Evaluate Each Detection Using the Selected Introspection Strategy.
-        updated_detections = []
-        for det in detections:
-            track_id = det.get("track_id", -1)
-            confidence = det.get("confidence", 0.0)
-            source = det.get("source", "DETECTED")
-            coast_count = det.get("coast_count", 0)
+        # Multi-Frame Object Tracking.
+        detected_items = [
+            self._DetectedItem(
+                cx         = it["cx"] + it["offset"][0],
+                cy         = it["cy"] + it["offset"][1],
+                w          = it["w"],
+                h          = it["h"],
+                distance   = it["distance"],
+                confidence = it["conf"],
+                track_id   = -1,
+                dx         = it["tracking"][0],
+                dy         = it["tracking"][1],
+                item_id    = "",
+            )
 
-            # Ignore Detections Without a Valid Track Assignment.
-            if track_id < 0:
-                updated_detections.append(det)
+            # Only Keep Sufficiently Confident Detections.
+            for it in detected
+            if it["conf"] >= self._offset_tracker.threshold_to_continue
+        ]
+
+        # Update Tracker State & Assign Track IDs.
+        items_to_submit = self._offset_tracker.process_frame_detections(
+            detected_items, prev_tr
+        )
+
+        # Collect Track IDs Successfully Matched During the Current Frame.
+        matched_this_frame = {it.track_id for it in items_to_submit if it.track_id >= 0}
+
+        # Store Coasted Predictions & Updated Active Track State.
+        coasted_items = []
+        new_active_tracks = {}
+
+        # Process Tracks That Were Not Matched This Frame.
+        for track_id, last_item in self.active_tracks.items():
+            # Skip Tracks Already Updated by a Detection.
+            if track_id in matched_this_frame:
                 continue
 
-            # Update Track History and Build the Introspection Input.
-            self._update_track_history(track_id, confidence, source, coast_count)
-            track_state = self._build_track_state(track_id, coast_count)
+            # Increment the Consecutive Miss Counter.
+            coast_count = last_item.coast_count + 1
 
-            # Escalate the Track if Requested by the Introspection Strategy.      
-            if self.introspection_module.should_escalate(track_state):
-                # Log the Flag for Debugging/Traceability.
-                log(LogLevel.DEBUG, "hrnetw32_introspective:run_model_on_frame",
-                    "Escalation Triggered --> Flight: %s Frame: %s Track: %s (coast_count = %d)",
-                    flight_id, frame_name, track_id, coast_count)
+            # Release the Track ID Once the Maximum Coast Duration is Exceeded.
+            if coast_count > self._offset_tracker.max_coast_frames:
+                self._offset_tracker.release_track_id(track_id)
+                continue
 
-                # Record that a Flag was Raised.
-                det = self._run_ensemble_on_track(det, frame, prev_frame)
+            # Predict the Missing Detection Using Motion Extrapolation.
+            predicted = self._coast_item(last_item, prev_tr, coast_count)
 
-                # Mark this Detection as Having Been Warned About.
-                det["warning"] = True
-            else:
-                # No Flag Raised for this Track on this Frame.
-                det["warning"] = False
+            # Store the Coasted Detection for Output and Future Tracking.
+            coasted_items.append(predicted)
+            new_active_tracks[track_id] = predicted
 
-            # Append the Detection to this Frame's Output.
-            updated_detections.append(det)
+        # Update the Active Track List Using Successfully Detected Objects.
+        for it in items_to_submit:
+            if it.track_id >= 0:
+                new_active_tracks[it.track_id] = it
+        
+        # Replace the Previous Active Track State.
+        self.active_tracks = new_active_tracks
 
-        # Update Timing to Include Introspection and Escalation Overhead.
+        # Reinsert Coasted Objects into the Tracker for Future Association.
+        if coasted_items:
+            self._offset_tracker.inject_coasted_items(coasted_items)
+
+        # Return Both Measured and Coasted Detections.
+        items_to_submit = items_to_submit + coasted_items
+
+        # Stop Frame Processing Timer.
         if torch.cuda.is_available():
             torch.cuda.synchronize()
-        if self.frame_times:
-            self.frame_times[-1] = time.perf_counter() - t0
+        self.frame_times.append(time.perf_counter() - t0)
 
-        # Return the Updated Detections.
-        return updated_detections
+        # Convert Internal Detection Objects into the Submission Format.
+        return [
+            {
+                "track_id"   : item.track_id,
+                "bbox"       : [item.cx - item.w/2, item.cy - item.h/2,
+                                item.cx + item.w/2, item.cy + item.h/2],
+                "confidence" : float(item.confidence),
+                "class_name" : "airborne",
+                "source"     : item.source,
+                "coast_count": item.coast_count,
+            }
+            for item in items_to_submit
+        ]
+
+
+    def _coast_item(self, last_item, prev_tr, coast_count):
+        """
+        Predict the Next Object State When a Detection is Temporarily Missing.
+
+        Args:
+            last_item: Most recent detection associated with the track.
+            prev_tr: Estimated affine transform mapping the previous frame into
+                     the current frame.
+            coast_count: Number of consecutive frames the track has been coasted.
+
+        Returns:
+            DetectedItem: Predicted detection representing the coasted object
+            state for the current frame.
+        """
+        # Construct the Previous Object Centre Position.
+        pos = np.array([last_item.cx, last_item.cy])
+
+        # Project the Position into the Current Frame Using the Estimated Camera Motion.
+        projected = (prev_tr[:2, :2] @ pos) + prev_tr[:2, 2]
+
+        # Apply the Estimated Object Motion Relative to the Camera Motion.
+        predicted_cx = float(projected[0] + last_item.dx)
+        predicted_cy = float(projected[1] + last_item.dy)
+
+        # Build the Coasted Detection.
+        item = self._DetectedItem(
+            cx          = predicted_cx,
+            cy          = predicted_cy,
+            w           = last_item.w,
+            h           = last_item.h,
+            item_id     = last_item.item_id,
+            distance    = last_item.distance,
+            confidence  = last_item.confidence * self._offset_tracker.coast_decay,
+            dx          = last_item.dx,
+            dy          = last_item.dy,
+            track_id    = last_item.track_id,
+            add_to_submit = True,
+            source      = 'COASTED',
+            coast_count = coast_count,
+        )
+
+        # Initialise Runtime Tracking Attributes Expected by the Association Logic.
+        item.next_item_idx = None
+        item.prev_item_idx = None
+        item.items_in_track = last_item.items_in_track  # Preserved NOT Advanced.
+
+        # Return the Coast Item. 
+        return item
+
+
+    def _estimate_transform(self, prev_img: np.ndarray,
+                             img: np.ndarray) -> np.ndarray:
+        """
+        Estimate the affine transform between two consecutive frames using
+        the ResNet34-TSM motion estimation model.
+
+        Args:
+            prev_img (np.ndarray):
+                Previous grayscale image/frame as a 2D NumPy array.
+            img (np.ndarray):
+                Current grayscale image/frame as a 2D NumPy array.
+
+        Returns:
+            np.ndarray:
+                Estimated affine transformation matrix mapping points from the
+                previous frame into the current frame coordinate system.
+        """
+        # Define the Fixed Crop Size Used for Motion Estimation.
+        crop_w, crop_h = 1024, 1024
+
+        # Get Image Dimensions.
+        h, w = img.shape
+
+        # Centre the Crop Vertically and Horizontally.
+        y0 = (h - crop_h) // 2
+        x0 = (w - crop_w) // 2
+
+        # Number of Tracking Points in the Model Output Grid.
+        cw_pts = crop_w // 32
+        ch_pts = crop_h // 32
+
+        # Extract Matching Crops from the Current & Previous Frames.
+        crop      = img[y0:y0+crop_h,      x0:x0+crop_w]
+        crop_prev = prev_img[y0:y0+crop_h, x0:x0+crop_w]
+
+        # Convert Cropped Images into PyTorch Tensors & Normalise to [0, 1].
+        t_cur  = torch.from_numpy(crop      / 255.0).float().to(self.device)
+        t_prev = torch.from_numpy(crop_prev / 255.0).float().to(self.device)
+
+        # Run Inference Without Gradient Tracking for Efficiency.
+        with torch.no_grad():
+            # Enable Automatic Mixed Precision for Faster Inference on GPU.
+            with torch.amp.autocast(self.device.type):
+                heatmap, offsets = self.model_transform(t_prev[None], t_cur[None])
+
+        # Move Model Outputs Back to CPU NumPy Arrays.
+        heatmap = heatmap.detach().float().cpu().numpy()
+        offsets = offsets.detach().float().cpu().numpy()
+
+        # Create a Regular Grid of Points in the Previous Frame Crop.
+        prev_pts = np.zeros((2, ch_pts, cw_pts), dtype=np.float32)
+        prev_pts[0] = np.arange(16, crop_w, 32)[None, :]
+        prev_pts[1] = np.arange(16, crop_h, 32)[:, None]
+        prev_pts = prev_pts[..., 2:-2, 2:-2]
+
+        # Convert Crop-Local Coordinates Back into Full-Image Coordinates.
+        pts_offset = np.array([x0, y0])[:, None]
+        cur_pts = prev_pts + offsets[0]
+
+        # Estimate the Global Affine Transform Using Weighted Point Matches.
+        tr, _ = self._offset_grid_to_transform.offset_grid_to_transform(
+            prev_frame_points = prev_pts.reshape(2, -1) + pts_offset,
+            cur_frame_points  = cur_pts.reshape(2, -1) + pts_offset,
+            points_weight     = heatmap[0].reshape(-1) ** 2,
+        )
+
+        # Return the Estimated Affine Transformation Matrix.
+        return tr
+
+
+    # --------------------------------------------------------------------------
+    #           DO NOT MODIFY THE BELOW CODE (RESULTS PIPELINING)
+    # --------------------------------------------------------------------------
+    def flight_started(self) -> None:
+        """
+        Resets all per-flight state. Called automatically at the start of
+        each flight by inference(). Do not call manually.
+
+        Clears result buffers, visited-frame records, and track-length
+        counters. Also reinitialises the tracker so that track IDs and
+        internal state do not bleed across flights.
+        """
+        # Reset Per-Flight State Dictionaries.
+        self.track_id_results : Dict = {}
+        self.visited_frame    : Dict = {}
+        self.track_len_so_far : Dict = {}
+
+        # Reset the Per-Flight Track ID Counter for Untracked Models.
+        # Safe to Leave in Even if the Model has its Own Tracker.
+        self._next_track_id : int = 1
+
+        # Reset Optional Offset Tracker State if this Model Uses One.
+        # Prevents Frame History & Track IDs from Leaking Between Flights.
+        if hasattr(self, "_offset_tracker"):
+            self._offset_tracker.prev_frames_items = [[]]
+            self._offset_tracker.track_ids_in_use  = set()
+        self.active_tracks = {}
+
+        # Reset the Transform Model's Feature Cache.
+        # Without this, the First Frame of a New Flight Would Use Stale Backbone
+        # Features from the Last Frame of the Previous Flight.
+        if hasattr(self, "_model_transform_raw"):
+            self._model_transform_raw.reset_cache()
+
+
+    def get_all_frame_images(self, flight_id: str) -> List[str]:
+        """
+        Returns a sorted list of image filenames for the given flight.
+
+        Scans the flight folder under test_data_path and collects all files
+        (excluding subdirectories) in sorted order.
+
+        Args:
+            flight_id (str): The flight folder name.
+
+        Returns:
+            List[str]: Sorted list of image filenames within the flight folder.
+        """
+        # Import Extra Libraries for this Function.
+        from os import listdir
+        from os.path import isfile, join
+
+        # Initalise Variables.
+        flight_folder = join(str(self.test_data_path), flight_id)
+
+        # Return All Image Files from the Flight Folder.
+        return sorted(
+            f for f in listdir(flight_folder)
+            if isfile(join(flight_folder, f))
+        )
+
+
+    def _proxy_register(
+        self,
+        class_name : str,
+        track_id   : int,
+        bbox       : List[float],
+        confidence : float,
+        img_name   : str,
+        source = 'DETECTED',
+        warning = False
+    ) -> None:
+        """
+        Wraps register_object_and_location with MIN_TRACK_LEN and MIN_SCORE
+        filtering before committing a detection to the results.
+
+        A detection is only forwarded if:
+          - Its track has been observed for more than MIN_TRACK_LEN frames.
+          - Its confidence score meets or exceeds MIN_SCORE.
+          - Its track ID has not already been registered for this frame.
+
+        Args:
+            class_name (str): Object class label, e.g. "airborne".
+            track_id (int): Unique ID for the tracked object.
+            bbox (List[float]): Bounding box [x1, y1, x2, y2].
+            confidence (float): Detection confidence score (0-1).
+            img_name (str): Image filename this detection belongs to.
+            source (str): The type of frame detected for tracking (Detected or Coast).
+            warning (bool): Whether the introspection module flagged this track as
+                            unreliable on this frame (True) or not (False).
+
+        Raises:
+            Exception: If the same track_id is registered twice for img_name.
+        """
+        # Initialise Track Length Counter if this is a New Track ID.
+        if track_id not in self.track_len_so_far:
+            self.track_len_so_far[track_id] = 0
+        
+        # Exclude Coast Frames from Tracking. 
+        if source == 'DETECTED':
+            self.track_len_so_far[track_id] += 1
+
+        # Skip Detections from Tracks that Have Not Yet Reached MIN_TRACK_LEN.
+        if self.track_len_so_far[track_id] <= MIN_TRACK_LEN:
+            return
+
+        # Skip Detections Below the Minimum Confidence Threshold.
+        if confidence < MIN_SCORE:
+            return
+
+        # Guard Against Duplicate Track IDs within the Same Frame.
+        if img_name not in self.visited_frame:
+            self.visited_frame[img_name] = []
+        if track_id in self.visited_frame[img_name]:
+            raise Exception(
+                f"Two Detections in Frame '{img_name}' Share track_id={track_id}."
+            )
+        self.visited_frame[img_name].append(track_id)
+
+        # Commit the Detection to the Results.
+        self.register_object_and_location(class_name, track_id, bbox, confidence, img_name, source=source, warning=warning)
+
+
+    def inference(self, flight_id: str) -> None:
+        """
+        Runs the segmentation-based detection and tracking pipeline over all
+        frames in a single flight.
+
+        Iterates frames in order then calls the tracker and registers qualifying
+        detections. Called automatically by AirbornePredictor.evaluation() for
+        each flight.
+
+        Do not call manually.
+
+        Args:
+            flight_id (str): The flight folder name to run inference on.
+
+        Returns:
+            None:
+        """
+        # Reset Per-Flight State.
+        self.flight_started()
+        prev_frame = None
+
+        # Apply to all Frames in the Sequence.
+        for frame_name in tqdm(self.get_all_frame_images(flight_id), desc=f"Flight {flight_id}"):
+            frame_path = self.get_frame_image_location(flight_id, frame_name)
+            frame = cv2.imread(str(frame_path))
+
+            # Skip Empty Frames.
+            if frame is None:
+                log(LogLevel.WARNING, "hrnetw32_ttd:inference",
+                     "Could Not Read Frame '%s', Skipping.", frame_path)
+                prev_frame = frame
+                continue
+
+            # Run the Model on the Current & Previous Frame.
+            detections = self.run_model_on_frame(
+                frame=frame,
+                prev_frame=prev_frame,
+                frame_name=frame_name,
+                flight_id=flight_id
+            )
+
+            # Update the Frames.
+            prev_frame = frame
+
+            # Register Each Detection through the Filter/Format Layer.
+            for det in detections:
+                self._proxy_register(
+                    class_name = det.get("class_name", "airborne"),
+                    track_id   = int(det["track_id"]),
+                    bbox       = det["bbox"],
+                    confidence = float(det["confidence"]),
+                    img_name   = frame_name,
+                    source     = det.get("source", "DETECTED"),
+                    warning    = det.get("warning", False),
+                )
 
 
     def run(self) -> None:
         """
-        Runs inference over the configured dataset and reports summary statistics.
+        Extends the parent run() to save FPS statistics to fps_stats.json
+        inside the run directory after all flights have been processed.
 
-        In addition to the standard predictor metrics, the total number of
-        escalations and the escalation rate are reported.
-
-        Returns:
-            None
+        This ensures record_fps_stats() is called exactly once, after the
+        full frame_times list has been populated across every flight.
         """
-        # Run the Standard T2D Inference Pipeline.
+        # Run the Standard Evaluation Pipeline.
         super().run()
 
-        # Calculate and Report the Frequency of Escalation Requests.
-        if self.num_frames_processed:
-            escalation_rate = self.num_escalations / self.num_frames_processed
-
-            # Log the Final Introspection Statistics.
-            log(LogLevel.INFO, "hrnetw32_introspective:run",
-                "Escalations: %d / %d Frame-Track Checks (%.4f Rate) --> Introspection: %s",
-                self.num_escalations, self.num_frames_processed, escalation_rate,
-                self.introspection_module.name)
+        # Save FPS Stats if any Frames were Timed.
+        if self.frame_times:
+            record_fps_stats(
+                frame_times_sec = self.frame_times,
+                run_dir         = self.get_results_directory(),
+                warmup_frames   = 10,
+            )
 # ------------------------------------------------------------------------------
 
 
@@ -320,6 +796,6 @@ class HRNetW32IntrospectivePredictor(HRNetW32TrackToDetectPredictor):
 #                           STANDALONE ENTRY POINT
 # ------------------------------------------------------------------------------
 if __name__ == "__main__":
-    predictor = HRNetW32IntrospectivePredictor()
+    predictor = HRNetW32TrackToDetectPredictor()
     predictor.run()
 # ------------------------------------------------------------------------------
