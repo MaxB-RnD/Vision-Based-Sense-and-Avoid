@@ -1,256 +1,325 @@
-# Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-# This module binds together different modules or airborne metrics for local evaluation
+# ------------------------------------------------------------------------------
+# -               V E R S I O N   I D E N T I F I C A T I O N                  -
+# ------------------------------------------------------------------------------
+# File:                    %name: hrnetw32_introspective_test.py %
+# Date Created:            %date_created: Tue Jul 30 17:45:43 2026 %
+# CM Version               %version: 1 %
+# CM Instance              %instance: 2 %
+# Author:                  %created_by: MBusato %
+# ------------------------------------------------------------------------------
+# -                          D E S C R I P T I O N                             -
+# ------------------------------------------------------------------------------
+# Implements the introspective version of the HRNet-W32 Tracking-to-Detect
+# (T2D) predictor. This predictor extends the existing T2D pipeline by 
+# introducing an introspection module that evaluates the state of each active 
+# track and determines whether it should be escalated to a heavyweight ensemble 
+# model. The underlying tracking, detection, and coasting behaviour provided by 
+# the T2D predictor remains unchanged. The design allows different introspection 
+# strategies to be evaluated while preserving the original T2D pipeline as the 
+# baseline. This enables direct comparison of performance and computational 
+# overhead between standard T2D inference and introspection-driven inference.
+#
+# ------------------------------------------------------------------------------
+# -                          L I C E N S I N G                                 -
+# ------------------------------------------------------------------------------
+# This software and its contents are the intellectual property of Lockheed
+# Martin Australia and are protected under applicable copyright and intellectual
+# property laws.
+#
+# All rights reserved. No part of this software may be reproduced, distributed,
+# modified, or transmitted in any form or by any means without the prior written
+# permission of Lockheed Martin Australia.
+#
+# Unauthorised use, copying, or distribution of this software is strictly
+# prohibited.
+# ------------------------------------------------------------------------------
 
-import argparse
-from collections import defaultdict
-from glob import glob
-import json
-import logging
-import os
-import shutil
+import time
+import torch
 
-import pandas as pd 
+from typing import Any, Dict, List
+from logging_module import LogLevel, log
 
-import airborne_metrics.calculate_airborne_metrics as calculate_airborne_metrics
-import airborne_metrics.calculate_encounters as calculate_encounters
-import airborne_metrics.match_groundtruth_results as match_groundtruth_results
-from airborne_metrics.script_utils import setup_logging, remove_extension
-from airborne_metrics.calculate_airborne_metrics import RANGES_TO_DETECT, HORIZON_QUERIES
-from airborne_metrics.calculate_encounters import DEFAULT_MAX_RANGE_M
+from src.introspection_module.hrnetw32_introspective.hrnetw32_track_to_detect_test import HRNetW32TrackToDetectPredictor
+from src.introspection_module.hrnetw32_introspective.introspection_modules import IntrospectionModule, NullIntrospectionModule
 
-MAX_FAR_TO_BE_RANKED = 0.5 
-MAX_FPPI_TO_BE_RANKED = 0.0005
-DEFAULT_MIN_TRACK_LEN_ = 0
-DEFAULT_MIN_SCORE_ = 0
-DEEP_LEARNING_GROUNDRUTH = 'groundtruth.json' 
-ENCOUNTERS_GROUNDTRUTH = 'groundtruth_with_encounters_maxRange{max_range}_maxGap3_minEncLen30.csv'
 
-log = logging.getLogger(__name__)
+# ------------------------------------------------------------------------------
+#                           CONFIGURATION VARIABLES
+# ------------------------------------------------------------------------------
+# Number of recent observations retained for each track. These values are
+# used by the introspection module when making escalation decisions.
+TRACK_HISTORY_LEN = 10
+# ------------------------------------------------------------------------------
 
-def add_flags(parser):
-    """Utility function adding command line arguments to the parser"""
-    parser.add_argument('--dataset-folder', '-d', required=True,
-                        help='Name of the folder with dataset ground truth')
-    parser.add_argument('--results-folder', '-r', required=True,
-                        help='Name of the folder with results')
-    parser.add_argument('--summaries-folder', '-s',
-                        help='Name of the folders to hold summary files')
-    parser.add_argument('--min-score', type=float, default=DEFAULT_MIN_SCORE_,
-                        help='Minimum score to threshold the results if cannot be derived from the name')    
-    parser.add_argument('--min-track-len', '-l', type=int, default=DEFAULT_MIN_TRACK_LEN_, 
-                        help='minimum track length - the results will be evaluated for all track lengths'
-                        'with at least such length')
-    parser.add_argument('--baseline-far', type=float, 
-                        help='Will be used if baseline-ufo-result is not provided')    
-    parser.add_argument('--baseline-fppi', type=float, 
-                        help='Will be used if specified')   
-    parser.add_argument('--enc-max-range', '-f', default=DEFAULT_MAX_RANGE_M,
-                        help='Max range of intruder in the encounters')
- 
-def call_script(script_handler, args_list):
-    parser = argparse.ArgumentParser()
-    script_handler.add_flags(parser)
-    args = parser.parse_args(args_list)
-    script_handler.check_flags(args)
-    return script_handler.run(args)
 
-def call_encounter_calculation(args_list):
-    return call_script(calculate_encounters, args_list)
+# ------------------------------------------------------------------------------
+#     HRNET-W32 TRACK-TO-DETECT INTROSPECTIVE PREDICTOR CLASS
+# ------------------------------------------------------------------------------
+class HRNetW32IntrospectivePredictor(HRNetW32TrackToDetectPredictor):
+    """
+    Extends the HRNet-W32 Tracking-to-Detect Predictor with an Introspection
+    Module.
 
-def call_metrics_calculation(args_list):
-    return call_script(calculate_airborne_metrics, args_list)
+    The predictor maintains a short history for each active track and provides
+    this information to the selected introspection strategy. If the strategy
+    determines that a track requires additional processing, the track can be
+    escalated to the heavyweight ensemble model while leaving the remainder of
+    the T2D pipeline unchanged.
+    """
+    # Set the Default Introspection Strategy.
+    introspection_module: IntrospectionModule = NullIntrospectionModule()
 
-def call_match_calculation(groundtruth, result_file, min_track_len, min_score=None):
-    args_list = ['--deeplearning-groundtruth', groundtruth, 
-                 '--airborne-classifier-results', result_file, 
-                 '--min-track-len', str(min_track_len)]
-    if min_score is not None:
-        args_list += ['--detection-score-threshold', str(min_score)]
-    return call_script(match_groundtruth_results, args_list)
 
-def call_metrics_with_target_far(gt_det_match_result_path, encounters,
-                                                          far=None, min_score=0):
-    args_list = ['--encounters-with-groundtruth-filename', encounters, 
-                 '--groundtruth-results-matches-filename', gt_det_match_result_path, 
-                 '--target-metrics', 'far', 
-                 '--min-det-score', str(min_score),
-                 '--use-track-fl-dr']
-    if far is not None:
-        args_list += ['--target-value', str(far)]
-    return call_metrics_calculation(args_list)
+    def inference_setup(self) -> None:
+        """
+        Initialises the predictor and any resources required for introspection.
 
-def call_metrics_with_target_fppi(gt_det_match_result_path, encounters, fppi, min_score=0):
-    return call_metrics_calculation(['--encounters-with-groundtruth-filename', encounters, 
-                                     '--groundtruth-results-matches-filename', gt_det_match_result_path,
-                                     '--target-metrics', 'fppi', 
-                                     '--min-det-score', str(min_score),
-                                     '--target-value', str(fppi),
-                                     '--use-track-fl-dr'])
+        The standard T2D pipeline is initialised through the base class. If the
+        selected introspection strategy is capable of requesting escalation, the
+        ensemble detector is also loaded.
 
-def call_metrics_with_score(gt_det_match_result_path, encounters, score=None):
-    args_list = ['--encounters-with-groundtruth-filename', encounters, 
-                 '--groundtruth-results-matches-filename', gt_det_match_result_path,
-                 '--use-track-fl-dr']
-    if score is not None:
-        args_list += ['--detection-score-threshold', str(score)]
-    return call_metrics_calculation(args_list)
+        Returns:
+            None
+        """
+        # Initialise the Standard T2D Predictor.
+        super().inference_setup()
+        print()
 
-def calculate_airborne_encounters(groundtruth, output_dir):
-    return call_script(calculate_encounters,['--deeplearning-groundtruth', groundtruth, 
-                                             '--output-dir-path', output_dir])
+        # Store the Recent History for Each Active Track.
+        self.track_history: Dict[int, Dict[str, List]] = {}
 
-def get_min_score_from_name(result_name):
-    def replace_decimal(value):
-        return str(value).replace('.', 'p')
-    scores = [val / 10 for val in range(10)]
-    for score in scores:
-        if 't' + replace_decimal(score) in result_name:
-            return score
-    return None 
+        # Initialise Counters Used for Reporting.
+        self.num_escalations: int = 0
+        self.num_frames_processed: int = 0
 
-def _change_to_csv(filename):
-    if filename.endswith('.csv'):
-        return filename
-    return filename.replace('.json', '.csv').replace('.gz','')
+        ### TODO: Restore Conditional Ensemble Loading.
+        self._ensemble_detector = None
 
-####################################################################################################
-# MAIN
-###################################################################################################
-def summarize(summaries_dir):
-    """Gathers all summaries into one table"""
-    all_summaries = glob(os.path.join(summaries_dir, '*.json'))
-    summaries = []
-    for i, summary_f in enumerate(all_summaries):
-        with open(summary_f, 'r') as jf:
-            summaries.append(json.load(jf))
+        # Load the Ensemble Detector Only When it may be Required.
+        log(LogLevel.INFO, "hrnetw32_introspective:inference_setup",
+            "Introspection Module 'none' Selected. Ensemble NOT Loaded.")
 
-    for range_ in RANGES_TO_DETECT:
-        results = defaultdict(list)
-        for summary in summaries:
-            results_name = os.path.basename(os.path.dirname(summary['gt_det_matches']))
-            # Original Detection Metrics.
-            results['Algorithm'].append(results_name)
-            results['Score'].append(summary['min_det_score'])
-            results['FPPI'].append(summary['fppi'])
-            results['HFAR'].append(summary['far'])
-            results['AFDR'].append(summary['fl_dr_in_range'])
-            results['Detected planned aircraft'].append(summary['det_aircraft_in_range'])
-            results['Total planned aircraft'].append(summary['tot_aircraft_in_range'])
+        # Log the Selected Introspection Strategy.
+        log(LogLevel.INFO, "hrnetw32_introspective:inference_setup",
+            "HRNetW32IntrospectivePredictor Ready (Introspection: %s).",
+            self.introspection_module.name)
 
-            # Advanced Tracking Metrics.
-            results['CEDR'].append(round(summary['cedr_mean'], 5))
-            results['CEDR Qualifying Encounters'].append(summary['cedr_num_qualifying_encounters'])
-            results['FTPS@50'].append(round(summary['ftps_rate_by_threshold']['50'], 5))
-            results['FTPS@80'].append(round(summary['ftps_rate_by_threshold']['80'], 5))
-            results['FTPS@95'].append(round(summary['ftps_rate_by_threshold']['95'], 5))
-            results['FTPS avg(50:95)'].append(round(summary['ftps_averaged'], 5))
-            results['FTPS Eligible Tracks'].append(summary['ftps_num_eligible_tracks'])
 
-            # Introspection Metrics.
-            results['AWLT Median'].append(summary.get('awlt_median'))
-            results['False Negative Rate'].append(round(summary['false_negative_rate'], 5) if summary['false_negative_rate'] is not None else None)
-            results['False Alarm Rate'].append(round(summary['false_alarm_rate'], 5) if summary['false_alarm_rate'] is not None else None)
-            results['Mean IoU Slope'].append(summary['mean_iou_slope'])
+    def flight_started(self) -> None:
+        """
+        Resets per-flight state before processing a new flight.
 
-            # Introspection Metrics. Split by Failure Type.
-            awlt_median_by_type = summary.get('awlt_median_by_failure_type', {})
-            fnr_by_type = summary.get('false_negative_rate_by_failure_type', {})
-            num_failed_by_type = summary.get('num_failed_tracks_by_failure_type', {})
-            for failure_type, column_label in (('sustained', 'Divergence'), ('early_termination', 'Premature Loss')):
-                fnr_value = fnr_by_type.get(failure_type)
-                results['AWLT Median ({})'.format(column_label)].append(awlt_median_by_type.get(failure_type))
-                results['False Negative Rate ({})'.format(column_label)].append(
-                    round(fnr_value, 5) if fnr_value is not None else None)
-                results['Num Failed Tracks ({})'.format(column_label)].append(
-                    num_failed_by_type.get(failure_type))
+        This includes clearing the stored track history and resetting the selected
+        introspection strategy.
 
-            # Original Tracking Metrics.
-            for dr_criteria in ['Tracking']:
-                for scenario in list(HORIZON_QUERIES.keys()):
-                    results['EDR {}, {}'.format(scenario, dr_criteria)].append(
-                            round(summary[dr_criteria]['Encounters'][str(range_)][scenario]['dr'], 5))
-                    results['Detected {}, {}'.format(scenario, dr_criteria)].append(
-                            round(summary[dr_criteria]['Encounters'][str(range_)][scenario]['detected'], 5))
-                    results['Total {}, {}'.format(scenario, dr_criteria)].append(
-                            round(summary[dr_criteria]['Encounters'][str(range_)][scenario]['total'], 5))
+        Returns:
+            None
+        """
+        # Reset the Base Predictor State.
+        super().flight_started()
 
-        # Save All Metrics to File. 
-        df_to_save = pd.DataFrame.from_dict(results)
-        df_to_save = df_to_save.sort_values(
-            ['EDR All, Tracking', 'EDR Below Horizon, Tracking', 'EDR Mixed, Tracking', 
-             'EDR Above Horizon, Tracking'], ascending=False).reset_index(drop=True).rename_axis('#')
-        df_to_save.to_csv(os.path.join(summaries_dir, 'dr_encounters_detected_before_{}.csv'.format(range_)))
-        df_benchmark_1 = df_to_save[['Algorithm', 'Score', 'HFAR', 'EDR All, Tracking']]
-        df_benchmark_1.to_csv(os.path.join(summaries_dir, 'detection_tracking_benchmark_results_for_ranking.csv'))
-        df_benchmark_2 = df_to_save[['Algorithm', 'Score', 'FPPI', 'AFDR']]
-        df_benchmark_2.to_csv(os.path.join(summaries_dir, 'detection_only_benchmark_results_for_ranking.csv')) 
+        # Clear the Stored Track History.
+        self.track_history = {}
+
+        # Reset the Active Introspection Strategy.
+        self.introspection_module.reset()
+
+
+    def _update_track_history(self, track_id: int, confidence: float, source: str, coast_count: int) -> None:
+        """
+        Updates the stored history for an active track. Only the most recent 
+        TRACK_HISTORY_LEN observations are retained.
+
+        Args:
+            track_id (int): Unique identifier for the active track.
+            confidence (float): Confidence score assigned to the track.
+            source (str): Source of the detection (e.g. DETECTED or COASTED).
+            coast_count (int): Number of consecutive coasted frames.
+
+        Returns:
+            None
+        """
+        # Create a History Entry for New Tracks.
+        if track_id not in self.track_history:
+            self.track_history[track_id] = {
+                'confidence_history': [],
+                'source_history': [],
+                'coast_count_history': [],
+            }
+
+        # Record the Latest Track Information.
+        history = self.track_history[track_id]
+        history['confidence_history'].append(float(confidence))
+        history['source_history'].append(source)
+        history['coast_count_history'].append(int(coast_count))
+
+        # Retain Only the Most Recent Observations.
+        for key in ('confidence_history', 'source_history', 'coast_count_history'):
+            history[key] = history[key][-TRACK_HISTORY_LEN:]
+
+
+    def _build_track_state(self, track_id: int, coast_count: int) -> Dict:
+        """
+        Builds the track state passed to the introspection strategy. The returned
+        dictionary contains the recent history and current status of the 
+        specified track.
+
+        Args:
+            track_id (int): Unique identifier of the track.
+            coast_count (int): Current number of consecutive coasted frames.
+
+        Returns:
+            Dict: Dictionary containing the track history and current state used
+                  by the introspection module.
+        """
+        # Retrieve Stored History for the Track, or Use an Empty History if it is New.
+        history = self.track_history.get(track_id, {
+            'confidence_history': [], 'source_history': [], 'coast_count_history': [],
+        })
+
+        # Package Track Information into the Format Expected by the Introspection Module.
+        return {
+            'confidence_history': history['confidence_history'],
+            'source_history': history['source_history'],
+            'coast_count_history': history['coast_count_history'],
+            'coast_count': coast_count,
+        }
+
+
+    def _run_ensemble_on_track(self, det: Dict, frame: Any, prev_frame: Any) -> Dict:
+        """
+        Runs the ensemble detector for an escalated track. Currently this method
+        acts as a placeholder and returns the original detection unchanged while
+        recording that an escalation occurred.
+
+        Args:
+            det (Dict): Detection associated with the current track.
+            frame (Any): Current video frame.
+            prev_frame (Any): Previous video frame.
+
+        Returns:
+            Dict: Detection result. Currently identical to the input detection.
+        """
+        # Record that an Escalation Request Occurred.
+        self.num_escalations += 1
+
+        ### TODO: No Ensemble Call Happens Here Right Now.
+        #         self._ensemble_detector is always None (see inference_setup()),
+        #         so there's nothing to call yet.
         
 
-def run(flags):
-    encounters_gt_path = os.path.join(flags.dataset_folder, ENCOUNTERS_GROUNDTRUTH.format(
-                                                                max_range=flags.enc_max_range))
-    log.info('Encounter ground truth: %s', encounters_gt_path)
-    groundtruth_path = os.path.join(flags.dataset_folder, DEEP_LEARNING_GROUNDRUTH)
-    groundtruth_path_csv = _change_to_csv(groundtruth_path)
-    if os.path.isfile(groundtruth_path_csv):
-        groundtruth_path = groundtruth_path_csv
-    if flags.summaries_folder is not None:
-        summaries_dir = flags.summaries_folder
-    else:
-        summaries_dir = os.path.join(flags.results_folder, 'summaries')
-    if not os.path.isdir(summaries_dir):
-        os.makedirs(summaries_dir)
-    if not os.path.exists(encounters_gt_path):
-        encounters_gt_path = calculate_airborne_encounters(groundtruth_path, flags.dataset_folder)
-        groundtruth_path = _change_to_csv(groundtruth_path) # for acceleration of other evaluations
+        # Return the Original Detection Until Ensemble Processing is Implemented.
+        return det
     
-    result_files = glob(os.path.join(flags.results_folder, '*.json*')) 
 
-    for result_file in result_files:
-        result_file_base = remove_extension(result_file)
-        gt_det_matches_filename = None
-        min_score = get_min_score_from_name(result_file)
-        if min_score is None:
-            min_score = flags.min_score
-        min_track_len = flags.min_track_len 
-        results_dir = result_file_base + '_metrics' + '_min_track_len_{}'.format(min_track_len)
-        
-        if os.path.isfile(result_file_base + '.csv'):
-            result_file = result_file_base + '.csv'
-        # calculates matches for detections that belong to tracks with min_track_len (in online fashion) 
-        # and have at least min_score 
-        gt_det_matches_filename = call_match_calculation(groundtruth_path, result_file, 
-                                                         min_track_len, min_score)  
-        groundtruth_path = _change_to_csv(groundtruth_path) # for acceleration of other evaluations
-        exp_name = os.path.basename(os.path.dirname(gt_det_matches_filename))
-        # calculate metrics for all the matches with min_track_len and min_score
-        
-        # now perform metrics calculation for baseline far
-        if flags.baseline_far:
-            _, summary_json = call_metrics_with_target_far(gt_det_matches_filename, encounters_gt_path, 
-                                                        min_score=min_score, far=flags.baseline_far)
-        else:
-            _, summary_json = call_metrics_with_score(gt_det_matches_filename, encounters_gt_path,
-                                                                                score=min_score)
-        # copy summary for directory of summaires
-        shutil.copyfile(summary_json, os.path.join(summaries_dir, 
-                os.path.basename(summary_json.replace('summary', '{}_summary'.format(exp_name)))))  
+    def run_model_on_frame(self, frame: Any, prev_frame: Any, frame_name: str, flight_id: str) -> List[Dict]:
+        """
+        Processes a single frame using the T2D pipeline and evaluates each track
+        using the selected introspection strategy. If the introspection module 
+        requests escalation, the corresponding track is passed to the ensemble
+        processing stage. Frame timing is also updated to include the additional
+        introspection overhead.
 
-        # now perform metrics calculation for baseline fppi
-        if flags.baseline_fppi:
-            _, summary_json = call_metrics_with_target_fppi(gt_det_matches_filename, encounters_gt_path, 
-                                                       fppi=flags.baseline_fppi, min_score=min_score)
-            shutil.copyfile(summary_json, os.path.join(summaries_dir, 
-                os.path.basename(summary_json.replace('summary', '{}_summary'.format(exp_name)))))
-                       
-    summarize(summaries_dir)
+        Args:
+            frame (Any): Current video frame.
+            prev_frame (Any): Previous video frame.
+            frame_name (str): Name or identifier of the current frame.
+            flight_id (str): Identifier of the current flight.
+
+        Returns:
+            List[Dict]: Detection results for the current frame.
+        """
+        # Skip Processing when No Previous Frame is Available.
+        if prev_frame is None:
+            return []
+
+        # Start Timing Before the Complete Inference Pipeline.
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        t0 = time.perf_counter()
+
+        # Run the Standard T2D Detection, Tracking, and Coasting Pipeline.
+        detections = HRNetW32TrackToDetectPredictor.run_model_on_frame(
+            self, frame, prev_frame, frame_name, flight_id
+        )
+        self.num_frames_processed += 1
+
+        # Evaluate Each Detection Using the Selected Introspection Strategy.
+        updated_detections = []
+        for det in detections:
+            track_id = det.get("track_id", -1)
+            confidence = det.get("confidence", 0.0)
+            source = det.get("source", "DETECTED")
+            coast_count = det.get("coast_count", 0)
+
+            # Ignore Detections Without a Valid Track Assignment.
+            if track_id < 0:
+                updated_detections.append(det)
+                continue
+
+            # Update Track History and Build the Introspection Input.
+            self._update_track_history(track_id, confidence, source, coast_count)
+            track_state = self._build_track_state(track_id, coast_count)
+
+            # Escalate the Track if Requested by the Introspection Strategy.      
+            if self.introspection_module.should_escalate(track_state):
+                # Log the Flag for Debugging/Traceability.
+                log(LogLevel.DEBUG, "hrnetw32_introspective:run_model_on_frame",
+                    "Escalation Triggered --> Flight: %s Frame: %s Track: %s (coast_count = %d)",
+                    flight_id, frame_name, track_id, coast_count)
+
+                # Record that a Flag was Raised.
+                det = self._run_ensemble_on_track(det, frame, prev_frame)
+
+                # Mark this Detection as Having Been Warned About.
+                det["warning"] = True
+            else:
+                # No Flag Raised for this Track on this Frame.
+                det["warning"] = False
+
+            # Append the Detection to this Frame's Output.
+            updated_detections.append(det)
+
+        # Update Timing to Include Introspection and Escalation Overhead.
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        if self.frame_times:
+            self.frame_times[-1] = time.perf_counter() - t0
+
+        # Return the Updated Detections.
+        return updated_detections
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Evaluate airborne detection results with airborne metrics')
-    add_flags(parser)
-    parser.add_argument('--log-level', default=logging.getLevelName(logging.INFO), 
-                        help='Logging verbosity level')
-    args = parser.parse_args()
-    setup_logging(args.log_level)
-    run(args)
+    def run(self) -> None:
+        """
+        Runs inference over the configured dataset and reports summary statistics.
+
+        In addition to the standard predictor metrics, the total number of
+        escalations and the escalation rate are reported.
+
+        Returns:
+            None
+        """
+        # Run the Standard T2D Inference Pipeline.
+        super().run()
+
+        # Calculate and Report the Frequency of Escalation Requests.
+        if self.num_frames_processed:
+            escalation_rate = self.num_escalations / self.num_frames_processed
+
+            # Log the Final Introspection Statistics.
+            log(LogLevel.INFO, "hrnetw32_introspective:run",
+                "Escalations: %d / %d Frame-Track Checks (%.4f Rate) --> Introspection: %s",
+                self.num_escalations, self.num_frames_processed, escalation_rate,
+                self.introspection_module.name)
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
+#                           STANDALONE ENTRY POINT
+# ------------------------------------------------------------------------------
+if __name__ == "__main__":
+    predictor = HRNetW32IntrospectivePredictor()
+    predictor.run()
+# ------------------------------------------------------------------------------

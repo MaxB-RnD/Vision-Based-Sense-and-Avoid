@@ -50,8 +50,7 @@ def add_flags(parser):
                         help='Path to the run directory containing one result.json per flight '
                         '(e.g. outputs/results/introspection_module/<module>/run0), used to write '
                         'failure_onset_frame / warning_lead_time_seconds back into each flight\'s '
-                        'result.json for visualisation. Defaults to the parent of --results-folder, '
-                        'which matches the directory layout produced by introspection_module_evaluator.py.')
+                        'result.json for visualisation.')
  
 def call_script(script_handler, args_list):
     parser = argparse.ArgumentParser()
@@ -217,11 +216,8 @@ def run(flags):
         encounters_gt_path = calculate_airborne_encounters(groundtruth_path, flags.dataset_folder)
         groundtruth_path = _change_to_csv(groundtruth_path) # for acceleration of other evaluations
 
-    # Resolve where each Flight's Raw (Per-Flight) result.json Lives, so
-    # failure_onset_frame / warning_lead_time_seconds can be Written Back
-    # into it. Defaults to the Parent of --results-folder, which Matches the
-    # Directory Layout Produced by introspection_module_evaluator.py (e.g.
-    # results-folder = <run_dir>/result, so raw results live in <run_dir>/<flight_id>/).
+    # Resolve where each Flight's Raw (Per-Flight) result.json Lives, so failure_onset_frame / 
+    # warning_lead_time_seconds can be Written Back into it.
     raw_results_dir = flags.raw_results_dir or os.path.dirname(os.path.normpath(flags.results_folder))
 
     result_files = glob(os.path.join(flags.results_folder, '*.json*')) 
