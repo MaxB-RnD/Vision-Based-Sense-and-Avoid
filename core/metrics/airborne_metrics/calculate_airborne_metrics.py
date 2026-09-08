@@ -130,9 +130,8 @@ def add_flags(parser):
     parser.add_argument('--fl-dr-temporal-win', type=int, default=DEFAULT_TEMPORAL_WINDOW_FOR_FL_DR_,  
                         help='Temporal window for moving frame level detection rate')
     parser.add_argument('--raw-results-dir', default=None,
-                        help='Path to the run directory containing one result.json per flight '
-                        '(NOT --groundtruth-results-matches-filename\'s stitched/metrics-format '
-                        'file). When provided, each failed track\'s failure_onset_frame and '
+                        help='Path to the run directory containing one result.json per flight. '
+                        'When provided, each failed track\'s failure_onset_frame and '
                         'warning_lead_time_seconds are written back into that flight\'s raw '
                         'result.json for visualisation. Skipped entirely if omitted.')
     parser.add_argument('--min-fl-dr', type=float, default=DEFAULT_MIN_FL_DR_,
@@ -1062,16 +1061,18 @@ def compute_introspection_metrics(df_matches, min_score, num_sequences,
 
 def _parse_img_timestamp_ns(img_name):
     """
-    Extracts the leading nanosecond epoch timestamp encoded at the start of
-    an AOT-C frame filename (e.g. '1566544363793015157acfeb72c...df7f.png'
-    -> 1566544363793015157). Returns None if no leading digit run is found.
+    Extract the nanosecond timestamp from the start of an image filename.
 
-    This is the ONLY frame-position signal that is unambiguous across every
-    context these filenames get used in (dense raw folder listing, sparse
-    result.json entries, etc.) since it is a property of the frame itself,
-    not of its position in whichever list happens to be indexing it.
+    Args:
+        img_name: Image filename or path.
+
+    Returns:
+        The timestamp as an integer, or None if no leading digits are found.
     """
+    # Get the Filename & Find any Leading Digits.
     match = re.match(r'^(\d+)', os.path.basename(str(img_name)))
+
+    # Return the Timestamp if found, Otherwise Return None.
     return int(match.group(1)) if match else None
 
 
@@ -1079,40 +1080,60 @@ def write_introspection_outcomes_to_results(df_onset, first_warning, raw_results
                                              frame_rate_hz=DEFAULT_FRAME_RATE_HZ_,
                                              df_matches=None):
     """
-    Stamps Each Failed Track's Failure Onset Frame & Warning Lead Time Back
-    into its Flight's Raw Per-Flight result.json File on Disk.
+    Write failure onset and warning timing into each flight's result.json.
+
+    Args:
+        df_onset: DataFrame containing failure onset information.
+        first_warning: Mapping of flight and track IDs to warning frames.
+        raw_results_dir: Directory containing the raw result folders.
+        frame_rate_hz: Frame rate used to calculate lead time.
+        df_matches: Optional DataFrame mapping global frames to image names.
+
+    Returns:
+        The number of result.json files updated.
     """
+    # Skip the Write-Back if the Results Directory is Missing.
     if not raw_results_dir or not os.path.exists(raw_results_dir):
         log.warning('No raw_results_dir Supplied -- Skipping Introspection Outcome Write-Back.')
         return 0
 
     def _norm_track_id(tid):
+        # Keep Missing Track IDs as None.:
         if tid is None:
             return None
+
+        # Convert Numeric Track IDs to Integers where Possible.
         try:
             return int(float(tid))
+
+        # Keep Non-Numeric Track IDs as Strings.
         except (ValueError, TypeError):
             return str(tid)
 
-    # 1. Map (flight_id, global_frame) -> img_name from df_matches.
+    # Map Each Flight & Global Frame to its Image Name.
     frame_to_img = {}
     if df_matches is not None and 'img_name' in df_matches.columns and 'frame' in df_matches.columns:
         for row in df_matches[['flight_id', 'frame', 'img_name']].drop_duplicates().itertuples():
             frame_to_img[(str(row.flight_id), int(row.frame))] = os.path.basename(str(row.img_name))
 
-    # 2. Normalize first_warning keys to (flight_id, int_track_id).
+    # Normalise Warning Keys so Flight & Track IDs Use the Same Format.
     norm_first_warning = {}
     for (fid, tid), warn_frame in first_warning.items():
         norm_first_warning[(str(fid), _norm_track_id(tid))] = int(warn_frame)
 
-    # 3. Build onset lookup with raw global frames and target image names.
+    # Build an Onset Lookup for Each Failed Track.
     onset_lookup = {}
     for row in df_onset.itertuples():
         fid = str(row.flight_id)
         norm_tid = _norm_track_id(row.track_id)
+
+        # Get the Global Failure Onset Frame.
         t0_global = int(row.failure_onset_frame)
+
+        # Get the First Warning Frame for this Track, if Available.
         t_warn_global = norm_first_warning.get((fid, norm_tid))
 
+        # Store the Global Frames & Matching Image Names.
         onset_lookup[(fid, norm_tid)] = {
             't0_global': t0_global,
             't_warn_global': t_warn_global,
@@ -1120,63 +1141,81 @@ def write_introspection_outcomes_to_results(df_onset, first_warning, raw_results
             'warn_img_name': frame_to_img.get((fid, t_warn_global)) if t_warn_global is not None else None,
         }
 
+    # Keep Track of Flights that Contain at Least One Failure.
     flights_with_failures = {fid for fid, _ in onset_lookup.keys()}
 
-    # Scan directory tree once
+    # Scan the Results Directory Once to Find All Flight Folders.
     disk_folders = [
         d for d in os.listdir(raw_results_dir)
         if os.path.isdir(os.path.join(raw_results_dir, d))
     ]
 
-    # Map bare hashes to candidate folder names
+    # Map Bare Hashes to Candidate Folder Names.
     hash_to_folders = {}
     for folder in disk_folders:
+        # Remove Part Prefixes from Folder Names Before Matching.
         cleaned_hash = re.sub(r'^part\d{1,2}[_-]?', '', folder, flags=re.IGNORECASE)
+
+        # Store Both the Cleaned & Original Folder Names.
         hash_to_folders.setdefault(cleaned_hash, set()).add(folder)
         hash_to_folders.setdefault(folder, set()).add(folder)
 
     updated_count = 0
+
     for fid in flights_with_failures:
-        # Find all unique candidate disk folders matching this fid
+        # Find all Unique Candidate Disk Folders Matching this fid.
         candidates = sorted(hash_to_folders.get(fid, set()))
 
-        # Suffix fallback if prefix strip didn't catch a non-standard pattern
+        # Try a Suffix Match if No Direct Match was Found.
         if not candidates:
             candidates = sorted({d for d in disk_folders if d.endswith(fid)})
 
-        # Hard fail if ambiguous or missing
+        # Stop if More than One Folder Could Match the Flight.
         if len(candidates) > 1:
             raise RuntimeError(
                 f"FATAL: Ambiguous flight mapping for flight_id '{fid}'. "
                 f"Multiple folders on disk match: {candidates}. "
                 f"Aborting to avoid writing into the wrong flight folder."
             )
+
+        # Skip the Flight if No Matching Folder was Found.
         elif len(candidates) == 0:
             log.warning('No result folder on disk matches flight_id %s -- skipping write-back.', fid)
             continue
 
+        # Set Target Folder & Results Path.
         target_folder = candidates[0]
         result_path = os.path.join(raw_results_dir, target_folder, 'result.json')
+
+        # Skip the Flight if its Result File Does Not Exist.
         if not os.path.exists(result_path):
             log.warning('result.json not found at %s', result_path)
             continue
 
+        # Load the Existing Result Entries.
         with open(result_path, 'r') as f:
             entries = json.load(f)
 
+        # Map Each Image Name to its Local Frame Number.
         img_to_local_idx = {}
         for local_idx, entry in enumerate(entries, start=1):
             img_name = os.path.basename(entry.get('img_name', ''))
+
+            # Only Add Entries that have an Image Name.
             if img_name:
                 img_to_local_idx[img_name] = local_idx
 
+        # Store the Total Number of Frames for Fallback Checks.
         total_frames = len(entries)
 
+        # Check Each Detection in the Result File.
         for local_idx, entry in enumerate(entries, start=1):
             for det in entry.get('detections', []):
+                # Normalise the Detection Track ID Before Looking it Up.
                 norm_tid = _norm_track_id(det.get('track_id'))
                 info = onset_lookup.get((fid, norm_tid))
 
+                # Start with Empty Outcome Values.
                 local_onset_frame = None
                 local_warn_frame = None
                 onset_img_name = None
@@ -1184,41 +1223,62 @@ def write_introspection_outcomes_to_results(df_onset, first_warning, raw_results
                 lead_time_seconds = None
 
                 if info is not None:
+                    # Get the Image Name for the Failure Onset Frame.
                     onset_img_name = info['onset_img_name']
+
+                    # Use the Image Name to Find the Local Frame Number.
                     if onset_img_name and onset_img_name in img_to_local_idx:
                         local_onset_frame = img_to_local_idx[onset_img_name]
+
+                    # Fall Back to the Global Frame Number if it is Valid Locally.
                     elif info['t0_global'] <= total_frames:
                         local_onset_frame = info['t0_global']
 
+                    # Get the Image Name for the Warning Frame.
                     warn_img_name = info['warn_img_name']
+
+                    # Use the Image Name to Find the Local Warning Frame.
                     if warn_img_name and warn_img_name in img_to_local_idx:
                         local_warn_frame = img_to_local_idx[warn_img_name]
+
+                    # Fall Back to the Global Warning Frame if it is Valid Locally.
                     elif info['t_warn_global'] is not None and info['t_warn_global'] <= total_frames:
                         local_warn_frame = info['t_warn_global']
 
+                    # Try to Extract Timestamps Directly from the Image Names.
                     t0_ns = _parse_img_timestamp_ns(onset_img_name) if onset_img_name else None
                     twarn_ns = _parse_img_timestamp_ns(warn_img_name) if warn_img_name else None
 
+                    # Prefer Timestamp-Based Lead Time when Both Timestamps Exist.
                     if t0_ns is not None and twarn_ns is not None:
                         lead_time_seconds = round((t0_ns - twarn_ns) / 1e11, 3)
+
+                    # Fall Back to Local Frame Numbers when Timestamps are Unavailable.
                     elif local_onset_frame is not None and local_warn_frame is not None:
                         lead_time_seconds = round((local_onset_frame - local_warn_frame) / frame_rate_hz, 3)
+
+                    # Use Global Frame Numbers as the Final Fallback.
                     elif info['t_warn_global'] is not None:
                         lead_time_seconds = round((info['t0_global'] - info['t_warn_global']) / frame_rate_hz, 3)
 
+                # Write the Calculated Outcomes into the Detection.
                 det['failure_onset_frame'] = local_onset_frame
                 det['failure_onset_img_name'] = onset_img_name
                 det['warning_img_name'] = warn_img_name
                 det['warning_lead_time_seconds'] = lead_time_seconds
 
+        # Save the Updated Entries back to result.json.
         with open(result_path, 'w') as f:
             json.dump(entries, f)
 
+        # Count this Flight as Successfully Updated.
         updated_count += 1
 
+    # Log the Number of Result Files that were Updated.
     log.info('Wrote failure_onset_frame / warning_lead_time_seconds Back into '
              '%d / %d Flights\' result.json Files.', updated_count, len(flights_with_failures))
 
+    # Return the Number of Updated Result Files.
     return updated_count
 
 
@@ -1638,16 +1698,10 @@ def run(flags):
     introspection_metrics = compute_introspection_metrics(df_gt_det_matches, thresh_score, num_sequences)
     divergence_metrics = compute_positional_divergence(df_gt_det_matches, thresh_score)
 
-    # Write failure_onset_frame / warning_lead_time_seconds Back into Each
-    # Flight's Raw result.json, so the Visualiser can Read them Directly
-    # Rather than Having the Notebook Source them Separately. Only Runs if
-    # --raw-results-dir was Supplied. 'df_onset' / 'first_warning' are Popped
-    # off Here so they Never Reach the JSON-Serialised Summary Below.
+    # Additional Introspection Visualisation Metrics.
     df_onset = introspection_metrics.pop('df_onset')
     first_warning = introspection_metrics.pop('first_warning')
-    write_introspection_outcomes_to_results(
-        df_onset, first_warning, flags.raw_results_dir, df_matches=df_gt_det_matches
-    )
+    write_introspection_outcomes_to_results(df_onset, first_warning, flags.raw_results_dir, df_matches=df_gt_det_matches)
 
     # saving intermidiate results
     log.info('Saving results')
