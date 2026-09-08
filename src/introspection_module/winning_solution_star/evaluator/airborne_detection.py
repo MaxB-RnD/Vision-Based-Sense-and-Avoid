@@ -58,13 +58,12 @@ class AirbornePredictor:
             img_name   : Name of the image to which this detection belongs. If None, the current image name is used.
             source     : Detection source. Typically 'DETECTED' or 'COASTED'. Defaults to 'DETECTED'.
             warning    : Indicates whether this detection should be flagged as a warning. Defaults to False.
-            introspection_score     : Continuous decision signal from the active introspection
-                                       strategy (e.g. confidence, EWMA, coast count) for this
-                                       track/frame. None if the strategy has none to report.
-            introspection_threshold : Threshold introspection_score was compared against.
-                                       None under the same conditions as above.
-            **extra_introspection_fields : Any additional strategy-specific diagnostic fields
-                                       (e.g. 'introspection_slope') written straight through.
+            introspection_score : Continuous decision signal from the active introspection strategy (e.g. confidence, 
+                                  EWMA, coast count) for this track/frame. None if the strategy has none to report.
+            introspection_threshold : Threshold introspection_score was compared against. None under the same
+                                      conditions as above.
+            **extra_introspection_fields : Any additional strategy-specific diagnostic fields (e.g. 'introspection_slope') 
+                                           written straight through.
         """
         # Ensure the Confidence Score is a Valid Probability.
         assert 0 < confidence < 1
@@ -92,9 +91,7 @@ class AirbornePredictor:
             "introspection_threshold": introspection_threshold,
         }
 
-        # Merge in any Strategy-Specific Extra Diagnostic Fields (e.g.
-        # 'introspection_slope'). Always Included so the Written Format
-        # Stays Independent of Which Introspection Module was Selected.
+        # Merge in any Strategy-Specific Extra Diagnostic Fields.
         detection_record.update(extra_introspection_fields)
 
         result = {
