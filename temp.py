@@ -1,39 +1,29 @@
 # ------------------------------------------------------------------------------
 # -               V E R S I O N   I D E N T I F I C A T I O N                  -
 # ------------------------------------------------------------------------------
-# File:                    %name: introspection_module_evaluator.py %
-# Date Created:            %date_created: Tue Jul 30 17:06:23 2026 %
+# File:                    %name: view_introspection_results.py %
+# Date Created:            %date_created: Sun Aug 25 23:54:08 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 3 %
+# CM Instance              %instance: 4 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
 # ------------------------------------------------------------------------------
-# Introspection module evaluation script for the AICrowd Airborne Object Tracking 
-# pipeline. This script runs a full evaluation of multiple introspection modules 
-# using a shared inference and tracking framework. It is designed to provide a 
-# fair comparison between formulas under identical dataset and evaluation
-# conditions.
+# Helper module for generating visualisations of introspection module results.
 #
-# The pipeline executes dataset resolution and filtering, predictor
-# initialisation with the selected introspection module, inference over all
-# flight sequences, metric computation using official evaluation scripts, and 
-# generation of a final benchmark summary. The introspection module used is 
-# selected via a command-line argument.
+# Provides notebook-callable functionality for creating annotated videos of
+# flight sequences, allowing predicted object locations, tracking behaviour,
+# confidence information, and introspection warnings to be visually inspected
+# across the duration of a flight.
 #
-# USAGE INSTRUCTIONS:
-#   1. Run the Script from the Project Root:
-#         nohup python -m src.introspection_module.introspection_module_evaluator select_module > outputs/logs/introspection_module/introspection_module_evaluation.log 2>&1 &
+# Also provides functionality for combining multiple introspection
+# visualisations into a single side-by-side comparison video, supporting
+# qualitative comparison of different introspection modules or results.
 #
-#   2. Optional Environment Variables:
-#       - SELECTED_INTROSPECTION_MODULE = (0-3)
-#            0 = None.
-#            1 = Simple Confidence Threshold.
-#            2 = Rolling Confidence Trend / EWMA.
-#            3 = Consecutive-Coast-Count Threshold.
-#
-#   3. Then monitor from terminal with:
-#            tail -f outputs/logs/introspection_module/introspection_module_evaluation.log
+# The visualisations are intended to assist with the evaluation, interpretation,
+# and debugging of introspection module behaviour by providing a clear visual
+# representation of predictions and detected warnings over the corresponding
+# flight imagery.
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
@@ -50,270 +40,986 @@
 # prohibited.
 # ------------------------------------------------------------------------------
 
-# Import Required Libraries.
 import os
-import sys
-
 import json
-import torch
-import random
 import subprocess
 from glob import glob
+from typing import Dict, List, Optional, Tuple
 
-# Because Life, Universe & Everything!
-random.seed(42)
+import cv2
+import numpy as np
 
-# Set Working Directory to Project Root.
-PROJECT_ROOT = os.getcwd()
-
-# Add Project Root to Path.
-sys.path.insert(0, PROJECT_ROOT)
-
-# Add Core Metric Folders to System Path.
-sys.path.insert(0, os.path.join(PROJECT_ROOT, "core"))
-
-# Import Local Project Funtions.
 from logging_module import LogLevel, log
-from notebooks.helpers.notebook_helpers import (
-    get_next_run_dir, load_combined_gt, resolve_local_flights,
-    convert_results_to_metrics_format, measure_predictor_complexity,
-    build_introspection_summary
-)
+from src.data.corruption_dataset.dataset_quality_metrics import getPrimaryBoundingBox
+from src.data.corruption_dataset.severity_scheduler import buildSeveritySchedule
 
-# Confirm Project Root.
-log(LogLevel.INFO, "introspection_module_evaluator:imports", "Project Root Set: %s", PROJECT_ROOT)
+# ------------------------------------------------------------------------------
+#                        CONFIGURATION VARIABLES
+# ------------------------------------------------------------------------------
+# Paths & Environment Variables. 
+DEFAULT_DATASET_ROOT = 'data/corruption_dataset'
+
+# Video Settings.
+VIDEO_FPS = 10
+
+# Bounding Box (BGR).
+BB_COLOUR_DETECTED = (0, 0, 211)     # Red.
+BB_COLOUR_WARNING  = (211, 0, 211)   # Magenta.
+BB_COLOUR_GT       = (0, 211, 0)     # Green.
+BB_THICKNESS = 4
+
+# Bounding Box Labels.
+BB_LABEL_FONT_SCALE = 1.0
+BB_LABEL_THICKNESS  = 2
+BB_LABEL_LINE_GAP   = 12
+
+# Status Banner.
+BANNER_HEIGHT = 80
+BANNER_FONT_SCALE = 1.0
+BANNER_TEXT_THICKNESS = 2
+BANNER_FONT = cv2.FONT_HERSHEY_SIMPLEX
+BANNER_TEXT_COLOUR = (255, 255, 255)
+BANNER_COLUMN_GAP = 20 
+BANNER_COLOUR_WARNING    = (211, 0, 211)  # Magenta.
+BANNER_COLOUR_DETECTION  = (0, 0, 211)    # Red.
+BANNER_COLOUR_EMPTY      = (60, 60, 60)   # Grey.
+BANNER_COLOUR_TRACK_LOST = (0, 121, 251)  # Orange.
+
+# Fixed-Width Status Slot.
+_STATUS_STRINGS = ["No Object", "TRACK LOST / GT TARGET PRESENT", "DETECTION", "INTROSPECTION WARNING"]
+_STATUS_WIDTHS = [
+    cv2.getTextSize(s, BANNER_FONT, BANNER_FONT_SCALE, BANNER_TEXT_THICKNESS)[0][0]
+    for s in _STATUS_STRINGS
+]
+BANNER_STATUS_SLOT_WIDTH = max(_STATUS_WIDTHS) + 20
+
+# Fixed-Width Severity Slot.
+BANNER_SEVERITY_FORMAT = "|  Severity: %.2f  |"
+BANNER_SEVERITY_SLOT_WIDTH = cv2.getTextSize(
+    BANNER_SEVERITY_FORMAT % 0.0, BANNER_FONT, BANNER_FONT_SCALE, BANNER_TEXT_THICKNESS
+)[0][0] + 20
+
+# Warning Lead-Time Display (Top Left). 
+AWLT_FONT = cv2.FONT_HERSHEY_SIMPLEX
+AWLT_FONT_SCALE = 0.8
+AWLT_TEXT_THICKNESS = 2
+AWLT_TEXT_COLOUR = (255, 255, 255)
+AWLT_BG_COLOUR = (60, 60, 60)
+AWLT_MARGIN = 12
+AWLT_LINE_GAP = 8
+
+# True-Onset Marker Text Colour.
+ONSET_TEXT_COLOUR = BB_COLOUR_GT
+# ------------------------------------------------------------------------------
 
 
 # ------------------------------------------------------------------------------
-#                                   MAIN
+#                       FLIGHT & RESULTS RESOLUTION
 # ------------------------------------------------------------------------------
-def main() -> None:
-    # Choose Which Introspection Module to Run
-    # --------------------------------------------------
-    # 0 -> None (Control Condition).
-    # 1 -> Confidence Threshold (Simple Baseline).
-    # 2 -> Rolling Confidence Trend / EWMA.
-    # 3 -> Consecutive-Coast-Count Threshold.
-    module_list = ["none", "confidence_threshold", "rolling_confidence_trend", "coast_count_threshold"]
+def resolveFlightImagePaths(flight_id: str, dataset_root: str = DEFAULT_DATASET_ROOT) -> List[str]:
+    """
+    Finds every frame image on disk for the given flight, sorted in
+    chronological order (image filenames are zero-padded numeric timestamps,
+    so a plain alphabetical sort is chronological).
 
-    # Allow Introspection Module Selection from Command Line.
-    if len(sys.argv) > 1:
-        SELECTED_INTROSPECTION_MODULE = int(sys.argv[1])
+    Args:
+        flight_id (str): Flight ID string, prefixed with its partition
+                         (e.g. 'part2e9c4568409604a6183d24726c0ebf696').
+        dataset_root (str): Root directory containing '{part}/Images/...'.
+
+    Returns:
+        List[str]: Sorted list of absolute/relative paths to this flight's
+                   frame PNGs.
+
+    Raises:
+        FileNotFoundError: If no image directory / no PNGs can be found for
+                           this flight under any of the candidate locations.
+    """
+    # Determine which Dataset Partition the Flight Belongs To.
+    if flight_id.startswith('part1'):
+        part, bare_id = 'part1', flight_id[len('part1'):]
+    elif flight_id.startswith('part2'):
+        part, bare_id = 'part2', flight_id[len('part2'):]
+    elif flight_id.startswith('part3'):
+        part, bare_id = 'part3', flight_id[len('part3'):]
     else:
-        SELECTED_INTROSPECTION_MODULE = 0
+        part, bare_id = 'part1', flight_id
 
-    # Evaluation Filtering.
-    MIN_SCORE = 0.6
-    DETECTION_THRESHOLD = 0.6
-    MIN_TRACK_LEN = 8
+    # Build the Possible Flight Image Directories.
+    candidate_dirs = [
+        os.path.join(dataset_root, part, 'Images', bare_id),
+        os.path.join(dataset_root, part, 'Images', flight_id),
+    ]
 
-    # Set Path to Desired Evaluation Dataset.
-    DATASET_PATH = "configs/datasets/training_subsets/test.txt"
-    DATASET_PARTS = ["part1", "part2", "part3"]
-    DATASET_ROOT = os.path.join(PROJECT_ROOT, "data", "corruption_dataset")
+    # Search Each Candidate Directory for PNG Frames.
+    for candidate_dir in candidate_dirs:
+        # Sort Frames Chronologically by their Timestamp Filenames.
+        image_paths = sorted(glob(os.path.join(candidate_dir, '*.png')))
 
-    # Set Results Variables (Auto-Incrementing Run Directory).
-    RESULTS_DIR = "outputs/results/introspection_module/" + module_list[SELECTED_INTROSPECTION_MODULE]
-    run_name = get_next_run_dir(RESULTS_DIR)
+        # Print Success Message if Images are Found.
+        if image_paths:
+            log(LogLevel.INFO, "introspection_visualiser:resolveFlightImagePaths",
+                "Found %d Frames for Flight %s in '%s'.", len(image_paths), flight_id, candidate_dir)
+            return image_paths
 
-    # Evaluation Output Folders.
-    EVAL_GT_DIR = os.path.join(RESULTS_DIR, run_name, "gt")
-    EVAL_RESULT_DIR  = os.path.join(RESULTS_DIR, run_name, "result")
-    EVAL_SUMMARY_DIR = os.path.join(RESULTS_DIR, run_name, "summaries")
-
-    # Print Summary Statement.
-    log(LogLevel.INFO, "introspection_module:config", "Configuration Loaded.")
-    print(f"  Introspection Module : {module_list[SELECTED_INTROSPECTION_MODULE]}")
-    print(f"  Dataset Root         : {DATASET_ROOT}")
-    print(f"  Dataset Path         : {DATASET_PATH}")
-    print(f"  Dataset Parts        : {DATASET_PARTS}")
-    print(f"  Run Name             : {run_name}")
-    print(f"  Results Path         : {RESULTS_DIR}")
-    print(f"  Min Score            : {MIN_SCORE}")
-    print(f"  Min Track Len        : {MIN_TRACK_LEN}")
-    
-    # Find all Available Sequences from the Provided Dataset.
-    local_flights = resolve_local_flights(DATASET_PATH, DATASET_ROOT)
-
-    # Add Spacing in Console Output for Readability.
-    print()
-
-    # Log How Many Flights were Found & are Ready for Inference.
-    log(LogLevel.INFO, "introspection_module_evaluator:preprocessing", "Flights Ready for Inference: %d", len(local_flights))
-
-    # Preview the First 5 Flights to Confirm Dataset is Correct.
-    for name, info in list(local_flights.items())[:5]:
-        # Count No. Images in the Flight Directory.
-        n_imgs = len(list(info["images_dir"].glob("*.png")))
-
-        # Print Flight Part, Name, & No. Images.
-        print(f"  [{info['part']}]  {name}  ({n_imgs} images)")
-
-    # If there are More than 5 Flights, Log How Many Additional Ones Exist.
-    if len(local_flights) > 5:
-        log(LogLevel.DEBUG, "introspection_module_evaluator:preprocessing", " ... and %d more.", len(local_flights) - 5)
-
-    # Load & Filter Ground Truth to Include Local Flights Only. 
-    combined_gt = load_combined_gt(DATASET_PARTS, local_flights, DATASET_ROOT)
-    log(LogLevel.INFO, "introspection_module_evaluator:preprocessing", "Flights in Filtered Ground Truth: %d", len(combined_gt['samples']))
-
-    # Build Set of Image Filenames That Physically Exist on Disk.
-    all_images = {name for f in local_flights.values() for name in f["image_names"]}
-
-    # Cull GT Entities to Only Those With a Corresponding Image on Disk.
-    before = sum(len(flight["entities"]) for flight in combined_gt["samples"].values())
-
-    for flight_hash, flight_data in combined_gt["samples"].items():
-        flight_data["entities"] = [
-            e for e in flight_data["entities"]
-            if e["img_name"] in all_images
-        ]
-
-    after = sum(len(flight["entities"]) for flight in combined_gt["samples"].values())
-
-    # Report How Many Images were Removed. 
-    log(LogLevel.INFO, "introspection_module_evaluator:preprocessing",
-        "GT Culled: %d -> %d entities (%d removed for missing images).", before, after, before - after)
-
-    # Save the Filtered Ground Truth to the Evaluation Folder.
-    os.makedirs(EVAL_GT_DIR, exist_ok=True)
-    gt_out_path = os.path.join(EVAL_GT_DIR, "groundtruth.json")
-
-    # Copy the Ground Truth Values to the .json.
-    with open(gt_out_path, "w") as f:
-        json.dump(combined_gt, f)
-
-    # Print Success Message.
-    log(LogLevel.INFO, "introspection_module_evaluator:preprocessing", "Ground Truth Saved: %s", gt_out_path)
-
-    # Create a Directory where all Evaluation Flight Data will be Stored.
-    EVAL_DATA_DIR = os.path.join(RESULTS_DIR, run_name, "data")
-    os.makedirs(EVAL_DATA_DIR, exist_ok=True)
-
-    # Link Each Local Flight's Image Folder into the Evaluation Directory.
-    for folder_name, info in local_flights.items():
-        link_path = os.path.join(EVAL_DATA_DIR, folder_name)
-        if not os.path.exists(link_path):
-            os.symlink(info["images_dir"], link_path)
-
-    # Set Environment Variables that AirbornePredictor and SelectedModelPredictor Read.
-    os.environ["TEST_DATASET_PATH"] = EVAL_DATA_DIR
-    os.environ["INFERENCE_OUTPUT_PATH"] = RESULTS_DIR
-    os.environ["DATASET_ENV"] = run_name
-    os.environ["MIN_TRACK_LEN"] = str(MIN_TRACK_LEN)
-    os.environ["MIN_SCORE"] = str(MIN_SCORE)
-    os.environ["DETECTION_THRESHOLD"] = str(DETECTION_THRESHOLD)
-
-    # Disable the Per-Flight Timeout.
-    os.environ["INFERENCE_PER_FLIGHT_TIMEOUT_SECONDS"] = "0"
-
-    # Limit Inference to Only the Specified Flights.
-    os.environ["PARTIAL_RUN_FLIGHTS"] = ",".join(local_flights.keys())
-
-    # Print Summary Statement.
-    log(LogLevel.INFO, "introspection_module_evaluator:inference", "Environment Configured.")
-    print(f"  Test Data Path     : {EVAL_DATA_DIR}")
-    print(f"  Flights to Process : {len(local_flights)}")
-    print(f"  MIN_SCORE          : {MIN_SCORE}")
-    print(f"  MIN_TRACK_LEN      : {MIN_TRACK_LEN}")
-    print()
-
-    # Import Baseline Classes.
-    from src.introspection_module.hrnetw32_introspective.hrnetw32_introspective_test import HRNetW32IntrospectivePredictor
-    from src.introspection_module.hrnetw32_introspective.introspection_modules import INTROSPECTION_MODULE_MAP
-
-    # Check GPU is CUDA Enabled.
-    if torch.cuda.is_available():
-        log(LogLevel.INFO, "introspection_module_evaluator:device_check", "CUDA-Enabled GPU is Available.")
-        print(f"  GPU Name: {torch.cuda.get_device_name(0)}.")
-        print(f"  CUDA Version: {torch.version.cuda}.")
-    else:
-        log(LogLevel.WARNING, "introspection_module_evaluator:device_check", "No CUDA-Enabled GPU Found, Using CPU Instead.")
-
-    # Validate Selection.
-    if SELECTED_INTROSPECTION_MODULE not in INTROSPECTION_MODULE_MAP:
-        log(LogLevel.ERROR, "introspection_module_evaluator:inference",
-            "Invalid SELECTED_INTROSPECTION_MODULE: %s.", SELECTED_INTROSPECTION_MODULE)
-        raise ValueError("Please Select a Valid Introspection Module Index.")
-
-    # Instantiate the Selected Introspection Module.
-    introspection_module = INTROSPECTION_MODULE_MAP[SELECTED_INTROSPECTION_MODULE]()
-
-    # Initialise the Predictor & Inject the Selected Introspection Module
-    predictor = HRNetW32IntrospectivePredictor()
-    predictor.introspection_module = introspection_module
-
-    # Load Models Before Measuring Complexity.
-    print()
-    predictor.inference_setup()
-
-    # Measure the Current Model's Complexity.
-    print()
-    complexity = measure_predictor_complexity(predictor)
-
-    # Run Inference Over all Flights.
-    print()
-    predictor.run()
-
-    # Print Summary Statement.
-    log(LogLevel.INFO, "introspection_module_evaluator:inference", "Inference Complete.")
-    print(f"  Raw Results Saved to: {os.path.join(RESULTS_DIR, run_name)}\n")
-
-    # Set Results Directories. 
-    RAW_RESULTS_PATH = os.path.join(RESULTS_DIR, run_name, "result.json")
-    METRICS_RESULTS_PATH = os.path.join(EVAL_RESULT_DIR, "result.json")
-
-    # Ensure Output Directory Exists.
-    os.makedirs(EVAL_RESULT_DIR, exist_ok=True)
-
-    # Copy the Results File.
-    convert_results_to_metrics_format(RAW_RESULTS_PATH, METRICS_RESULTS_PATH)
-
-    # Print Summary Statement.
-    log(LogLevel.INFO, "introspection_module_evaluator:inference", "Results Copied to Metrics Directory.")
-    print(f"  Metrics-Ready Results Stored at : {METRICS_RESULTS_PATH}")
-
-    # Locate the Competition Metrics Script.
-    metrics_script = os.path.join(PROJECT_ROOT, "core/metrics/run_airborne_metrics.py")
-
-    # Call the Competition Metrics Script.
-    subprocess.run(
-        [
-            "python3", metrics_script,
-            "--dataset-folder",   EVAL_GT_DIR,
-            "--results-folder",   EVAL_RESULT_DIR,
-            "--summaries-folder", EVAL_SUMMARY_DIR,
-            "--min-score", str(MIN_SCORE),
-            "--min-track-len", str(MIN_TRACK_LEN),
-        ],
-        check=True  # Raises CalledProcessError if the script exits with a non-zero code.
+    # Raise an Error if no Flight Images Were Found.
+    raise FileNotFoundError(
+        "Could Not Find any Frame Images for Flight '%s' under '%s'. Tried: %s"
+        % (flight_id, dataset_root, candidate_dirs)
     )
 
-    # Print Message on Completion. 
-    log(LogLevel.INFO, "introspection_module_evaluator:evaluation", "Metrics Complete.")
 
-    # Find the Summary JSON in the Summaries Directory.
-    summary_files = glob(os.path.join(EVAL_SUMMARY_DIR, "*.json"))
+def loadIntrospectionResults(result_json_path: str) -> Dict[str, List[dict]]:
+    """
+    Loads a per-flight result.json and indexes it by img_name for fast lookup.
 
-    # Check that the Summary Files Exist.
-    if not summary_files:
-        log(LogLevel.ERROR, "introspection_module_evaluator:summary", "No Summary Files Found! Run Inference First.")
-    else:
-        # Build Summary DataFrame.
-        summary_df = build_introspection_summary(
-            summary_json_path = summary_files[0],
-            run_dir           = os.path.join(RESULTS_DIR, run_name),
-            output_csv_path   = os.path.join(EVAL_SUMMARY_DIR, "introspection_module_evaluator_benchmark_summary.csv"),
-        )
-    
-        # Print Summary to Console.
-        print("\n" + "=" * 93)
-        print("INTROSPECTION MODULE - FULL TEST DATASET SUMMARY".center(93))
-        print("=" * 93)
-        print(summary_df.to_string(index=False))
+    Expected format is a flat list of frame entries:
+        [{"img_name": "...png", "detections": [{"track_id", "x", "y", "w", "h",
+                                                  "n", "s", "source", "warning",
+                                                  "introspection_score",
+                                                  "introspection_threshold"}]}, ...]
+
+    Args:
+        result_json_path (str): Path to the flight's result.json file.
+
+    Returns:
+        Dict[str, List[dict]]: Mapping of img_name --> that frame's detections.
+                               Empty dict if the file is missing or fails to load.
+    """
+    # Check that the Results File Exists.
+    if not os.path.exists(result_json_path):
+        log(LogLevel.WARNING, "introspection_visualiser:loadIntrospectionResults",
+            "Results File Not Found: %s. All Frames will Show as 'No Object'.", result_json_path)
+        return {}
+
+    # Load the Raw Results from JSON.
+    with open(result_json_path, 'r') as f:
+        raw_entries = json.load(f)
+
+    # Index Results by Image Name for Fast Frame Lookup.
+    lookup: Dict[str, List[dict]] = {entry.get('img_name', ''): entry.get('detections', [])
+                                     for entry in raw_entries}
+
+    # Display the Number of Frames with Results.
+    log(LogLevel.INFO, "introspection_visualiser:loadIntrospectionResults",
+        "Loaded Results for %d Frames from '%s'.", len(lookup), result_json_path)
+
+    # Return Lookup Dictionary.
+    return lookup
+
+
+def loadGroundTruthForFlight(dataset, flight_id: str) -> Dict[str, Optional[Tuple[int, int, int, int]]]:
+    """
+    Loads the ground-truth target bbox for every frame of a flight, indexed
+    by image filename to match the same key used for predicted results.
+
+    Args:
+        dataset: Loaded AOT Dataset object.
+        flight_id (str): Full flight ID (e.g. 'part1abc123...').
+
+    Returns:
+        Dict[str, Optional[Tuple[int, int, int, int]]]: Mapping of image
+            filename -> (x1, y1, x2, y2) ground-truth bbox, or None for
+            frames with no ground-truth target.
+    """
+    # Load the Flight's Metadata & Frames.
+    try:
+        flight = dataset.get_flight(flight_id)
+        frames = flight.frames
+    except Exception as e:
+        # Return an Empty Lookup if the Flight Cannot be Loaded.
+        log(LogLevel.WARNING, "introspection_visualiser:loadGroundTruthForFlight",
+            "Could Not Load Ground Truth for Flight %s: %s. GT Overlay will be Unavailable.",
+            flight_id, str(e))
+        return {}
+
+    # Create a Lookup from Image fFlename to Ground-Truth Bbox.
+    gt_lookup: Dict[str, Optional[Tuple[int, int, int, int]]] = {}
+
+    # Process Each Frame in the Flight.
+    for frame_id, frame in frames.items():
+        # Use the Image Filename to Match the Prediction Results.
+        try:
+            image_filename = os.path.basename(frame.image_path())
+        except Exception:
+            # Fall Back to the Frame ID if the Image Path is Unavailable.
+            image_filename = frame_id
+
+        # Store the Ground-Truth Bbox for this Frame.
+        gt_lookup[image_filename] = getPrimaryBoundingBox(frame)
+
+    # Count the Frames that Contain a Ground-Truth Target.
+    present_count = sum(1 for bbox in gt_lookup.values() if bbox is not None)
+
+    # Log the Number of Frames with a Ground-Truth Target.
+    log(LogLevel.INFO, "introspection_visualiser:loadGroundTruthForFlight",
+        "Loaded Ground Truth for Flight %s: %d / %d Frames have a Target.",
+        flight_id, present_count, len(gt_lookup))
+
+    # Return the Completed Ground-Truth Lookup.
+    return gt_lookup
 # ------------------------------------------------------------------------------
 
 
-# Call the Main Function.
-if __name__ == "__main__":
-    main()
+# ------------------------------------------------------------------------------
+#                    ANNOTATION HELPERS (Boxes + Banner)
+# ------------------------------------------------------------------------------
+def _fitTextScale(text: str, font: int, max_width: int, base_scale: float,
+                  thickness: int, min_scale: float = 0.45) -> Tuple[float, int]:
+    """
+    Shrinks the font scale for a piece of text until it fits within max_width, 
+    so long strings ever run off the edge of the frame instead of silently being
+    clipped by OpenCV.
+
+    Args:
+        text (str): Text to be measured/drawn.
+        font (int): OpenCV font face.
+        max_width (int): Maximum allowed pixel width for the rendered text.
+        base_scale (float): Preferred/starting font scale.
+        thickness (int): Text thickness used for measurement.
+        min_scale (float): Floor below which the scale will not shrink further.
+
+    Returns:
+        Tuple[float, int]: (scale to use, rendered width at that scale).
+    """
+    # Start at the Preferred Scale and Measure the Text.
+    scale = base_scale
+    (text_width, _), _ = cv2.getTextSize(text, font, scale, thickness)
+
+    # Shrink the Scale in Small Steps Until the Text Fits, or the Floor is Hit.
+    while text_width > max_width and scale > min_scale:
+        scale = round(scale - 0.05, 2)
+        (text_width, _), _ = cv2.getTextSize(text, font, scale, thickness)
+
+    # Return the Final Scale and its Rendered Width.
+    return scale, text_width
+
+
+def drawPredictedBoxes(image: np.ndarray, detections: List[dict]) -> np.ndarray:
+    """
+    Draws predicted bounding boxes and labels for all detections in a frame.
+
+    Bounding box coordinates are read from the result fields 'x', 'y', 'w',
+    and 'h', which contain the top-left and bottom-right coordinates
+    respectively. Box colour indicates the detection status, with warnings
+    shown in the warning colour.
+
+    Args:
+        image (np.ndarray): OpenCV image array to draw onto (modified in place).
+        detections (List[dict]): This frame's list of detection dicts.
+
+    Returns:
+        np.ndarray: Annotated image.
+    """
+    # Set the Font Used for Box Labels.
+    font = cv2.FONT_HERSHEY_SIMPLEX
+
+    # Draw Each Predicted Detection.
+    for det in detections:
+        # Read the Bounding Box Coordinates.
+        x1, y1, x2, y2 = det.get('x'), det.get('y'), det.get('w'), det.get('h')
+
+        # Skip Detections with Missing Box Coordinates.
+        if None in (x1, y1, x2, y2):
+            continue
+
+        # Convert Coordinates to Integers for OpenCV.
+        x1, y1 = int(x1), int(y1)
+        x2, y2 = int(x2), int(y2)
+
+        # Read the Warning Status.
+        warning = bool(det.get('warning', False))
+
+        # Set the Box Colour Based on the Warning Status.
+        colour = BB_COLOUR_WARNING if warning else BB_COLOUR_DETECTED
+
+        # Draw the Bounding Box.
+        cv2.rectangle(image, (x1, y1), (x2, y2), colour, BB_THICKNESS)
+
+        # Read the Track ID.
+        track_id = det.get('track_id', '?')
+
+        # Read the Continuous Introspection Score for this Track/Frame.
+        introspection_score = det.get('introspection_score', None)
+        introspection_str = ("%.2f" % introspection_score) if introspection_score is not None else "N/A"
+
+        # Read the Alarm Threshold the Introspection Score is Compared Against.
+        introspection_threshold = det.get('introspection_threshold', None)
+        threshold_str = ("%.2f" % introspection_threshold) if introspection_threshold is not None else "N/A"
+
+        # Create the Three-Line Box Label.
+        line1 = "ID: " + str(track_id)
+        line2 = "Score: " + introspection_str
+        line3 = "Threshold: " + threshold_str
+
+        # Calculate the Label Dimensions.
+        (w1, h1), _ = cv2.getTextSize(line1, font, BB_LABEL_FONT_SCALE, BB_LABEL_THICKNESS)
+        (w2, h2), _ = cv2.getTextSize(line2, font, BB_LABEL_FONT_SCALE, BB_LABEL_THICKNESS)
+        (w3, h3), _ = cv2.getTextSize(line3, font, BB_LABEL_FONT_SCALE, BB_LABEL_THICKNESS)
+
+        # Position the Label Below the Bounding Box.
+        label_x = x1
+        line1_y = y2 + h1 + 4
+        line2_y = line1_y + h2 + BB_LABEL_LINE_GAP
+        line3_y = line2_y + h3 + BB_LABEL_LINE_GAP
+
+        # Draw the Label Background, Sized to Fit All Three Lines.
+        bg_x1, bg_y1 = label_x - 2, y2 + 2
+        bg_x2, bg_y2 = label_x + max(w1, w2, w3) + 4, line3_y + 4
+        cv2.rectangle(image, (bg_x1, bg_y1), (bg_x2, bg_y2), colour, cv2.FILLED)
+
+        # Draw the Track ID, Introspection Score, and Alarm Threshold.
+        cv2.putText(image, line1, (label_x, line1_y), font, BB_LABEL_FONT_SCALE,
+                    (255, 255, 255), BB_LABEL_THICKNESS, cv2.LINE_AA)
+        cv2.putText(image, line2, (label_x, line2_y), font, BB_LABEL_FONT_SCALE,
+                    (255, 255, 255), BB_LABEL_THICKNESS, cv2.LINE_AA)
+        cv2.putText(image, line3, (label_x, line3_y), font, BB_LABEL_FONT_SCALE,
+                    (255, 255, 255), BB_LABEL_THICKNESS, cv2.LINE_AA)
+
+    # Return the Marked-Up Frame. 
+    return image
+
+
+def drawGroundTruthBox(image: np.ndarray, bbox: Tuple[int, int, int, int]) -> np.ndarray:
+    """
+    Draws the ground-truth target bounding box, in a colour distinct from any
+    predicted box, so ground truth and prediction can be visually compared at
+    a glance.
+
+    Args:
+        image (np.ndarray): OpenCV image array to draw onto (modified in place).
+        bbox (Tuple[int, int, int, int]): Ground-truth (x1, y1, x2, y2).
+
+    Returns:
+        np.ndarray: Annotated image.
+    """
+    # Unpack & Draw the Ground-Truth Box.
+    x1, y1, x2, y2 = bbox
+    cv2.rectangle(image, (x1, y1), (x2, y2), BB_COLOUR_GT, BB_THICKNESS)
+
+    # Label the Box so it isn't Confused with a Prediction.
+    label = "GT"
+    (label_w, label_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX,
+                                            BB_LABEL_FONT_SCALE, BB_LABEL_THICKNESS)
+    label_x, label_y = x1, max(y1 - 8, label_h + 4)
+
+    # Draw the Label Text & Background.
+    cv2.rectangle(image, (label_x - 2, label_y - label_h - 4),
+                 (label_x + label_w + 4, label_y + 4), BB_COLOUR_GT, cv2.FILLED)
+    cv2.putText(image, label, (label_x, label_y), cv2.FONT_HERSHEY_SIMPLEX,
+               BB_LABEL_FONT_SCALE, (255, 255, 255), BB_LABEL_THICKNESS, cv2.LINE_AA)
+
+    # Return the Marked-Up Frame.
+    return image
+
+
+def addWarningLeadTimeOverlay(image: np.ndarray, warning_lead_time: Optional[float]) -> np.ndarray:
+    """
+    Draws the Warning Lead Time in a grey box, top-left corner of the frame.
+
+    Args:
+        image (np.ndarray): OpenCV image to annotate.
+        warning_lead_time (Optional[float]): Warning lead time in seconds for 
+                                             this flight/run.
+
+    Returns:
+        np.ndarray: Annotated image.
+    """
+    # Build the Display Text.
+    text = ("Warning Lead Time: %.2fs" % warning_lead_time) if warning_lead_time is not None \
+        else "Warning Lead Time: N/A"
+
+    # Measure the Text to Size its Background Plate.
+    (text_w, text_h), baseline = cv2.getTextSize(text, AWLT_FONT, AWLT_FONT_SCALE, AWLT_TEXT_THICKNESS)
+
+    # Position in the Top-Left Corner, With a Small Margin.
+    x1, y1 = AWLT_MARGIN, AWLT_MARGIN
+    x2 = x1 + text_w + 2 * AWLT_MARGIN
+    y2 = y1 + text_h + baseline + 2 * AWLT_MARGIN
+
+    # Draw a Solid Background Plate so the Text Stays Legible Over any Underlying Imagery.
+    cv2.rectangle(image, (x1, y1), (x2, y2), AWLT_BG_COLOUR, cv2.FILLED)
+
+    # Draw the Text.
+    text_x, text_y = x1 + AWLT_MARGIN, y1 + AWLT_MARGIN + text_h
+    cv2.putText(image, text, (text_x, text_y), AWLT_FONT, AWLT_FONT_SCALE,
+                AWLT_TEXT_COLOUR, AWLT_TEXT_THICKNESS, cv2.LINE_AA)
+
+    # Return the Marked-Up Frame.
+    return image
+
+
+def addOnsetOverlay(image: np.ndarray) -> np.ndarray:
+    """
+    Draws a "TRUE FAILURE ONSET FRAME" box, top-right corner, in the same
+    green used for the ground-truth box. 
+    
+    Only ever called from the true onset frame onwardand persists for the rest 
+    of the video once shown.
+
+    Args:
+        image (np.ndarray): OpenCV image to annotate.
+
+    Returns:
+        np.ndarray: Annotated image.
+    """
+    # Build the Display Text.
+    text = "TRUE FAILURE ONSET FRAME"
+
+    # Measure the Text to Size its Background Plate.
+    (text_w, text_h), baseline = cv2.getTextSize(text, AWLT_FONT, AWLT_FONT_SCALE, AWLT_TEXT_THICKNESS)
+
+    # Position in the Top-Right Corner, With a Small Margin.
+    h, w = image.shape[:2]
+    x2, y1 = w - AWLT_MARGIN, AWLT_MARGIN
+    x1 = x2 - text_w - 2 * AWLT_MARGIN
+    y2 = y1 + text_h + baseline + 2 * AWLT_MARGIN
+
+    # Draw a Solid Background Plate.
+    cv2.rectangle(image, (x1, y1), (x2, y2), AWLT_BG_COLOUR, cv2.FILLED)
+
+    # Draw the Text in Ground-Truth Green.
+    text_x, text_y = x1 + AWLT_MARGIN, y1 + AWLT_MARGIN + text_h
+    cv2.putText(image, text, (text_x, text_y), AWLT_FONT, AWLT_FONT_SCALE,
+                ONSET_TEXT_COLOUR, AWLT_TEXT_THICKNESS, cv2.LINE_AA)
+
+    # Return the Marked-Up Frame.
+    return image
+
+
+def addIntrospectionBanner(image: np.ndarray, frame_num: int, total_frames: int,
+                           detections: List[dict], flight_id: str, module_name: str,
+                           gt_present: bool = False, severity: Optional[float] = None) -> np.ndarray:
+    """
+    Adds a coloured status banner to the bottom of the image: grey for no
+    ground-truth target (nothing to detect), orange for a ground-truth
+    target present but no prediction (a genuine tracking failure), red for
+    an active prediction (detected or coasted), and magenta for an 
+    introspection warning.
+
+    Args:
+        image (np.ndarray): OpenCV image to annotate.
+        frame_num (int): Current frame number (1-indexed for display).
+        total_frames (int): Total number of frames in the flight.
+        detections (List[dict]): This frame's list of detection dicts.
+        flight_id (str): Flight ID string for display.
+        module_name (str): Name of the introspection module.
+        gt_present (bool): Whether a ground-truth target exists in this frame.
+        severity (Optional[float]): This frame's corruption severity in [0, 1], 
+                                    if available. 
+
+    Returns:
+        np.ndarray: Image with banner appended at the bottom.
+    """
+    # Get the Image Dimensions.
+    h, w = image.shape[:2]
+
+    # Create the Empty Banner.
+    banner = np.zeros((BANNER_HEIGHT, w, 3), dtype=np.uint8)
+
+    # Check the Detection Status for the Frame.
+    has_detection = bool(detections)
+    has_warning = any(bool(d.get('warning', False)) for d in detections)
+
+    # Set the Banner Colour and Status.
+    if has_warning:
+        colour, status_str = BANNER_COLOUR_WARNING, "INTROSPECTION WARNING"
+    elif has_detection:
+        colour, status_str = BANNER_COLOUR_DETECTION, "DETECTION"
+    elif gt_present:
+        colour, status_str = BANNER_COLOUR_TRACK_LOST, "TRACK LOST / GT TARGET PRESENT"
+    else:
+        colour, status_str = BANNER_COLOUR_EMPTY, "No Object"
+
+    # Apply the Status Colour to the Banner.
+    banner[:] = colour
+
+    # Baseline Y Position for All Banner Text.
+    baseline_y = 50
+
+    # Column 1: Frame Counter.
+    digit_width = len(str(total_frames))
+    frame_text = "Frame %0*d / %d  |" % (digit_width, frame_num, total_frames)
+    frame_col_x = 20
+    cv2.putText(banner, frame_text, (frame_col_x, baseline_y), BANNER_FONT,
+               BANNER_FONT_SCALE, BANNER_TEXT_COLOUR, BANNER_TEXT_THICKNESS, cv2.LINE_AA)
+    frame_text_width = cv2.getTextSize(frame_text, BANNER_FONT, BANNER_FONT_SCALE,
+                                       BANNER_TEXT_THICKNESS)[0][0]
+
+    # Column 2: Status.
+    status_slot_x = frame_col_x + frame_text_width + BANNER_COLUMN_GAP
+    status_text_width = cv2.getTextSize(status_str, BANNER_FONT, BANNER_FONT_SCALE,
+                                        BANNER_TEXT_THICKNESS)[0][0]
+    status_x = status_slot_x + max(0, (BANNER_STATUS_SLOT_WIDTH - status_text_width) // 2)
+    cv2.putText(banner, status_str, (status_x, baseline_y), BANNER_FONT,
+               BANNER_FONT_SCALE, BANNER_TEXT_COLOUR, BANNER_TEXT_THICKNESS, cv2.LINE_AA)
+
+    # Column 3: Severity.
+    severity_slot_x = status_slot_x + BANNER_STATUS_SLOT_WIDTH + BANNER_COLUMN_GAP
+    if severity is not None:
+        severity_text = BANNER_SEVERITY_FORMAT % severity
+        cv2.putText(banner, severity_text, (severity_slot_x, baseline_y), BANNER_FONT,
+                   BANNER_FONT_SCALE, BANNER_TEXT_COLOUR, BANNER_TEXT_THICKNESS, cv2.LINE_AA)
+
+    # Column 4: Module Name & Flight ID.
+    trailer_x = severity_slot_x + BANNER_SEVERITY_SLOT_WIDTH + BANNER_COLUMN_GAP
+    trailer_text = "%s  |  %s" % (module_name, flight_id)
+    trailer_max_width = max(w - trailer_x - 10, 10)
+    trailer_scale, _ = _fitTextScale(trailer_text, BANNER_FONT, trailer_max_width,
+                                     BANNER_FONT_SCALE, BANNER_TEXT_THICKNESS)
+    cv2.putText(banner, trailer_text, (trailer_x, baseline_y), BANNER_FONT,
+                trailer_scale, (255, 255, 255), BANNER_TEXT_THICKNESS, cv2.LINE_AA)
+
+    # Append the Banner to the Bottom of the Image.
+    return np.vstack([image, banner])
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
+#                           VIDEO GENERATOR
+# ------------------------------------------------------------------------------
+def generateIntrospectionVideo(flight_id: str, result_json_path: str, module_name: str,
+                               output_path: str, dataset_root: str = DEFAULT_DATASET_ROOT,
+                               video_fps: int = VIDEO_FPS, dataset=None,
+                               manifest_entry: Optional[Dict] = None,
+                               warning_lead_time: Optional[float] = None,
+                               onset_frame: Optional[int] = None) -> None:
+    """
+    Generates an annotated video covering every frame of a flight, with the
+    introspection module's predicted results overlaid where available.
+
+    Args:
+        flight_id (str): Flight ID string, prefixed with its partition
+                         (e.g. 'part2e9c4568409604a6183d24726c0ebf696').
+        result_json_path (str): Path to this flight's result.json.
+        module_name (str): Name of the introspection module, shown in the banner.
+        output_path (str): Full path (including filename) to save the .mp4 to.
+        dataset_root (str): Root directory containing '{part}/Images/...'.
+                            Defaults to DEFAULT_DATASET_ROOT.
+        video_fps (int): Output video frame rate. Defaults to VIDEO_FPS.
+        dataset: Optional loaded AOT Dataset object.
+        manifest_entry (Optional[Dict]): This flight's entry from corruption_manifest.json.
+        warning_lead_time (Optional[float]): This flight/run's warning lead time 
+                                             in seconds.
+        onset_frame (Optional[int]): 1-indexed frame number of the true failure 
+                                     onset for this flight, if known.
+
+    Returns:
+        None:
+    """
+    # Locate Every Frame Image for the Flight.
+    image_paths = resolveFlightImagePaths(flight_id, dataset_root)
+    total_frames = len(image_paths)
+
+    # Load the Predicted Results for the Flight.
+    results_lookup = loadIntrospectionResults(result_json_path)
+
+    # Load Ground Truth, if a Dataset was Supplied.
+    gt_lookup: Dict[str, Optional[Tuple[int, int, int, int]]] = {}
+    if dataset is not None:
+        gt_lookup = loadGroundTruthForFlight(dataset, flight_id)
+
+    # Build the Per-Frame Severity Schedule, if a Manifest Entry was Supplied.
+    severity_schedule: Optional[List[float]] = None
+    if manifest_entry is not None:
+        # Generate the Severity Values Across all Frames.
+        try:
+            severity_schedule = buildSeveritySchedule(
+                num_frames=total_frames,
+                onset_frame=manifest_entry['onset_frame'],
+                ramp_length=manifest_entry['ramp_length'],
+                peak_severity=manifest_entry.get('peak_severity', 1.0),
+                shape=manifest_entry.get('ramp_shape', 'linear'),
+            )
+        except Exception as e:
+            # Continue Without Severity Values if the Schedule Cannot be Built.
+            log(LogLevel.WARNING, "introspection_visualiser:generateIntrospectionVideo",
+                "Could Not Build Severity Schedule for Flight %s: %s. Severity will not be Shown.",
+                flight_id, str(e))
+
+    # Ensure the Output Directory Exists.
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    # Print Process Commenced Message. 
+    log(LogLevel.INFO, "introspection_visualiser:generateIntrospectionVideo",
+        "Generating '%s' Introspection Video for Flight %s  (%d Frames).",
+        module_name, flight_id, total_frames)
+
+    # Initialise Variables & Counters.
+    writer = None
+    frames_written = 0
+
+    # Process Every Frame in the Flight.
+    for frame_idx, image_path in enumerate(image_paths):
+        # Load the Current Frame.
+        image = cv2.imread(image_path)
+
+        # Print Warning if Frame Not Found.
+        if image is None:
+            log(LogLevel.WARNING, "introspection_visualiser:generateIntrospectionVideo",
+                "Could Not Load Image '%s'. Skipping.", image_path)
+            continue
+
+        # Look Up Predictions, Ground Truth, and Severity for the Current Frame.
+        img_name = os.path.basename(image_path)
+        detections = results_lookup.get(img_name, [])
+        gt_bbox = gt_lookup.get(img_name)
+        severity = severity_schedule[frame_idx] if severity_schedule is not None else None
+
+        # Initialise the VideoWriter from the First Valid Frame.
+        if writer is None:
+            h, w = image.shape[:2]
+            video_h = h + BANNER_HEIGHT
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # type: ignore[attr-defined]
+            writer = cv2.VideoWriter(output_path, fourcc, video_fps, (w, video_h))
+
+            # Print Error Message if Cannot Write to Video.
+            if not writer.isOpened():
+                log(LogLevel.ERROR, "introspection_visualiser:generateIntrospectionVideo",
+                    "Failed to Open VideoWriter for '%s'.", output_path)
+                return
+
+            # Print Progress Message.
+            log(LogLevel.INFO, "introspection_visualiser:generateIntrospectionVideo",
+                "Writing %d Frames at %dx%d  %d fps.", total_frames, w, h, video_fps)
+
+        # Draw the Ground-Truth Box First, so Predicted Boxes are Drawn on Top.
+        if gt_bbox is not None:
+            image = drawGroundTruthBox(image, gt_bbox)
+
+        # Draw Predicted Bounding Boxes when Detections are Present.
+        if detections:
+            image = drawPredictedBoxes(image, detections)
+
+        # Add the Top-Left Warning Lead Time Overlay.
+        image = addWarningLeadTimeOverlay(image, warning_lead_time)
+
+        # Add the Top-Right True-Onset Overlay, from the Onset Frame Onward.
+        if onset_frame is not None and (frame_idx + 1) >= onset_frame:
+            image = addOnsetOverlay(image)
+
+        # Add the Introspection Status Banner.
+        image = addIntrospectionBanner(image, frame_idx + 1, total_frames,
+                                       detections, flight_id, module_name,
+                                       gt_present=(gt_bbox is not None), severity=severity)
+
+        # Write the Annotated Frame to the Video.
+        writer.write(image)
+        frames_written += 1
+
+    # Stop if No Frames Could Be Written.
+    if writer is None:
+        log(LogLevel.ERROR, "introspection_visualiser:generateIntrospectionVideo",
+            "No Frames Could Be Loaded for Flight '%s'.", flight_id)
+        return
+
+    # Finalise the Raw Video.
+    writer.release()
+    log(LogLevel.INFO, "introspection_visualiser:generateIntrospectionVideo",
+        "Raw Video Written (%d / %d Frames). Re-encoding to H.264.", frames_written, total_frames)
+
+    # Warn if Any Frames Could Not Be Written.
+    if frames_written < total_frames:
+        log(LogLevel.WARNING, "introspection_visualiser:generateIntrospectionVideo",
+            "%d Frame(s) were Skipped due to Image Load Failures — Video is Incomplete.",
+            total_frames - frames_written)
+
+    # Re-Encode to H.264 for Compatibility.
+    h264_path = output_path.replace('.mp4', '_h264.mp4')
+    result = subprocess.run(
+        ["ffmpeg",
+            "-y",
+            "-i", output_path,
+            "-vcodec", "libx264",
+            "-preset", "fast",
+            "-crf", "23",
+            h264_path,
+            "-loglevel", "error",
+        ],
+        check=False,
+    )
+    ret = result.returncode
+
+    # Replace the Raw Video with the H.264 Version.
+    if ret == 0 and os.path.exists(h264_path):
+        os.remove(output_path)
+        os.rename(h264_path, output_path)
+        log(LogLevel.INFO, "introspection_visualiser:generateIntrospectionVideo",
+            "Video Re-encoded to H.264 and Saved to '%s'.", output_path)
+
+    # Keep the Raw Video if Re-Encoding Fails.
+    else:
+        log(LogLevel.WARNING, "introspection_visualiser:generateIntrospectionVideo",
+            "H.264 Re-encode Failed. Raw mp4v Video Kept at '%s'.", output_path)
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
+#                    SIDE-BY-SIDE VIDEO SPLICER
+# ------------------------------------------------------------------------------
+def spliceVideosSideBySide(video_paths: List[str], output_path: str,
+                           labels: Optional[List[str]] = None) -> None:
+    """
+    Places two or more videos side by side into a single comparison video.
+
+    Videos are composited frame-by-frame using OpenCV, allowing different video
+    heights and durations to be handled consistently. Shorter videos remain
+    frozen on their final frame until the longest video finishes.
+
+    Labels are added directly to each video pane using OpenCV. ffmpeg is used
+    only to re-encode the completed video to H.264.
+
+    Args:
+        video_paths (List[str]): Paths to the mp4s to place side by side,
+                                 in left-to-right order. Needs at least 2.
+        output_path (str): Full path (including filename) to save the
+                           combined .mp4.
+        labels (Optional[List[str]]): One label per video, in the same order
+                                      as video_paths. Defaults to each
+                                      video's filename without extension.
+
+    Returns:
+        None
+    """
+    # Require at Least Two Input Videos.
+    if len(video_paths) < 2:
+        log(LogLevel.ERROR, "introspection_visualiser:spliceVideosSideBySide",
+            "Need at Least 2 Videos to Splice Side by Side, Got %d.",
+            len(video_paths))
+        return
+
+    # Check that Every Input Video Exists.
+    for path in video_paths:
+        if not os.path.exists(path):
+            log(LogLevel.ERROR, "introspection_visualiser:spliceVideosSideBySide",
+                "Video Not Found: '%s'.", path)
+            return
+
+    # Ensure the Output Directory Exists.
+    os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
+
+    # Open Every Input Video.
+    captures = [cv2.VideoCapture(path) for path in video_paths]
+
+    # Check That Every Input Video Opened Successfully.
+    for path, cap in zip(video_paths, captures):
+        if not cap.isOpened():
+            log(LogLevel.ERROR, "introspection_visualiser:spliceVideosSideBySide",
+                "Could Not Open Input Video: '%s'.", path)
+
+            # Release Any Videos That Were Opened Successfully.
+            for opened_cap in captures:
+                opened_cap.release()
+
+            # Exit Function. Video Splicing Failed. 
+            return
+
+    # Get the Common Output Height and Frame Rate.
+    target_height = int(captures[0].get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = captures[0].get(cv2.CAP_PROP_FPS)
+
+    # Use the Default Frame Rate if the Video's FPS Is Invalid.
+    if not fps or fps <= 0:
+        fps = VIDEO_FPS
+
+    # Stop if the First Video's Height Could Not Be Determined.
+    if target_height <= 0:
+        log(LogLevel.ERROR, "introspection_visualiser:spliceVideosSideBySide",
+            "Could Not Determine Height of First Video '%s'.",
+            video_paths[0])
+
+        # Release All Open Videos Before Returning.
+        for cap in captures:
+            cap.release()
+
+        # Exit Function. Video Splicing Failed. 
+        return
+
+    # Get the Number of Frames in Each Video.
+    frame_counts = [int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) for cap in captures]
+
+    # Use the Longest Video to Determine the Output Length.
+    max_frames = max(frame_counts)
+
+    # Print Log Message with Details Gathered from Input Videos. 
+    log(LogLevel.INFO, "introspection_visualiser:spliceVideosSideBySide",
+        "Splicing %d Videos Side by Side. Target Height: %d, FPS: %.2f, "
+        "Output Frames: %d.",
+        len(video_paths), target_height, fps, max_frames)
+
+    # Read the First Frame from Each Video.
+    last_frames: List[Optional[np.ndarray]] = []
+
+    # Read the First Frame from Each Video.
+    for index, cap in enumerate(captures):
+        ok, frame = cap.read()
+
+        # Stop if the First Frame Cannot Be Read.
+        if not ok or frame is None:
+            log(LogLevel.ERROR, "introspection_visualiser:spliceVideosSideBySide",
+                "Could Not Read First Frame from Video '%s'.",
+                video_paths[index])
+
+            # Release All Open Videos Before Returning.
+            for opened_cap in captures:
+                opened_cap.release()
+
+            # Exit Function. Video Splicing Failed. 
+            return
+
+        # Store the Frame for Shorter Video Freezing.
+        last_frames.append(frame)
+
+        # Reset the Video to the First Frame.
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+    # Calculate the Width of Each Resized Video Pane.
+    pane_widths = []
+
+    # Maintain the Original Aspect Ratio for Every Frame.
+    for frame in last_frames:
+        frame_height, frame_width = frame.shape[:2]
+        pane_width = int(round(frame_width * target_height / frame_height))
+        pane_widths.append(pane_width)
+
+    # Calculate the Total Output Width.
+    output_width = sum(pane_widths)
+
+    # Write the Intermediate mp4v Video.
+    raw_output_path = output_path.replace('.mp4', '_raw.mp4')
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # type: ignore[attr-defined]
+    writer = cv2.VideoWriter(
+        raw_output_path,
+        fourcc,
+        fps,
+        (output_width, target_height)
+    )
+
+    # Stop if the VideoWriter Could Not Be Opened.
+    if not writer.isOpened():
+        log(LogLevel.ERROR, "introspection_visualiser:spliceVideosSideBySide",
+            "Failed to Open VideoWriter for '%s'.", raw_output_path)
+
+        # Release All Open Videos Before Returning.
+        for cap in captures:
+            cap.release()
+
+        # Exit Function. Video Splicing Failed. 
+        return
+
+    # Composite Every Frame from Each Input Video.
+    frames_written = 0
+
+    # Process Every Frame Until the Longest Video Ends.
+    for frame_idx in range(max_frames):
+        panes = []
+
+        # Read and Prepare the Current Frame from Each Video.
+        for index, cap in enumerate(captures):
+            ok, frame = cap.read()
+
+            # Update the Last Frame when a New Frame is Available.
+            if ok and frame is not None:
+                last_frames[index] = frame
+
+            # Stop Using This Video if No Frame Is Available.
+            elif last_frames[index] is None:
+                log(LogLevel.WARNING,
+                    "introspection_visualiser:spliceVideosSideBySide",
+                    "Video '%s' Has No Frame Available at Frame %d.", video_paths[index], frame_idx + 1)
+                continue
+
+            # Use the Last Frame when the Video Has Ended.
+            frame = last_frames[index].copy()
+
+            # Resize the Pane to the Common Height.
+            frame_height, frame_width = frame.shape[:2]
+
+            # Resize the Pane to the Common Height.
+            if frame_height != target_height:
+                target_width = int(round(frame_width * target_height / frame_height))
+
+                # Maintain the Pane's Original Aspect Ratio.
+                frame = cv2.resize(frame, (target_width, target_height), interpolation=cv2.INTER_AREA)
+
+            # Add the Prepared Pane to the Current Frame.
+            panes.append(frame)
+
+        # Skip the Frame if No Panes are Available.
+        if not panes:
+            continue
+
+        # Stack All Video Panes Horizontally.
+        combined = np.hstack(panes)
+
+        # Ensure the Combined Frame Matches the Output Dimensions.
+        if combined.shape[1] != output_width or combined.shape[0] != target_height:
+            combined = cv2.resize(combined, (output_width, target_height), interpolation=cv2.INTER_AREA)
+
+        # Write the Combined Frame.
+        writer.write(combined)
+        frames_written += 1
+
+    # Release the Video Writer and Input Videos.
+    writer.release()
+
+    # Release All Input Video Captures.
+    for cap in captures:
+        cap.release()
+
+    # Confirm the Intermediate Video Was Written.
+    log(LogLevel.INFO, "introspection_visualiser:spliceVideosSideBySide",
+        "Raw Side-by-Side Video Written (%d Frames) -> '%s'.",
+        frames_written, raw_output_path)
+
+    # Stop if No Frames Were Written.
+    if frames_written == 0:
+        log(LogLevel.ERROR, "introspection_visualiser:spliceVideosSideBySide",
+            "No Frames Were Written. Removing Raw Output '%s'.", raw_output_path)
+
+        # Remove the Empty Output File if It Exists.
+        if os.path.exists(raw_output_path):
+            os.remove(raw_output_path)
+
+        # Return. No File Produced. 
+        return
+
+    # Re-Encode the Completed Video to H.264 Using ffmpeg.
+    h264_path = output_path.replace('.mp4', '_h264.mp4')
+    ret = subprocess.run(
+        [
+            'ffmpeg',
+            '-y',
+            '-i', raw_output_path,
+            '-vcodec', 'libx264',
+            '-preset', 'fast',
+            '-crf', '23',
+            '-loglevel', 'error',
+            h264_path
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+
+    # Replace the Raw Video with the H.264 Version.
+    if ret.returncode == 0 and os.path.exists(h264_path):
+        # Remove an Existing Output Video.
+        if os.path.exists(output_path):
+            os.remove(output_path)
+
+        # Remove the Intermediate mp4v Video & Save Final Copy. 
+        os.rename(h264_path, output_path)
+        os.remove(raw_output_path)
+
+        # Print Success Message. 
+        log(LogLevel.INFO, "introspection_visualiser:spliceVideosSideBySide",
+            "Side-by-Side Video Re-encoded to H.264 and Saved to '%s'.",
+            output_path)
+
+    else:
+        # Keep the Raw Video if Re-Encoding Fails.
+        log(LogLevel.WARNING, "introspection_visualiser:spliceVideosSideBySide",
+            "H.264 Re-encode Failed. Raw mp4v Video Kept at '%s'. ffmpeg Error: %s",
+            raw_output_path, ret.stderr.strip())
+# ------------------------------------------------------------------------------

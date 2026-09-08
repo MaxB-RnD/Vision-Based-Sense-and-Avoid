@@ -4,7 +4,7 @@
 # File:                    %name: introspection_module_evaluator.py %
 # Date Created:            %date_created: Tue Jul 30 17:06:23 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 3 %
+# CM Instance              %instance: 4 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -277,12 +277,6 @@ def main() -> None:
     metrics_script = os.path.join(PROJECT_ROOT, "core/metrics/run_airborne_metrics.py")
 
     # Call the Competition Metrics Script.
-    #
-    # --raw-results-dir Points at the Run Directory (One Subfolder per
-    # Flight, each with its own result.json) so that Once GT Matching has
-    # Run, failure_onset_frame / warning_lead_time_seconds can be Written
-    # Back into Each Flight's result.json for the Visualiser to Pick up
-    # Directly -- Rather than the Notebook Sourcing them Separately.
     subprocess.run(
         [
             "python3", metrics_script,
