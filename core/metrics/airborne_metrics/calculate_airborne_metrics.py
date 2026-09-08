@@ -54,9 +54,8 @@ DEFAULT_EARLY_TERMINATION_MARGIN_ = 3       # A track ending within this many fr
 DEFAULT_REACQUISITION_GRACE_PERIOD_ = 3     # A track that terminates but whose real object is picked back up 
                                             # by ANY track (same or new track_id) within this many frames is a 
                                             # successful reacquisition, not a premature-termination failure.
-DEFAULT_FRAME_RATE_HZ_ = 10.0                # Matches FAST_DETECTION_WINDOW_ (30 frames == 3 secs) and the
-                                            # visualiser's VIDEO_FPS. Used only to express warning_lead_time
-                                            # in seconds when writing it back into result.json.
+DEFAULT_FRAME_RATE_HZ_ = 10.0               # Matches FAST_DETECTION_WINDOW_ (30 frames == 3 secs) and the
+                                            # visualiser's VIDEO_FPS.
 
 # Frame level detection rate calculation constants
 DEFAULT_MIN_OBJECT_AREA = 200 # minimum object area for frame level 
@@ -1048,14 +1047,6 @@ def compute_introspection_metrics(df_matches, min_score, num_sequences,
         )
 
     # Return All Three Pooled Metrics Plus the Per-Failure-Type Breakdown.
-    #
-    # NOTE: 'df_onset' and 'first_warning' are Included Here so that Callers
-    # (see write_introspection_outcomes_to_results() below) can Stamp Each
-    # Failed Track's Failure Onset Frame & Warning Lead Time Back into the
-    # Original Per-Flight result.json Files for Visualisation. These Two
-    # Keys are NOT JSON-Serialisable as-is (a DataFrame and a Tuple-Keyed
-    # Dict) and Must be Popped Off Before this Summary is Written to Disk
-    # -- See run() Below.
     return dict(
         awlt_mean=awlt_mean, awlt_median=awlt_median, fnr=fnr, far=far,
         num_failed_tracks=len(df_onset),
