@@ -4,7 +4,7 @@
 # File:                    %name: hrnetw32_track_to_detect_test.py %
 # Date Created:            %date_created: Thur Jul 16 17:09:23 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 3 %
+# CM Instance              %instance: 4 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -685,17 +685,14 @@ class HRNetW32TrackToDetectPredictor(AirbornePredictor):
             warning (bool): Whether the introspection module flagged this track as
                             unreliable on this frame (True) or not (False).
             introspection_score (Optional[float]): The introspection strategy's
-                            continuous decision signal for this track/frame (e.g.
-                            confidence, EWMA, or coast count), for visualisation
-                            and debugging. None if the active strategy has none
-                            to report yet (e.g. NullIntrospectionModule).
+                            continuous decision signal for this track/frame, for
+                            visualisation and debugging.
             introspection_threshold (Optional[float]): The threshold the above
                             score was compared against to reach the warning
-                            decision. None under the same conditions as above.
+                            decision.
             **extra_introspection_fields: Any additional strategy-specific
-                            diagnostic fields (e.g. 'introspection_slope' for
-                            RollingConfidenceTrendIntrospectionModule) to be
-                            written straight through to the results file.
+                            diagnostic fields to be written straight through to
+                            the results file.
 
         Raises:
             Exception: If the same track_id is registered twice for img_name.
@@ -783,11 +780,10 @@ class HRNetW32TrackToDetectPredictor(AirbornePredictor):
                 "warning", "coast_count", "introspection_score", "introspection_threshold",
             }
             for det in detections:
-                # Collect any Strategy-Specific Diagnostic Fields Beyond the
-                # Standard Set (e.g. 'introspection_slope'), so New
-                # Introspection Modules Don't Require Changes Here.
+                # Collect any Strategy-Specific Diagnostic Fields Beyond the Standard Set.
                 extra_fields = {k: v for k, v in det.items() if k not in _KNOWN_DET_KEYS}
 
+                # Update the Proxy Register Object. 
                 self._proxy_register(
                     class_name = det.get("class_name", "airborne"),
                     track_id   = int(det["track_id"]),
