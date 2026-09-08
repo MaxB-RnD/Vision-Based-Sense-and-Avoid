@@ -954,7 +954,7 @@ def build_introspection_summary(
     rows = [
         # Introspection Metrics.
         {"Metric": "", "Value": "", "Status": ""},
-        {"Metric": "Average Warning Lead Time",                   "Value": f"{awlt_median:.2f}" if awlt_median is not None else "N/A",                  "Status": awlt_status},
+        {"Metric": "Average Warning Lead Time (s)",                "Value": f"{awlt_median:.2f}" if awlt_median is not None else "N/A",                  "Status": awlt_status},
         {"Metric": "False Negative Rate",                         "Value": f"{fnr:.4f}" if fnr is not None else "N/A",                                  "Status": fnr_status},
         {"Metric": "False Alarm Rate (FAR)",                      "Value": f"{far:.4f}" if far is not None else "N/A",                                  "Status": f"N = {num_correct} Correct Tracks" if num_correct is not None else ""},
         {"Metric": "Positional Divergence (Mean IoU Slope)",      "Value": f"{mean_iou_slope:.6f}" if mean_iou_slope is not None else "N/A",            "Status": f"N = {num_drift_tracks} Tracks, {pct_drifting:.1%} Drifting" if num_drift_tracks is not None else ""},

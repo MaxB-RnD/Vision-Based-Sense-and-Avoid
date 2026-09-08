@@ -13,6 +13,7 @@ import argparse
 import json
 import logging
 import os
+import re
 from functools import partial
 from collections import  Counter, OrderedDict
 
@@ -883,7 +884,7 @@ def augment_with_failure_onset_frame(df_matches, min_score,
     return pd.DataFrame(sustained_rows + early_term_rows)
 
 
-def _awlt_and_fnr_for_tracks(df_onset, first_warning):
+def _awlt_and_fnr_for_tracks(df_onset, first_warning, frame_rate_hz=DEFAULT_FRAME_RATE_HZ_):
     """
     Shared AWLT (Mean & Median) / False Negative Rate Calculation Over a Set
     of Failed Tracks.
@@ -897,9 +898,13 @@ def _awlt_and_fnr_for_tracks(df_onset, first_warning):
             Must Include 'flight_id', 'track_id', 'failure_onset_frame'.
         first_warning (Dict[Tuple, int]): Maps (flight_id, track_id) to the
             First Frame on Which that Track was Ever Warned About.
+        frame_rate_hz (float): Frame rate used to convert the raw frame-count
+            lead time into seconds, matching the units written per-flight
+            into result.json by write_introspection_outcomes_to_results().
 
     Returns:
         Tuple[Optional[float], Optional[float], float, int, int]: (awlt_mean, awlt_median, fnr, num_warned_in_advance, num_missed).
+        awlt_mean / awlt_median are in SECONDS.
     """
     # AWLT & False Negative Rate (Over the Supplied Failed Tracks)
     lead_times = []
@@ -918,10 +923,14 @@ def _awlt_and_fnr_for_tracks(df_onset, first_warning):
 
         # Only Warnings Issued Strictly Before Failure Count Toward AWLT.
         elif t_warn < t0:
-            # Warned About STRICTLY BEFORE Onset.
-            lead_times.append(t0 - t_warn)
+            # Warned About STRICTLY BEFORE Onset. Convert the raw frame
+            # delta to seconds -- this used to be left as a raw frame
+            # count, which silently disagreed (by a factor of
+            # frame_rate_hz) with the per-flight warning_lead_time_seconds
+            # values written into each flight's result.json.
+            lead_times.append((t0 - t_warn) / frame_rate_hz)
 
-    # Average Warning Lead Time Over Tracks Warned Before Failure Onset.
+    # Average Warning Lead Time (Seconds) Over Tracks Warned Before Failure Onset.
     awlt_mean = (sum(lead_times) / len(lead_times)) if lead_times else None
     awlt_median = float(np.median(lead_times)) if lead_times else None
 
@@ -935,7 +944,8 @@ def _awlt_and_fnr_for_tracks(df_onset, first_warning):
 def compute_introspection_metrics(df_matches, min_score, num_sequences,
                                    failure_threshold=DEFAULT_INTROSPECTION_FAILURE_THRESHOLD_,
                                    early_termination_margin=DEFAULT_EARLY_TERMINATION_MARGIN_,
-                                   reacquisition_grace_period=DEFAULT_REACQUISITION_GRACE_PERIOD_):
+                                   reacquisition_grace_period=DEFAULT_REACQUISITION_GRACE_PERIOD_,
+                                   frame_rate_hz=DEFAULT_FRAME_RATE_HZ_):
     """
     Computes Average Warning Lead Time (AWLT), False Negative Rate, and False 
     Alarm Rate (FAR) Together.
@@ -973,9 +983,9 @@ def compute_introspection_metrics(df_matches, min_score, num_sequences,
 
     Returns:
         dict: {
-            awlt_mean: mean lead time in frames (None if no track was ever warned about strictly 
+            awlt_mean: mean lead time in SECONDS (None if no track was ever warned about strictly 
                     before its onset frame), pooled over ALL failure types,
-            awlt_median: median lead time in frames (None if no track was ever warned about strictly 
+            awlt_median: median lead time in SECONDS (None if no track was ever warned about strictly 
                     before its onset frame), pooled over ALL failure types,
             fnr: False Negative Rate, pooled over ALL failure types,
             far: False Alarm Rate,
@@ -1022,14 +1032,14 @@ def compute_introspection_metrics(df_matches, min_score, num_sequences,
 
     # AWLT (Mean & Median) & False Negative Rate, Pooled Over ALL Failure Types.
     awlt_mean, awlt_median, fnr, num_warned_in_advance, num_missed = _awlt_and_fnr_for_tracks(
-        df_onset, first_warning)
+        df_onset, first_warning, frame_rate_hz=frame_rate_hz)
 
     # Same Calculation Again, but Restricted to Each Failure Type in Turn.
     by_failure_type = {}
     for failure_type in sorted(df_onset['failure_type'].unique()) if len(df_onset) else []:
         df_onset_type = df_onset[df_onset['failure_type'] == failure_type]
         type_awlt_mean, type_awlt_median, type_fnr, type_num_warned, type_num_missed = _awlt_and_fnr_for_tracks(
-            df_onset_type, first_warning)
+            df_onset_type, first_warning, frame_rate_hz=frame_rate_hz)
         by_failure_type[failure_type] = dict(
             awlt_mean=type_awlt_mean, awlt_median=type_awlt_median, fnr=type_fnr,
             num_failed_tracks=len(df_onset_type),
@@ -1059,95 +1069,155 @@ def compute_introspection_metrics(df_matches, min_score, num_sequences,
     )
 
 
+def _parse_img_timestamp_ns(img_name):
+    """
+    Extracts the leading nanosecond epoch timestamp encoded at the start of
+    an AOT-C frame filename (e.g. '1566544363793015157acfeb72c...df7f.png'
+    -> 1566544363793015157). Returns None if no leading digit run is found.
+
+    This is the ONLY frame-position signal that is unambiguous across every
+    context these filenames get used in (dense raw folder listing, sparse
+    result.json entries, etc.) since it is a property of the frame itself,
+    not of its position in whichever list happens to be indexing it.
+    """
+    match = re.match(r'^(\d+)', os.path.basename(str(img_name)))
+    return int(match.group(1)) if match else None
+
+
 def write_introspection_outcomes_to_results(df_onset, first_warning, raw_results_dir,
-                                             frame_rate_hz=DEFAULT_FRAME_RATE_HZ_):
+                                             frame_rate_hz=DEFAULT_FRAME_RATE_HZ_,
+                                             df_matches=None):
     """
     Stamps Each Failed Track's Failure Onset Frame & Warning Lead Time Back
     into its Flight's Raw Per-Flight result.json File on Disk.
-
-    This is a Necessarily Separate, After-the-Fact Step: Failure Onset Frame
-    is a Ground-Truth-Dependent Quantity (Computed by 
-    augment_with_failure_onset_frame() from the GT/Detection Match
-    Dataframe), so it Cannot be Known by the Predictor at Inference Time the
-    Way introspection_score/introspection_threshold Can. It Only Exists Once
-    Metrics have been Computed, so it has to be Written Back into the
-    Results Afterwards.
-
-    Only Detections Belonging to a Genuinely Failed Track (per 
-    augment_with_failure_onset_frame()) are Stamped. All Other Detections in
-    the File get Explicit `None` Values for Both Fields, so the Schema is
-    Consistent Whether or not a Given Detection Belongs to a Failed Track.
-
-    Args:
-        df_onset (pd.DataFrame): One Row per Failed Track, as Returned by
-            augment_with_failure_onset_frame() / compute_introspection_metrics()
-            ['df_onset']. Must Include 'flight_id', 'track_id', 'failure_onset_frame'.
-        first_warning (Dict[Tuple, int]): Maps (flight_id, track_id) to the First
-            Frame that Track was Ever Warned About, as Returned by
-            compute_introspection_metrics()['first_warning'].
-        raw_results_dir (str): Path to the Run Directory Containing One
-            Subdirectory per Flight (each with its own result.json), e.g.
-            'outputs/results/introspection_module/coast_count_threshold/run0'.
-            This is the SAME Directory the Visualiser Reads From -- NOT the
-            Stitched/Metrics-Format result.json Used for GT Matching.
-        frame_rate_hz (float): Frame Rate Used Only to Convert Warning Lead
-            Time from Frames into Seconds for Display. Defaults to
-            DEFAULT_FRAME_RATE_HZ_.
-
-    Returns:
-        int: Number of Flights whose result.json was Successfully Updated.
     """
-    # Nothing to Do if the Raw Results Directory Wasn't Supplied.
-    if not raw_results_dir:
-        log.warning('No raw_results_dir Supplied -- Skipping Introspection '
-                    'Outcome Write-Back. failure_onset_frame / '
-                    'warning_lead_time_seconds will NOT Appear in result.json.')
+    if not raw_results_dir or not os.path.exists(raw_results_dir):
+        log.warning('No raw_results_dir Supplied -- Skipping Introspection Outcome Write-Back.')
         return 0
 
-    # Build a Lookup of (flight_id, track_id) -> (failure_onset_frame, warning_lead_time_seconds).
-    # Only Genuinely Failed Tracks are Included; Everything Else Defaults to None Below.
+    def _norm_track_id(tid):
+        if tid is None:
+            return None
+        try:
+            return int(float(tid))
+        except (ValueError, TypeError):
+            return str(tid)
+
+    # 1. Map (flight_id, global_frame) -> img_name from df_matches.
+    frame_to_img = {}
+    if df_matches is not None and 'img_name' in df_matches.columns and 'frame' in df_matches.columns:
+        for row in df_matches[['flight_id', 'frame', 'img_name']].drop_duplicates().itertuples():
+            frame_to_img[(str(row.flight_id), int(row.frame))] = os.path.basename(str(row.img_name))
+
+    # 2. Normalize first_warning keys to (flight_id, int_track_id).
+    norm_first_warning = {}
+    for (fid, tid), warn_frame in first_warning.items():
+        norm_first_warning[(str(fid), _norm_track_id(tid))] = int(warn_frame)
+
+    # 3. Build onset lookup with raw global frames and target image names.
     onset_lookup = {}
     for row in df_onset.itertuples():
-        key = (row.flight_id, row.track_id)
-        t0 = row.failure_onset_frame
-        t_warn = first_warning.get(key)
+        fid = str(row.flight_id)
+        norm_tid = _norm_track_id(row.track_id)
+        t0_global = int(row.failure_onset_frame)
+        t_warn_global = norm_first_warning.get((fid, norm_tid))
 
-        # Only a Warning Issued STRICTLY BEFORE Onset Counts as a Genuine
-        # Advance Warning -- Matches the AWLT Definition in
-        # _awlt_and_fnr_for_tracks() above.
-        lead_time_seconds = None
-        if t_warn is not None and t_warn < t0:
-            lead_time_seconds = (t0 - t_warn) / frame_rate_hz
+        onset_lookup[(fid, norm_tid)] = {
+            't0_global': t0_global,
+            't_warn_global': t_warn_global,
+            'onset_img_name': frame_to_img.get((fid, t0_global)),
+            'warn_img_name': frame_to_img.get((fid, t_warn_global)) if t_warn_global is not None else None,
+        }
 
-        onset_lookup[key] = (int(t0), lead_time_seconds)
+    flights_with_failures = {fid for fid, _ in onset_lookup.keys()}
 
-    # Group Onset Rows by Flight so We Only Open Each result.json Once.
-    flights_with_failures = {flight_id for flight_id, _ in onset_lookup.keys()}
+    # Scan directory tree once
+    disk_folders = [
+        d for d in os.listdir(raw_results_dir)
+        if os.path.isdir(os.path.join(raw_results_dir, d))
+    ]
+
+    # Map bare hashes to candidate folder names
+    hash_to_folders = {}
+    for folder in disk_folders:
+        cleaned_hash = re.sub(r'^part\d{1,2}[_-]?', '', folder, flags=re.IGNORECASE)
+        hash_to_folders.setdefault(cleaned_hash, set()).add(folder)
+        hash_to_folders.setdefault(folder, set()).add(folder)
 
     updated_count = 0
-    for flight_id in flights_with_failures:
-        result_path = os.path.join(raw_results_dir, str(flight_id), 'result.json')
+    for fid in flights_with_failures:
+        # Find all unique candidate disk folders matching this fid
+        candidates = sorted(hash_to_folders.get(fid, set()))
 
-        # Skip Flights Whose Raw Results File Isn't Where We Expect -- Log
-        # Loudly, Since a Silent Miss Here Means the Visualiser Quietly
-        # Shows 'N/A' for a Flight that Should Have Onset Data.
+        # Suffix fallback if prefix strip didn't catch a non-standard pattern
+        if not candidates:
+            candidates = sorted({d for d in disk_folders if d.endswith(fid)})
+
+        # Hard fail if ambiguous or missing
+        if len(candidates) > 1:
+            raise RuntimeError(
+                f"FATAL: Ambiguous flight mapping for flight_id '{fid}'. "
+                f"Multiple folders on disk match: {candidates}. "
+                f"Aborting to avoid writing into the wrong flight folder."
+            )
+        elif len(candidates) == 0:
+            log.warning('No result folder on disk matches flight_id %s -- skipping write-back.', fid)
+            continue
+
+        target_folder = candidates[0]
+        result_path = os.path.join(raw_results_dir, target_folder, 'result.json')
         if not os.path.exists(result_path):
-            log.warning('Could Not Find Raw result.json for Flight %s at %s -- '
-                        'Skipping Introspection Outcome Write-Back for this Flight.',
-                        flight_id, result_path)
+            log.warning('result.json not found at %s', result_path)
             continue
 
         with open(result_path, 'r') as f:
             entries = json.load(f)
 
-        # Stamp Every Detection in the File. Detections Belonging to a
-        # Failed Track get the Real Values; Everything Else Explicitly
-        # Gets None so the Field is Always Present.
-        for entry in entries:
+        img_to_local_idx = {}
+        for local_idx, entry in enumerate(entries, start=1):
+            img_name = os.path.basename(entry.get('img_name', ''))
+            if img_name:
+                img_to_local_idx[img_name] = local_idx
+
+        total_frames = len(entries)
+
+        for local_idx, entry in enumerate(entries, start=1):
             for det in entry.get('detections', []):
-                key = (flight_id, det.get('track_id'))
-                onset_frame, lead_time_seconds = onset_lookup.get(key, (None, None))
-                det['failure_onset_frame'] = onset_frame
+                norm_tid = _norm_track_id(det.get('track_id'))
+                info = onset_lookup.get((fid, norm_tid))
+
+                local_onset_frame = None
+                local_warn_frame = None
+                onset_img_name = None
+                warn_img_name = None
+                lead_time_seconds = None
+
+                if info is not None:
+                    onset_img_name = info['onset_img_name']
+                    if onset_img_name and onset_img_name in img_to_local_idx:
+                        local_onset_frame = img_to_local_idx[onset_img_name]
+                    elif info['t0_global'] <= total_frames:
+                        local_onset_frame = info['t0_global']
+
+                    warn_img_name = info['warn_img_name']
+                    if warn_img_name and warn_img_name in img_to_local_idx:
+                        local_warn_frame = img_to_local_idx[warn_img_name]
+                    elif info['t_warn_global'] is not None and info['t_warn_global'] <= total_frames:
+                        local_warn_frame = info['t_warn_global']
+
+                    t0_ns = _parse_img_timestamp_ns(onset_img_name) if onset_img_name else None
+                    twarn_ns = _parse_img_timestamp_ns(warn_img_name) if warn_img_name else None
+
+                    if t0_ns is not None and twarn_ns is not None:
+                        lead_time_seconds = round((t0_ns - twarn_ns) / 1e11, 3)
+                    elif local_onset_frame is not None and local_warn_frame is not None:
+                        lead_time_seconds = round((local_onset_frame - local_warn_frame) / frame_rate_hz, 3)
+                    elif info['t_warn_global'] is not None:
+                        lead_time_seconds = round((info['t0_global'] - info['t_warn_global']) / frame_rate_hz, 3)
+
+                det['failure_onset_frame'] = local_onset_frame
+                det['failure_onset_img_name'] = onset_img_name
+                det['warning_img_name'] = warn_img_name
                 det['warning_lead_time_seconds'] = lead_time_seconds
 
         with open(result_path, 'w') as f:
@@ -1584,7 +1654,9 @@ def run(flags):
     # off Here so they Never Reach the JSON-Serialised Summary Below.
     df_onset = introspection_metrics.pop('df_onset')
     first_warning = introspection_metrics.pop('first_warning')
-    write_introspection_outcomes_to_results(df_onset, first_warning, flags.raw_results_dir)
+    write_introspection_outcomes_to_results(
+        df_onset, first_warning, flags.raw_results_dir, df_matches=df_gt_det_matches
+    )
 
     # saving intermidiate results
     log.info('Saving results')

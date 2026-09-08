@@ -109,7 +109,7 @@ AWLT_MARGIN = 12
 AWLT_LINE_GAP = 8
 
 # True-Onset Marker Text Colour.
-ONSET_TEXT_COLOUR = BB_COLOUR_GT
+ONSET_TEXT_COLOUR = (0, 246, 255)
 # ------------------------------------------------------------------------------
 
 
@@ -169,7 +169,7 @@ def resolveFlightImagePaths(flight_id: str, dataset_root: str = DEFAULT_DATASET_
     )
 
 
-def loadIntrospectionResults(result_json_path: str) -> Tuple[Dict[str, List[dict]], Optional[int], Optional[float]]:
+def loadIntrospectionResults(result_json_path: str) -> Tuple[Dict[str, List[dict]], Optional[int], Optional[float], Optional[str]]:
     """
     Loads a per-flight result.json and indexes it by img_name for fast lookup.
 
@@ -179,35 +179,51 @@ def loadIntrospectionResults(result_json_path: str) -> Tuple[Dict[str, List[dict
                                                   "introspection_score",
                                                   "introspection_threshold",
                                                   "failure_onset_frame",
+                                                  "failure_onset_img_name",
+                                                  "warning_img_name",
                                                   "warning_lead_time_seconds"}]}, ...]
 
-    'failure_onset_frame' and 'warning_lead_time_seconds' are only present
-    once run_airborne_metrics.py has been run with --raw-results-dir set,
-    since they depend on ground truth (see
-    calculate_airborne_metrics.write_introspection_outcomes_to_results()).
+    'failure_onset_frame' / 'failure_onset_img_name' / 'warning_img_name' /
+    'warning_lead_time_seconds' are only present once run_airborne_metrics.py
+    has been run with --raw-results-dir set, since they depend on ground
+    truth (see calculate_airborne_metrics.write_introspection_outcomes_to_results()).
     They will be None on every detection for results that predate that step,
     or for flights/tracks that were never classified as a genuine failure.
+
+    NOTE on 'failure_onset_frame': this is a 1-indexed position WITHIN
+    result.json's own (sparse) entry list, NOT within the full/dense raw
+    frame folder on disk -- result.json only gets an entry for a frame once
+    a detection is actually registered for it (tracks below MIN_TRACK_LEN,
+    and a flight's very first frame, never get an entry). Use
+    'failure_onset_img_name' (returned separately below) to place the onset
+    marker against the dense raw frame list used for video generation --
+    see generateIntrospectionVideo(), which does exactly that.
 
     Args:
         result_json_path (str): Path to the flight's result.json file.
 
     Returns:
-        Tuple[Dict[str, List[dict]], Optional[int], Optional[float]]:
+        Tuple[Dict[str, List[dict]], Optional[int], Optional[float], Optional[str]]:
             - Mapping of img_name --> that frame's detections. Empty dict
               if the file is missing or fails to load.
-            - The flight's failure onset frame (1-indexed), taken as the
-              EARLIEST onset frame across any track in the flight that was
-              classified as a genuine failure. None if no track failed, or
-              if onset data hasn't been written back into this file yet.
+            - The flight's failure onset frame (1-indexed, WITHIN
+              result.json's sparse entry list -- see note above), taken as
+              the EARLIEST onset frame across any track in the flight that
+              was classified as a genuine failure. None if no track failed,
+              or if onset data hasn't been written back into this file yet.
             - The warning lead time (in seconds) associated with that same
               onset frame's track, or None if that track was never warned
               about in advance (or onset data isn't present).
+            - The filename of the actual onset frame image. This is the
+              value that should be used to place the marker against a dense
+              (every-raw-frame) frame list -- None under the same
+              conditions as the onset frame above.
     """
     # Check that the Results File Exists.
     if not os.path.exists(result_json_path):
         log(LogLevel.WARNING, "introspection_visualiser:loadIntrospectionResults",
             "Results File Not Found: %s. All Frames will Show as 'No Object'.", result_json_path)
-        return {}, None, None
+        return {}, None, None, None
 
     # Load the Raw Results from JSON.
     with open(result_json_path, 'r') as f:
@@ -224,22 +240,28 @@ def loadIntrospectionResults(result_json_path: str) -> Tuple[Dict[str, List[dict
     # Directly from the Fields Stamped onto Each Detection. If Multiple
     # Tracks in this Flight Failed, the Earliest Onset is Used -- that's the
     # Point at which the Flight FIRST Had a Genuine Failure in Progress.
+    # (Comparing the sparse local index below is still valid for ordering
+    # purposes -- it's a subsequence of the real frame order, so relative
+    # ordering across tracks is preserved even though the absolute value
+    # doesn't line up with the dense raw frame list.)
     onset_frame: Optional[int] = None
+    onset_img_name: Optional[str] = None
     warning_lead_time: Optional[float] = None
     for detections in lookup.values():
         for det in detections:
             det_onset = det.get('failure_onset_frame')
             if det_onset is not None and (onset_frame is None or det_onset < onset_frame):
                 onset_frame = det_onset
+                onset_img_name = det.get('failure_onset_img_name')
                 warning_lead_time = det.get('warning_lead_time_seconds')
 
     # Display the Number of Frames with Results.
     log(LogLevel.INFO, "introspection_visualiser:loadIntrospectionResults",
-        "Loaded Results for %d Frames from '%s'. Onset Frame: %s.",
-        len(lookup), result_json_path, onset_frame)
+        "Loaded Results for %d Frames from '%s'. Onset Frame: %s (%s).",
+        len(lookup), result_json_path, onset_frame, onset_img_name)
 
-    # Return Lookup Dictionary, Plus the Derived Onset Frame & Lead Time.
-    return lookup, onset_frame, warning_lead_time
+    # Return Lookup Dictionary, Plus the Derived Onset Frame, Lead Time & Onset Image Name.
+    return lookup, onset_frame, warning_lead_time, onset_img_name
 
 
 def loadGroundTruthForFlight(dataset, flight_id: str) -> Dict[str, Optional[Tuple[int, int, int, int]]]:
@@ -617,7 +639,8 @@ def generateIntrospectionVideo(flight_id: str, result_json_path: str, module_nam
                                video_fps: int = VIDEO_FPS, dataset=None,
                                manifest_entry: Optional[Dict] = None,
                                warning_lead_time: Optional[float] = None,
-                               onset_frame: Optional[int] = None) -> None:
+                               onset_frame: Optional[int] = None,
+                               onset_img_name: Optional[str] = None) -> None:
     """
     Generates an annotated video covering every frame of a flight, with the
     introspection module's predicted results overlaid where available.
@@ -638,9 +661,19 @@ def generateIntrospectionVideo(flight_id: str, result_json_path: str, module_nam
                                              in which case it is read directly from
                                              result.json (see loadIntrospectionResults()).
         onset_frame (Optional[int]): Explicit override for the 1-indexed frame number of
-                                     the true failure onset for this flight. Normally left
+                                     the true failure onset for this flight, WITHIN
+                                     result.json's own sparse entry list. Normally left
                                      as None, in which case it is read directly from
-                                     result.json (see loadIntrospectionResults()).
+                                     result.json (see loadIntrospectionResults()). Kept
+                                     for logging/back-compat only -- 'onset_img_name'
+                                     below is what actually positions the marker.
+        onset_img_name (Optional[str]): Explicit override for the filename of the true
+                                     failure onset frame. Normally left as None, in which
+                                     case it is read directly from result.json. This
+                                     (not onset_frame) is what's used to place the onset
+                                     marker, since it's looked up against the DENSE
+                                     (every-raw-frame) image list built below, which does
+                                     not share result.json's sparse frame numbering.
 
     Returns:
         None:
@@ -653,11 +686,30 @@ def generateIntrospectionVideo(flight_id: str, result_json_path: str, module_nam
     # Warning Lead Time Already Stamped into result.json by
     # write_introspection_outcomes_to_results(). Explicit Function
     # Arguments (if Supplied) Take Priority Over the Values in the File.
-    results_lookup, results_onset_frame, results_warning_lead_time = loadIntrospectionResults(result_json_path)
+    results_lookup, results_onset_frame, results_warning_lead_time, results_onset_img_name = loadIntrospectionResults(result_json_path)
     if onset_frame is None:
         onset_frame = results_onset_frame
+    if onset_img_name is None:
+        onset_img_name = results_onset_img_name
     if warning_lead_time is None:
         warning_lead_time = results_warning_lead_time
+
+    # Resolve the Onset Frame's Position in the DENSE Raw Image List (i.e.
+    # this Flight's Full, Every-Frame Sequence on Disk) rather than Trusting
+    # 'onset_frame' Directly -- that Value is an Index into result.json's
+    # own SPARSE Entry List (which Skips any Frame that Never had a
+    # Detection Registered, e.g. the First ~MIN_TRACK_LEN Frames of Every
+    # Track), so Reusing it Against the Dense List Below Would Place the
+    # Marker on an Earlier Frame than the Real Onset.
+    onset_dense_idx: Optional[int] = None
+    if onset_img_name:
+        img_name_to_dense_idx = {os.path.basename(p): i for i, p in enumerate(image_paths)}
+        onset_dense_idx = img_name_to_dense_idx.get(onset_img_name)
+        if onset_dense_idx is None:
+            log(LogLevel.WARNING, "introspection_visualiser:generateIntrospectionVideo",
+                "Onset Image '%s' Not Found Among this Flight's Raw Frames -- "
+                "Falling Back to the (Potentially Misaligned) Sparse Onset Frame Index.",
+                onset_img_name)
 
     # Load Ground Truth, if a Dataset was Supplied.
     gt_lookup: Dict[str, Optional[Tuple[int, int, int, int]]] = {}
@@ -740,7 +792,15 @@ def generateIntrospectionVideo(flight_id: str, result_json_path: str, module_nam
         image = addWarningLeadTimeOverlay(image, warning_lead_time)
 
         # Add the Top-Right True-Onset Overlay, from the Onset Frame Onward.
-        if onset_frame is not None and (frame_idx + 1) >= onset_frame:
+        # Preferentially Triggered off 'onset_dense_idx' (the Onset Image's
+        # Actual Position in THIS Dense, Every-Raw-Frame List), which is
+        # What frame_idx Below is Counting Against. Only Fall Back to the
+        # Sparse 'onset_frame' Index if the Onset Image Couldn't be Found
+        # on Disk at all (see the Warning Logged Above).
+        if onset_dense_idx is not None:
+            if frame_idx >= onset_dense_idx:
+                image = addOnsetOverlay(image)
+        elif onset_frame is not None and (frame_idx + 1) >= onset_frame:
             image = addOnsetOverlay(image)
 
         # Add the Introspection Status Banner.
