@@ -44,9 +44,7 @@ class AirbornePredictor:
         self.track_id_seq = 0
 
 
-    def register_object_and_location(self, class_name, track_id, bbox, confidence, img_name, source='DETECTED',
-                                      warning=False, introspection_score=None, introspection_threshold=None,
-                                      **extra_introspection_fields):
+    def register_object_and_location(self, class_name, track_id, bbox, confidence, img_name, source='DETECTED', warning=False):
         """
         Register a tracked object detection and its location.
 
@@ -58,13 +56,6 @@ class AirbornePredictor:
             img_name   : Name of the image to which this detection belongs. If None, the current image name is used.
             source     : Detection source. Typically 'DETECTED' or 'COASTED'. Defaults to 'DETECTED'.
             warning    : Indicates whether this detection should be flagged as a warning. Defaults to False.
-            introspection_score     : Continuous decision signal from the active introspection
-                                       strategy (e.g. confidence, EWMA, coast count) for this
-                                       track/frame. None if the strategy has none to report.
-            introspection_threshold : Threshold introspection_score was compared against.
-                                       None under the same conditions as above.
-            **extra_introspection_fields : Any additional strategy-specific diagnostic fields
-                                       (e.g. 'introspection_slope') written straight through.
         """
         # Ensure the Confidence Score is a Valid Probability.
         assert 0 < confidence < 1
@@ -78,27 +69,20 @@ class AirbornePredictor:
             img_name = self.current_img_name
 
         # Create the Detection Record in the Expected Output Format.
-        detection_record = {
-            "track_id": track_id,
-            "x": bbox[0],
-            "y": bbox[1],
-            "w": bbox[2],
-            "h": bbox[3],
-            "n": class_name,
-            "s": confidence,
-            "source": source,
-            "warning": warning,
-            "introspection_score": introspection_score,
-            "introspection_threshold": introspection_threshold,
-        }
-
-        # Merge in any Strategy-Specific Extra Diagnostic Fields (e.g.
-        # 'introspection_slope'). Always Included so the Written Format
-        # Stays Independent of Which Introspection Module was Selected.
-        detection_record.update(extra_introspection_fields)
-
         result = {
-            "detections": [detection_record],
+            "detections": [
+                {
+                    "track_id": track_id,
+                    "x": bbox[0],
+                    "y": bbox[1],
+                    "w": bbox[2],
+                    "h": bbox[3],
+                    "n": class_name,
+                    "s": confidence,
+                    "source": source,
+                    "warning": warning,
+                }
+            ],
 
             # Image that this Detection Belongs to.
             "img_name": img_name
