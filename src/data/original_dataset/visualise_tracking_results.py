@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------
 # -               V E R S I O N   I D E N T I F I C A T I O N                  -
 # ------------------------------------------------------------------------------
-# File:                    %name: visualise_results.py %
+# File:                    %name: visualise_tracking_results.py %
 # Date Created:            %date_created: Mon May 08 12:26:32 2026 %
 # CM Version               %version: 2 %
 # CM Instance              %instance: 1 %
@@ -10,7 +10,7 @@
 # -                          D E S C R I P T I O N                             -
 # ------------------------------------------------------------------------------
 # This script visualises the baseline backbone model evaluation results stored
-# in model_results_new_metrics.csv by generating a 3x3 grid of scatter plots
+# in model_results_tracking_metrics.csv by generating a 3x3 grid of scatter plots
 # comparing detection performance metrics (AFDR, CEDR, FTPS) against model
 # complexity and inference speed.
 #
@@ -21,7 +21,7 @@
 #
 # USAGE INSTRUCTIONS:
 #   1. Run the Script from Project Root:
-#       - python3 -m src.data.visualise_results
+#       - python3 -m src.data.original_dataset.visualise_tracking_results
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
@@ -47,7 +47,7 @@ import seaborn as sns
 #                                   CONFIGURATION
 # ------------------------------------------------------------------------------
 # Load Data.
-df = pd.read_csv('results/core_improvement/model_results_new_metrics.csv')
+df = pd.read_csv('results/core_improvement/model_results_tracking_metrics.csv')
 
 # Variables Used for the X-axis & Y-axis Comparisons.
 x_vars   = ['Params', 'GFLOPS', 'FPS']
@@ -195,6 +195,6 @@ plt.tight_layout()
 plt.subplots_adjust(top=0.85, bottom=0.09)
 
 # Save the Figure as a High-Resolution PNG Image.
-plt.savefig('results/core_improvement/SAA_Backbone_Tradeoffs.png', bbox_inches='tight')
-print("Saved: results/core_improvement/SAA_Backbone_Tradeoffs.png")
+plt.savefig('results/core_improvement/SAA_Backbone_Tradeoffs_Tracking.png', bbox_inches='tight')
+print("Saved: results/core_improvement/SAA_Backbone_Tradeoffs_Tracking.png")
 # ------------------------------------------------------------------------------
