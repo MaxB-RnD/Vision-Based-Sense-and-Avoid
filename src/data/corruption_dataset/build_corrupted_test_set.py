@@ -128,7 +128,7 @@ ACTIVE_CORRUPTIONS = ['iso_noise', 'defocus_blur', 'colour_quantisation',
 
 # Ramp Configuration. See severity_scheduler.py for Shape Definitions.
 RAMP_SHAPE = 'linear'
-RAMP_LENGTH_FRAMES = 30
+RAMP_LENGTH_FRAMES = 20
 PEAK_SEVERITY = 1.0
 
 # Minimum Clean Frames Before Ramp Starts.
