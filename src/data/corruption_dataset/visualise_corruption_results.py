@@ -4,23 +4,27 @@
 # File:                    %name: visualise_corruption_results.py %
 # Date Created:            %date_created: Fri Sep 11 15:50:21 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 2 %
+# CM Instance              %instance: 3 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
 # ------------------------------------------------------------------------------
-# This script visualises the baseline backbone model evaluation results stored
-# in model_results_detection_metrics.csv by generating a 3x3 grid of scatter plots comparing
-# detection performance metrics against model complexity and inference speed.
+# This script visualises the corruption ramp sweep results stored in
+# corruption_ramp_sweep_results.csv by generating a 2x3 grid of small-multiple
+# line plots, each showing how a single metric behaves as a function of ramp
+# length (frames), with one line per ramp shape (linear / sigmoid).
 #
-# The plots are intended to support comparative analysis of backbone
-# architectures by highlighting performance trade-offs, acceptable operating
-# regions, and overall model efficiency. The final figure is exported as a
-# high-resolution PNG suitable for reporting and technical documentation.
+# This sweep examines how increasing corruption ramp length affects the measured 
+# corruption characteristics and PSNR performance for linear and sigmoid ramp 
+# shapes. The six panels show complementary metrics covering corruption severity, 
+# ramp behaviour, ramp coverage, and PSNR, with reduced sigmoid PSNR sample 
+# coverage explicitly indicated at longer ramp lengths. A consistent visual style
+# is maintained across all panels with shared colours, padded axes, a hatched 
+# background, a common legend, and high-resolution PNG export.
 #
 # USAGE INSTRUCTIONS:
 #   1. Run the Script from Project Root:
-#       - python3 -m src.data.original_dataset.visualise_corruption_results
+#       - python3 -m src.data.corruption_dataset.visualise_corruption_results
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
@@ -40,57 +44,50 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-import matplotlib.ticker as ticker
+import matplotlib.lines as mlines
 import seaborn as sns
 
 # ------------------------------------------------------------------------------
 #                                   CONFIGURATION
 # ------------------------------------------------------------------------------
 # Load Data.
-df = pd.read_csv('results/core_improvement/model_results_detection_metrics.csv')
+df = pd.read_csv('results/corruption_dataset/corruption_ramp_sweep_results.csv')
 
-# Variables Used for the X-axis & Y-axis Comparisons.
-x_vars   = ['Params', 'GFLOPS', 'FPS']
-y_vars   = ['AFDR',   'FPPI',   'EDR']
+# Split Off the Baseline Row (no ramp_shape / ramp_length) From the Ramp Runs.
+baseline_row = df[df['ramp_shape'].isna()].iloc[0]
+ramp_df = df[df['ramp_shape'].notna()].copy()
+ramp_df['ramp_length_frames'] = ramp_df['ramp_length_frames'].astype(float)
 
-# Human-Readable Axis Labels for Each Metric.
-x_labels = ['Parameters (Millions)', 'Computational Complexity (GFLOPS)', 'Inference Speed (FPS)']
-y_labels = ['AFDR (%)', 'FPPI', 'EDR Total (%)']
+# Quantify PSNR Reliability (The Fraction of Ramp-Covered Frames that Contributed 
+# a Peak-PSNR Sample).
+ramp_df['psnr_reliability_pct'] = (
+    ramp_df['psnr_at_peak_count'] / ramp_df['scr_ramp_coverage_count'] * 100.0
+)
 
-# Consistent Colour Mapping for Each Backbone Architecture.
-MODEL_COLOURS = {
-    'MobileNetV4-S':   '#1f77b4',
-    'EfficientViT-M2': '#ff7f0e',
-    'EfficientViT-B2': '#2ca02c',
-    'ResNet34':        '#d62728',
-    'HRNet-W32':       '#9467bd',
-    '*Winning Sol.':   '#8c564b',
+# Consistent Colour Mapping for Each Ramp Shape.
+SHAPE_COLOURS = {
+    'linear':  '#1f77b4',
+    'sigmoid': '#ff7f0e',
 }
 
-# Acceptable FPS Operating Region Used for Visual Highlighting.
-FPS_GREEN_LOW   = 8.5
-FPS_GREEN_HIGH  = 11.5
-FPPI_RED_THRESH = 0.0005
+# Ramp Length (Frames) Beyond which Sigmoid PSNR-at-Peak Values are  Pulled from 
+# too Small a Sample.
+SIGMOID_PSNR_TRUST_CUTOFF = 10
 
-# Symlog Threshold Used for FPPI Visualisation.
-FPPI_LINTHRESH  = 1e-6
-
-# Slightly Extend the Upper FPPI Plotting Limit for Readability.
-FPPI_YMAX       = df['FPPI'].max() * 1.3
-
-# Padding Ratio Applied to Axis Limits So Points Do Not Sit Directly Against 
+# Padding Ratio Applied to Axis Limits So Points Do Not Sit Directly Against
 # Subplot Boundaries.
 PADDING = 0.05
 
 # Configure the Overall Plotting Theme.
 sns.set_theme(style="whitegrid")
 
-# Create a 3x3 Subplot Layout for All Metric Comparisons.
-fig, axes = plt.subplots(3, 3, figsize=(16, 9), dpi=300)
+# Create a 2x3 Subplot Layout, One Panel Per Metric.
+fig, axes = plt.subplots(2, 3, figsize=(16, 9), dpi=300)
 
 # Add a Shared Figure Title.
-fig.suptitle('Backbone Performance Trade-offs',
-             fontsize=20, fontweight='bold', y=0.90)
+fig.suptitle('AOT Dataset Corruption Analysis',
+             fontsize=20, fontweight='bold', y=0.97)
+
 
 # Define Reusable Padding Function.
 def padded_limits(series, padding=PADDING):
@@ -104,103 +101,300 @@ def padded_limits(series, padding=PADDING):
     Returns:
         tuple: Lower and upper axis limits with padding applied.
     """
+    # Get the Minimum & Maximum Values from the Series.
     lo, hi = series.min(), series.max()
+
+    # Calculate the Range of the Data, or Use a Fallback if all Values are the Same.
     span = hi - lo if hi != lo else abs(hi) or 1.0
+
+    # Return the Minimum & Mximum Values with Padding Added.
     return lo - span * padding, hi + span * padding
 
-# Compute x-axis Limits So all Plots Remain Visually Aligned.
-x_limits = [padded_limits(df[col]) for col in x_vars]
+
+# Shared x-axis Limits (Ramp Length) so all Panels Remain Visually Aligned.
+X_LIMITS = padded_limits(ramp_df['ramp_length_frames'])
 # ------------------------------------------------------------------------------
 
 
 # ------------------------------------------------------------------------------
-#                                DRAW EACH SUBPLOT
+#                            SHARED PANEL DECORATION
 # ------------------------------------------------------------------------------
-# Generate Each Subplot Independently.
-for i, y_col in enumerate(y_vars):
-    for j, x_col in enumerate(x_vars):
-        # Make Axis.
-        ax = axes[i, j]
+def style_axis(ax, x_label, y_label, show_xlabel, show_ylabel):
+    """
+    Apply the shared visual styling and axis labels to a subplot.
 
-        # Configure the Subplot Background Styling.
-        ax.set_facecolor('white')
-        ax.set_axisbelow(True)
-        
-        # Draw Major Grid Lines.
-        ax.grid(True, which='major', color='#cccccc', linewidth=0.6)
+    Args:
+        ax (matplotlib.axes.Axes): Axes object to style.
+        x_label (str): Label displayed on the x-axis.
+        y_label (str): Label displayed on the y-axis.
+        show_xlabel (bool): Whether to display the x-axis label.
+        show_ylabel (bool): Whether to display the y-axis label.
 
-        # Add a Subtle Cross-Hatched Background for Visual Structure.
-        hatch_patch = mpatches.FancyBboxPatch((0, 0), 1, 1, transform=ax.transAxes, linewidth=0, facecolor='none', edgecolor='#cccccc', hatch='///', zorder=0) 
-        ax.add_patch(hatch_patch)
+    Returns:
+        None: The supplied axes object is modified in place.
+    """
+    # Set a Clean White Subplot Background.
+    ax.set_facecolor('white')
 
-        # Apply Shared x-axis Limits Across Each Subplot Column.
-        ax.set_xlim(x_limits[j])
+    # Draw Grid Lines Behind Plotted Data.
+    ax.set_axisbelow(True)
 
-        # Configure FPPI Plots Using a Symmetric Logarithmic Scale.
-        if y_col == 'FPPI':
-            ax.set_yscale('symlog', linthresh=FPPI_LINTHRESH)
-            ax.set_ylim(0, FPPI_YMAX)
+    # Add Major Grid Lines.
+    ax.grid(True, which='major', color='#cccccc', linewidth=0.6)
 
-            # Define Clean Logarithmic Tick Locations.
-            ax.yaxis.set_major_locator(ticker.FixedLocator([0, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1]))
-            
-            # Format Ticks Using Scientific Notation.
-            ax.yaxis.set_major_formatter(ticker.LogFormatterSciNotation(labelOnlyBase=False))
+    # Create the Diagonal Hatch Overlay Pattern for the Background.
+    hatch_patch = mpatches.FancyBboxPatch(
+        (0, 0), 1, 1, transform=ax.transAxes, linewidth=0,
+        facecolor='none', edgecolor='#cccccc', hatch='///', zorder=0
+    )
 
-        # Highlight the Acceptable FPS Operating Range.
-        if x_col == 'FPS':
-            ax.axvspan(FPS_GREEN_LOW, FPS_GREEN_HIGH, color='#2ca02c', alpha=0.15, zorder=1)
-            ax.axvline(FPS_GREEN_LOW,  color='#2ca02c', lw=1.0, linestyle='--', zorder=2)
-            ax.axvline(FPS_GREEN_HIGH, color='#2ca02c', lw=1.0, linestyle='--', zorder=2)
+    # Add the Hatch Overlay to the Subplot.
+    ax.add_patch(hatch_patch)
 
-        # Highlight the Unacceptable FPPI Operating Region.
-        if y_col == 'FPPI':
-            ax.axhspan(FPPI_RED_THRESH, FPPI_YMAX, color='#d62728', alpha=0.12, zorder=1)
-            ax.axhline(FPPI_RED_THRESH, color='#d62728', lw=1.0, linestyle='--', zorder=2)
-            ax.set_ylim(0, FPPI_YMAX)
+    # Apply the Shared Ramp-Length Limits.
+    ax.set_xlim(X_LIMITS)
 
-        # Plot All Backbone Model Data Points.
-        for _, row in df.iterrows():
-            colour = MODEL_COLOURS.get(row['Model'], '#333333')
-            ax.scatter(row[x_col], row[y_col], s=100, color=colour, zorder=3)
+    # Check Whether the X-axis Label Should Be Displayed.
+    if show_xlabel:
+        ax.set_xlabel(x_label, fontsize=10, fontweight='bold', labelpad=10)
 
-        # Only Display x-axis Labels on the Bottom Row.
-        if i == 2:
-            ax.set_xlabel(x_labels[j], fontsize=10, fontweight='bold', labelpad=10)
-        else:
-            ax.set_xlabel('')
+    # Check Whether the Y-axis Label Should Be Displayed.
+    if show_ylabel:
+        ax.set_ylabel(y_label, fontsize=10, fontweight='bold', labelpad=10)
 
-        # Only Display y-axis Labels on the Left Column.
-        if j == 0:
-            ax.set_ylabel(y_labels[i], fontsize=10, fontweight='bold', labelpad=10)
-        else:
-            ax.set_ylabel('')
+
+def plot_shape_lines(ax, y_col, std_col=None, band=False):
+    """
+    Plot one metric line for each corruption ramp shape.
+
+    Each ramp shape is plotted against ramp length using the predefined
+    colour mapping. An optional standard-deviation band can be added when
+    a corresponding standard-deviation column is supplied.
+
+    Args:
+        ax (matplotlib.axes.Axes): Axes object on which to plot the data.
+        y_col (str): DataFrame column containing the metric mean values.
+        std_col (str | None): DataFrame column containing standard-deviation
+                              values used for the optional uncertainty band.
+        band (bool): Whether to display the standard-deviation band.
+
+    Returns:
+        None: The supplied axes object is modified in place.
+    """
+    # Plot Each Configured Ramp Shape.
+    for shape, colour in SHAPE_COLOURS.items():
+        # Select Rows Belonging to the Current Ramp Shape.
+        sub = ramp_df[ramp_df['ramp_shape'] == shape].sort_values('ramp_length_frames')
+
+        # Extract Ramp Lengths for the X-axis.
+        x = sub['ramp_length_frames'].values
+
+        # Extract Metric Means for the Y-axis.
+        y = sub[y_col].values
+
+        # Add Uncertainty Only when Available.
+        if band and std_col is not None:
+            # Extract Standard-Deviation Values.
+            std = sub[std_col].values
+
+            # Shade the Mean +/- Standard-Deviation Region.
+            ax.fill_between(x, y - std, y + std, color=colour, alpha=0.15, zorder=2)
+
+        # Plot the Metric Mean for the Current Ramp Shape.
+        ax.plot(x, y, color=colour, lw=2.0, marker='o', markersize=6, zorder=4)
+
+
+def plot_psnr_peak(ax):
+    """
+    Plot PSNR-at-peak results for linear and sigmoid corruption ramps.
+
+    Linear results are plotted normally. Sigmoid results are split at the
+    configured trust cutoff: results at or below the cutoff use a solid line,
+    while results above the cutoff use a dashed line with hollow markers to
+    indicate reduced PSNR sample coverage.
+
+    Args:
+        ax (matplotlib.axes.Axes): Axes object on which to plot the PSNR data.
+
+    Returns:
+        None: The supplied axes object is modified in place.
+    """
+    # Select Linear Ramp Results.
+    lin = ramp_df[ramp_df['ramp_shape'] == 'linear'].sort_values('ramp_length_frames')
+
+    # Plot the Complete Linear PSNR Series.
+    ax.plot(lin['ramp_length_frames'], lin['psnr_at_peak_mean'],
+             color=SHAPE_COLOURS['linear'], lw=2.0, marker='o', markersize=6, zorder=4)
+
+    # Select Sigmoid Ramp Results.
+    sig = ramp_df[ramp_df['ramp_shape'] == 'sigmoid'].sort_values('ramp_length_frames') 
+
+    # Select Sigmoid Results within the Trusted Range.
+    trusted = sig[sig['ramp_length_frames'] <= SIGMOID_PSNR_TRUST_CUTOFF]
+
+    # Select Sigmoid Results Beyond the Trust Cutoff.
+    untrusted = sig[sig['ramp_length_frames'] >= SIGMOID_PSNR_TRUST_CUTOFF]
+
+    # Plot the Trusted Sigmoid PSNR Series.
+    ax.plot(trusted['ramp_length_frames'], trusted['psnr_at_peak_mean'],
+             color=SHAPE_COLOURS['sigmoid'], lw=2.0, marker='o', markersize=6, zorder=4)
+    
+    # Plot the Reduced-Coverage Sigmoid PSNR Series.
+    ax.plot(untrusted['ramp_length_frames'], untrusted['psnr_at_peak_mean'],
+             color=SHAPE_COLOURS['sigmoid'], lw=1.6, linestyle='--',
+             marker='o', markersize=6, markerfacecolor='white',
+             markeredgecolor=SHAPE_COLOURS['sigmoid'], markeredgewidth=1.5, zorder=4)
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
+#                                PANEL 1: TERMINAL SCR
+# ------------------------------------------------------------------------------
+# Select the Top-Left Subplot.
+ax = axes[0, 0]
+
+# Plot SCR Means with Standard-Deviation Bands.
+plot_shape_lines(ax, 'terminal_scr_mean', std_col='terminal_scr_std', band=True)
+
+# Apply Shared Styling & Axis Labels.
+style_axis(ax, 'Ramp Length (Frames)', 'Terminal SCR (mean \u00b1 std)',
+           show_xlabel=False, show_ylabel=True)
+
+# Set the Subplot Title.
+ax.set_title('Terminal SCR', fontsize=11, fontweight='bold')
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
+#                          PANEL 2: BACKGROUND COMPLEXITY
+# ------------------------------------------------------------------------------
+# Select the Top-Middle Subplot.
+ax = axes[0, 1]
+
+# Plot Background Complexity for Each Ramp Shape.
+plot_shape_lines(ax, 'background_complexity_mean')
+
+# Retrieve the Clean Baseline Value.
+baseline_val = baseline_row['clean_background_complexity_mean']
+
+# Add a Horizontal Reference Line for the Clean Baseline.
+ax.axhline(baseline_val, color='#333333', lw=1.2, linestyle=':', zorder=2)
+
+# Label the Clean Baseline Reference Line.
+ax.text(X_LIMITS[1], baseline_val, f'  Clean baseline ({baseline_val:.1f})',
+        fontsize=7.5, color='#333333', va='bottom', ha='right')
+
+# Apply Shared Styling & Axis Labels.
+style_axis(ax, 'Ramp Length (Frames)', 'Background Complexity (mean)',
+           show_xlabel=False, show_ylabel=True)
+
+# Set the Subplot Title.
+ax.set_title('Background Complexity', fontsize=11, fontweight='bold')
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
+#                           PANEL 3: RAMP MONOTONICITY
+# ------------------------------------------------------------------------------
+# Select the Top-Right Subplot.
+ax = axes[0, 2]
+
+# Plot Monotonicity Means with Standard-Deviation Bands.
+plot_shape_lines(ax, 'scr_monotonicity_mean', std_col='scr_monotonicity_std', band=True)
+
+# Apply Shared Styling & Axis Labels.
+style_axis(ax, 'Ramp Length (Frames)', 'SCR Monotonicity (mean \u00b1 std)',
+           show_xlabel=False, show_ylabel=True)
+
+ # Set the Subplot Title.
+ax.set_title('Ramp Monotonicity', fontsize=11, fontweight='bold')
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
+#                             PANEL 4: RAMP COVERAGE
+# ------------------------------------------------------------------------------
+# Select the Bottom-Left Subplot.
+ax = axes[1, 0]
+
+# Plot Ramp Coverage for Each Ramp Shape.
+plot_shape_lines(ax, 'scr_ramp_coverage_mean')
+
+# Apply Shared Styling & Axis Labels.
+style_axis(ax, 'Ramp Length (Frames)', 'SCR Ramp Coverage (mean)',
+           show_xlabel=True, show_ylabel=True)
+
+# Set the Subplot Title.
+ax.set_title('Ramp Coverage', fontsize=11, fontweight='bold')
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
+#                             PANEL 5: PSNR AT PEAK
+# ------------------------------------------------------------------------------
+# Select the Bottom-Middle Subplot.
+ax = axes[1, 1]
+
+# Plot PSNR at Peak with the Sigmoid Coverage Distinction.
+plot_psnr_peak(ax)
+
+# Apply Shared Styling & Axis Labels.
+style_axis(ax, 'Ramp Length (Frames)', 'PSNR at Peak (mean, dB)',
+           show_xlabel=True, show_ylabel=True)
+
+# Set the Subplot Title.
+ax.set_title('PSNR at Peak', fontsize=11, fontweight='bold')
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
+#                           PANEL 6: PSNR RELIABILITY
+# ------------------------------------------------------------------------------
+# Select the Bottom-Right Subplot.
+ax = axes[1, 2]
+
+# Plot the Percentage of Ramp Frames Contributing to PSNR.
+plot_shape_lines(ax, 'psnr_reliability_pct')
+
+# Apply Shared Styling & Axis Labels.
+style_axis(ax, 'Ramp Length (Frames)', 'PSNR Sample Reliability (%)',
+           show_xlabel=True, show_ylabel=True)
+
+# Set the Subplot Title.
+ax.set_title('PSNR Reliability', fontsize=11, fontweight='bold')
 # ------------------------------------------------------------------------------
 
 
 # ------------------------------------------------------------------------------
 #                                SHARED LEGEND
 # ------------------------------------------------------------------------------
-# Create Legend Entries for Each Model Colour.
-model_handles = [
-    mpatches.Patch(color=colour, label=model)
-    for model, colour in MODEL_COLOURS.items()
+# Create Legend Handles for the Two Ramp Shapes.
+shape_handles = [
+    mlines.Line2D([], [], color=colour, marker='o', markersize=6, lw=2.0, label=shape.capitalize())
+    for shape, colour in SHAPE_COLOURS.items()
 ]
 
-# Create Legend Entries for Highlighted Operating Regions.
-region_handles = [
-    mpatches.Patch(color='#2ca02c', alpha=0.4, label='Optimal FPS (9-11 FPS)'),
-    mpatches.Patch(color='#d62728', alpha=0.3, label='Unacceptable FPPI (> 0.0005)'),
-]
+# Create the Legend Handle for Reduced Sigmoid PSNR Coverage.
+untrusted_handle = mlines.Line2D(
+    [], [], color=SHAPE_COLOURS['sigmoid'], lw=1.6, linestyle='--',
+    marker='o', markersize=6, markerfacecolor='white',
+    markeredgecolor=SHAPE_COLOURS['sigmoid'], markeredgewidth=1.5,
+    label=f'Sigmoid (Reduced PSNR Sample Coverage)'
+)
 
-# Add a Shared Legend Beneath the Subplot Grid.
+# Create the Legend Handle for the Clean Baseline.
+baseline_handle = mlines.Line2D(
+    [], [], color='#333333', lw=1.2, linestyle=':', label='Clean Baseline Reference'
+)
+
+# Add the Shared Legend Below All Subplots.
 fig.legend(
-    handles=model_handles + region_handles,
+    handles=shape_handles + [untrusted_handle, baseline_handle],
     loc='lower center',
-    ncol=len(model_handles) + len(region_handles),
-    fontsize=8.5,
+    ncol=4,
+    fontsize=9,
     frameon=True,
-    bbox_to_anchor=(0.5, -0.03),
+    bbox_to_anchor=(0.5, -0.02),
 )
 # ------------------------------------------------------------------------------
 
@@ -210,9 +404,9 @@ fig.legend(
 # ------------------------------------------------------------------------------
 # Optimise Subplot Spacing & Export the Final Figure.
 plt.tight_layout()
-plt.subplots_adjust(top=0.85, bottom=0.09)
+plt.subplots_adjust(top=0.88, bottom=0.10, hspace=0.30)
 
 # Save the Figure as a High-Resolution PNG Image.
-plt.savefig('results/core_improvement/SAA_Backbone_Tradeoffs_Detection.png', bbox_inches='tight')
-print("Saved: results/core_improvement/SAA_Backbone_Tradeoffs_Detection.png")
+plt.savefig('results/corruption_dataset/Corruption_Dataset_Ramp_Sweep.png', bbox_inches='tight')
+print("Saved: results/corruption_dataset/Corruption_Dataset_Ramp_Sweep.png")
 # ------------------------------------------------------------------------------
