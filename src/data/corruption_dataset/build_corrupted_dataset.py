@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------
 # -               V E R S I O N   I D E N T I F I C A T I O N                  -
 # ------------------------------------------------------------------------------
-# File:                    %name: build_corrupted_test_set.py %
+# File:                    %name: build_corrupted_dataset.py %
 # Date Created:            %date_created: Wed Aug 12 17:56:48 2026 %
 # CM Version               %version: 2 %
 # CM Instance              %instance: 2 %
@@ -25,7 +25,7 @@
 #
 # USAGE INSTRUCTIONS:
 #   1. Run the Script from the Project Root:
-#       - nohup python -m src.data.corruption_dataset.build_corrupted_test_set > outputs/logs/corrupt_dataset_generator.log 2>&1 &
+#       - nohup python -m src.data.corruption_dataset.build_corrupted_dataset > outputs/logs/corruption_dataset/corrupt_dataset_generator.log 2>&1 &
 #
 #   2. Optional Environment Variables:
 #       - INPUT_TEST_FLIGHTS_PATH
@@ -108,7 +108,7 @@ from src.data.corruption_dataset.dataset_quality_metrics import (
 #                           CONFIGURATION VARIABLES
 # ------------------------------------------------------------------------------
 # Source Test Flight List.
-INPUT_TEST_FLIGHTS_PATH = 'configs/datasets/training_subsets/train.txt'
+INPUT_TEST_FLIGHTS_PATH = 'configs/datasets/hard_dataset_flights.txt'
 
 # Output Directory for Flight Lists & the Corruption Manifest.
 OUTPUT_RECORDS_DIR = 'configs/datasets/corruption_subsets'
@@ -257,7 +257,7 @@ def copyCleanFlight(dataset, flight_id: str) -> Optional[Dict]:
     # Skip the Flight if its Source Directory is Missing.
     if not os.path.isdir(source_dir):
         log(
-            LogLevel.WARNING, "build_corrupted_test_set:copyCleanFlight",
+            LogLevel.WARNING, "build_corrupted_dataset:copyCleanFlight",
             "Source directory does not exist for clean flight %s: %s", flight_id, source_dir)
         return None
 
@@ -296,7 +296,7 @@ def copyCleanFlight(dataset, flight_id: str) -> Optional[Dict]:
     except Exception as e:
         # Complexity is Optional, So Keep the Copied Flight.
         log(
-            LogLevel.WARNING, "build_corrupted_test_set:copyCleanFlight",
+            LogLevel.WARNING, "build_corrupted_dataset:copyCleanFlight",
             "Could Not Compute Background Complexity for Clean Flight %s: %s", flight_id, str(e))
 
     # Return the Clean-Flight Quality Entry.
@@ -325,7 +325,7 @@ def copyImageSetFolders(flight_ids: List[str]) -> List[str]:
 
         # Skip the Part if its ImageSets Folder is Missing.
         if not os.path.isdir(source_dir):
-            log(LogLevel.WARNING, "build_corrupted_test_set:copyImageSetFolders",
+            log(LogLevel.WARNING, "build_corrupted_dataset:copyImageSetFolders",
                 "ImageSet folder not found for %s: %s", part, source_dir)
             continue
 
@@ -376,7 +376,7 @@ def visualiseFlights(flight_ids: List[str]) -> None:
     # Generate a Video for Each Selected Flight.
     for idx, flight_id in enumerate(selected_flights):
         print()
-        log(LogLevel.INFO, "build_corrupted_test_set:visualiseFlights",
+        log(LogLevel.INFO, "build_corrupted_dataset:visualiseFlights",
             "Generating Video %d/%d for Flight %s.", idx + 1, len(selected_flights), flight_id)
 
         try:
@@ -386,7 +386,7 @@ def visualiseFlights(flight_ids: List[str]) -> None:
         except Exception as e:
             # Log the Failure and Continue with the Remaining Flights.
             print()
-            log(LogLevel.WARNING, "build_corrupted_test_set:visualiseFlights",
+            log(LogLevel.WARNING, "build_corrupted_dataset:visualiseFlights",
                 "Could Not Generate Video for Flight %s: %s. Skipping.\n", flight_id, str(e))
 # ------------------------------------------------------------------------------
 
@@ -418,7 +418,7 @@ def corruptFlight(dataset, flight_id: str, corruption_name: str) -> Optional[Dic
         frames = flight.frames
     except Exception as e:
         # Log the Failure and Skip the Flight.
-        log(LogLevel.WARNING, "build_corrupted_test_set:corruptFlight",
+        log(LogLevel.WARNING, "build_corrupted_dataset:corruptFlight",
             "Could Not Load Metadata for Flight %s: %s. Skipping.", flight_id, str(e))
         return None
 
@@ -428,7 +428,7 @@ def corruptFlight(dataset, flight_id: str, corruption_name: str) -> Optional[Dic
 
     # Skip Flights too Short for a Meaningful Onset + Ramp + Post-Ramp Region.
     if num_frames < MIN_TRACK_LENGTH_FOR_CORRUPTION:
-        log(LogLevel.WARNING, "build_corrupted_test_set:corruptFlight",
+        log(LogLevel.WARNING, "build_corrupted_dataset:corruptFlight",
             "Flight %s has Only %d Frames (< %d). Skipping Corruption, Treating as Clean.",
             flight_id, num_frames, MIN_TRACK_LENGTH_FOR_CORRUPTION)
         return None
@@ -436,7 +436,7 @@ def corruptFlight(dataset, flight_id: str, corruption_name: str) -> Optional[Dic
     # Ensure the Flight has Enough Frames to Satisfy the Clean Lead-In Plus Ramp.
     latest_valid_onset = num_frames - RAMP_LENGTH_FRAMES - 1
     if MIN_CLEAN_LEAD_FRAMES >= latest_valid_onset:
-        log(LogLevel.WARNING, "build_corrupted_test_set:corruptFlight",
+        log(LogLevel.WARNING, "build_corrupted_dataset:corruptFlight",
             "Flight %s Too Short (%d frames) for MIN_CLEAN_LEAD_FRAMES=%d + Ramp. Skipping Corruption.", flight_id, num_frames, MIN_CLEAN_LEAD_FRAMES)
         return None
 
@@ -481,7 +481,7 @@ def corruptFlight(dataset, flight_id: str, corruption_name: str) -> Optional[Dic
             image = frames[frame_id].image(type='numpy')
         except Exception as e:
             # Log the Failure and Skip This Frame.
-            log(LogLevel.WARNING, "build_corrupted_test_set:corruptFlight",
+            log(LogLevel.WARNING, "build_corrupted_dataset:corruptFlight",
                 "Could Not Load Frame %s in Flight %s: %s. Skipping Frame.",
                 frame_id, flight_id, str(e))
             continue
@@ -515,7 +515,7 @@ def corruptFlight(dataset, flight_id: str, corruption_name: str) -> Optional[Dic
 
     # Guard Against a Flight where No Frames Could be Written.
     if frames_written == 0:
-        log(LogLevel.ERROR, "build_corrupted_test_set:corruptFlight",
+        log(LogLevel.ERROR, "build_corrupted_dataset:corruptFlight",
             "No Frames Could be Written for Flight %s. Skipping.", flight_id)
         return None
 
@@ -583,7 +583,7 @@ def writeFlightListFile(flight_ids: List[str], filepath: str, description: str) 
         "\n"
         + description + "\n"
         "\n"
-        "This file is auto-generated by build_corrupted_test_set.py. DO NOT EDIT IT\n"
+        "This file is auto-generated by build_corrupted_dataset.py. DO NOT EDIT IT\n"
         "MANUALLY. Re-run the script to regenerate.\n"
         "\n"
         "Seed: %d  |  Total: %d\n"
@@ -599,7 +599,7 @@ def writeFlightListFile(flight_ids: List[str], filepath: str, description: str) 
         f.write('\n'.join(flight_ids) + ('\n' if flight_ids else ''))
 
     # Print Info Message.
-    log(LogLevel.INFO, "build_corrupted_test_set:writeFlightListFile",
+    log(LogLevel.INFO, "build_corrupted_dataset:writeFlightListFile",
         "Written: %s (%d flights)", filepath, len(flight_ids))
 # ------------------------------------------------------------------------------
 
@@ -692,9 +692,9 @@ def main(input_path: Optional[str] = None,
             )
  
     # Load the Flight IDs from the Test Split.
-    log(LogLevel.INFO, "build_corrupted_test_set:main", "Reading: %s", INPUT_TEST_FLIGHTS_PATH)
+    log(LogLevel.INFO, "build_corrupted_dataset:main", "Reading: %s", INPUT_TEST_FLIGHTS_PATH)
     flight_ids = parseFlightIds(INPUT_TEST_FLIGHTS_PATH)
-    log(LogLevel.INFO, "build_corrupted_test_set:main", "Found: %d flight IDs in train.txt", len(flight_ids))
+    log(LogLevel.INFO, "build_corrupted_dataset:main", "Found: %d flight IDs in train.txt", len(flight_ids))
  
     # Assign Each Flight to a Corruption Type OR the Clean Set.
     assignment = assignCorruptions(flight_ids, ACTIVE_CORRUPTIONS, CORRUPTED_FRACTION, SEED)
@@ -745,7 +745,7 @@ def main(input_path: Optional[str] = None,
     # Copy the ImageSets Folder for Each Part Used by the Test Split.
     copied_parts = copyImageSetFolders(flight_ids)
     print()
-    log(LogLevel.INFO, "build_corrupted_test_set:main",
+    log(LogLevel.INFO, "build_corrupted_dataset:main",
         "Copied ImageSet folders for %d parts to: %s", len(copied_parts), OUTPUT_DATA_ROOT)
  
     # Write a Flight List for Each Corruption Type.
@@ -786,7 +786,7 @@ def main(input_path: Optional[str] = None,
         }, f, indent=2)
 
     # Report the Location and Number of Corrupted Flights in the Manifest.
-    log(LogLevel.INFO, "build_corrupted_test_set:main",
+    log(LogLevel.INFO, "build_corrupted_dataset:main",
         "Manifest Written: %s (%d corrupted flights)", manifest_path, len(manifest_entries))
 
     # Summarise Quality Metrics for the Corrupted Flights.
@@ -804,7 +804,7 @@ def main(input_path: Optional[str] = None,
     with open(quality_summary_path, 'w') as f: json.dump(quality_summary, f, indent=2)
 
     # Log the Output Path for Reference.
-    log(LogLevel.INFO, "build_corrupted_test_set:main",
+    log(LogLevel.INFO, "build_corrupted_dataset:main",
         "Dataset Quality Summary Written: %s", quality_summary_path)
  
     # Generate Videos for Three Flights from Each Dataset Part.
@@ -812,7 +812,7 @@ def main(input_path: Optional[str] = None,
  
     # Display the Final Clean, Corrupted, and Per-Type Flight Counts.
     print()
-    log(LogLevel.INFO, "build_corrupted_test_set:main", "Done.  Clean: %d  |  Corrupted: %d  (%s)  |  Total: %d.\n",
+    log(LogLevel.INFO, "build_corrupted_dataset:main", "Done.  Clean: %d  |  Corrupted: %d  (%s)  |  Total: %d.\n",
         len(clean_flights), len(manifest_entries), ", ".join("%s: %d" % (k, len(v)) for k, v in corrupted_by_type.items()), total)
 # ------------------------------------------------------------------------------
 
