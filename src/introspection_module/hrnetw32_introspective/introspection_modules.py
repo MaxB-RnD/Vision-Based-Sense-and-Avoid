@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------
 # -               V E R S I O N   I D E N T I F I C A T I O N                  -
 # ------------------------------------------------------------------------------
-# File:                    %name: introspection_module_evaluator.py %
+# File:                    %name: introspection_modules.py %
 # Date Created:            %date_created: Tue Jul 30 17:35:45 2026 %
 # CM Version               %version: 1 %
 # CM Instance              %instance: 3 %
@@ -34,6 +34,8 @@
 # ------------------------------------------------------------------------------
 
 from typing import Dict, List
+
+import numpy as np
 
 
 # ------------------------------------------------------------------------------
@@ -396,6 +398,179 @@ class CoastCountIntrospectionModule(IntrospectionModule):
 
 
 # ------------------------------------------------------------------------------
+#                MODULE 4 -- KALMAN FILTER NIS (LEARNING-FREE)
+# ------------------------------------------------------------------------------
+# 95% Chi-Squared Critical Value for 2 Degrees of Freedom.
+CHI2_CRITICAL_DF2_95 = -2.0 * np.log(1.0 - 0.95)
+
+
+class KalmanNISIntrospectionModule(IntrospectionModule):
+    """
+    Escalates a Track when its Observed Position Becomes Statistically Inconsistent
+    with a Constant-Velocity Kalman Filter's Predicted Position. The Filter Tracks
+    [cx, cy, vx, vy] and Computes the Normalised Innovation Squared (NIS) from the
+    Position Innovation, Escalating when NIS Exceeds the 95% Chi-Squared Critical
+    Value for 2 Degrees of Freedom.
+    """
+    # Identifier Used to Select this Strategy within the Evaluation Framework.
+    name = "kalman_nis"
+
+    def __init__(self, chi2_threshold: float = CHI2_CRITICAL_DF2_95,
+                 process_noise: float = 1.0, measurement_noise: float = 4.0,
+                 initial_position_var: float = 100.0, initial_velocity_var: float = 1000.0):
+        # NIS Threshold Above which a Track is Considered Statistically Inconsistent.
+        self.chi2_threshold = chi2_threshold
+
+        # Continuous White-Noise-Acceleration Spectral Density. Larger Values Make
+        # the Filter More Tolerant of Genuine Manoeuvring, at the Cost of Being Less 
+        # Sensitive to Real Anomalies.
+        self.process_noise = process_noise
+
+        # Assumed Variance of the Detector's Own Position Noise (pixels^2).
+        self.measurement_noise = measurement_noise
+
+        # Initial State Uncertainty Used the First Time a Track is Observed.
+        self.initial_position_var = initial_position_var
+        self.initial_velocity_var = initial_velocity_var
+
+        # Per-Track Kalman Filter State, Keyed by track_id. Reset Every Flight.
+        self._filters: Dict[int, Dict] = {}
+
+
+    def reset(self) -> None:
+        """
+        Clears all Per-Track Kalman Filter State.
+        """
+        # Set Filters to an Empty Dictionary. 
+        self._filters = {}
+
+
+    @staticmethod
+    def _build_matrices(process_noise: float, measurement_noise: float):
+        """
+        Builds the Constant-Velocity Kalman Filter Matrices for a Single
+        Discrete Time Step (dt=1, Matching the Fixed-FPS Frame Spacing this
+        Pipeline Assumes Elsewhere, e.g. SimpleOffsetTracker's Per-Frame dx/dy).
+        """
+        # State Transition: Position Advances by Velocity Each Frame.
+        F = np.array([
+            [1.0, 0.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+
+        # Measurement Model: Only Position is Directly Observed.
+        H = np.array([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+        ])
+
+        # Discretised White-Noise-Acceleration Process Noise (dt=1).
+        q = process_noise
+        Q = np.array([
+            [q / 4, 0.0,   q / 2, 0.0],
+            [0.0,   q / 4, 0.0,   q / 2],
+            [q / 2, 0.0,   q,     0.0],
+            [0.0,   q / 2, 0.0,   q],
+        ])
+
+        # Isotropic Measurement Noise on (cx, cy).
+        R = np.eye(2) * measurement_noise
+
+        # Return the State-Transition, Measurement, Process-Noise & Measurement-Noise Matrices.
+        return F, H, Q, R
+
+
+    def _step(self, track_state: Dict):
+        """
+        Advances this Track's Kalman Filter by Exactly One Frame and Returns
+        the NIS for that Frame, or None if no Prediction Exists Yet to Compare
+        Against (the Track's First Observation).
+        """
+        # Extract the Track ID, Current Position & Position History from the Track State.
+        track_id = track_state.get('track_id', -1)
+        position = track_state.get('position')
+        position_history: List = track_state.get('position_history', [])
+
+        # Nothing to Do Without a Valid Track or a Position to Compare Against.
+        if track_id < 0 or position is None:
+            return None
+
+        # Frame Counter for this Track. Grows by Exactly One per Real Frame.
+        frame_index = len(position_history)
+
+        # Retrieve the Existing Kalman Filter State for this Track, if One Exists.
+        filt = self._filters.get(track_id)
+
+        # Already Stepped this Exact Frame for this Track. Return the Cached Result.
+        if filt is not None and filt['last_frame_index'] == frame_index:
+            return filt['last_nis']
+
+        # Convert the Current Position Measurement into a NumPy Floating-Point Array.
+        z = np.array(position, dtype=np.float64)
+
+        # First Observation for this Track.
+        if filt is None:
+            x0 = np.array([z[0], z[1], 0.0, 0.0])
+            P0 = np.diag([self.initial_position_var, self.initial_position_var, self.initial_velocity_var, self.initial_velocity_var,])
+            self._filters[track_id] = {'x': x0, 'P': P0, 'last_frame_index': frame_index, 'last_nis': None,}
+            return None
+
+        # Build the State-Transition, Measurement, Process-Noise & Measurement-Noise Matrices.
+        F, H, Q, R = self._build_matrices(self.process_noise, self.measurement_noise)
+
+        # Predict.
+        x_pred = F @ filt['x']
+        P_pred = F @ filt['P'] @ F.T + Q
+
+        # Innovation & its Covariance.
+        innovation = z - H @ x_pred
+        S = H @ P_pred @ H.T + R
+
+        # Normalised Innovation Squared.
+        nis = float(innovation.T @ np.linalg.inv(S) @ innovation)
+
+        # Update (Standard Kalman Gain Correction).
+        K = P_pred @ H.T @ np.linalg.inv(S)
+        x_upd = x_pred + K @ innovation
+        P_upd = (np.eye(4) - K @ H) @ P_pred
+
+        # Persist State for the Next Frame and Cache this Frame's Result.
+        filt['x'] = x_upd
+        filt['P'] = P_upd
+        filt['last_frame_index'] = frame_index
+        filt['last_nis'] = nis
+
+        # Return the NIS Score.
+        return nis
+
+
+    def should_escalate(self, track_state: Dict) -> bool:
+        # No NIS Available Yet (First Observation for this Track).
+        nis = self._step(track_state)
+        if nis is None:
+            return False
+
+        # Escalate Once the Observed Position Becomes Statistically Inconsistent.
+        return nis > self.chi2_threshold
+
+
+    def get_score_and_threshold(self, track_state: Dict):
+        """
+        Reports the Track's Current-Frame NIS Against the Chi-Squared Critical
+        Value it is Compared Against.
+        """
+        # Use the Memoised Filter Step so this Matches the Same Frame without 
+        # Advancing the Filter Independently.
+        nis = self._step(track_state)
+
+        # Return the Score Alongside the Threshold Used for Comparison.
+        return nis, self.chi2_threshold
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
 #                       REGISTRY OF AVAILABLE MODULES
 # ------------------------------------------------------------------------------
 INTROSPECTION_MODULE_MAP = {
@@ -403,5 +578,6 @@ INTROSPECTION_MODULE_MAP = {
     1: ConfidenceThresholdIntrospectionModule,     # Simple Confidence Threshold.
     2: RollingConfidenceTrendIntrospectionModule,  # Rolling Confidence Trend / EWMA.
     3: CoastCountIntrospectionModule,              # Consecutive-Coast-Count Threshold.
+    4: KalmanNISIntrospectionModule,               # Kalman Filter NIS.
 }
 # ------------------------------------------------------------------------------

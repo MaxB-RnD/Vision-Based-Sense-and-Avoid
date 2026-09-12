@@ -31,6 +31,7 @@
 #            1 = Simple Confidence Threshold.
 #            2 = Rolling Confidence Trend / EWMA.
 #            3 = Consecutive-Coast-Count Threshold.
+#            4 = Kalman Filter NIS.
 #
 #   3. Then monitor from terminal with:
 #            tail -f outputs/logs/introspection_module/introspection_module_evaluation.log
@@ -94,7 +95,8 @@ def main() -> None:
     # 1 -> Confidence Threshold (Simple Baseline).
     # 2 -> Rolling Confidence Trend / EWMA.
     # 3 -> Consecutive-Coast-Count Threshold.
-    module_list = ["none", "confidence_threshold", "rolling_confidence_trend", "coast_count_threshold"]
+    # 4 -> Kalman Filter NIS.
+    module_list = ["none", "confidence_threshold", "rolling_confidence_trend", "coast_count_threshold", "kalman_filter_nis"]
 
     # Allow Introspection Module Selection from Command Line.
     if len(sys.argv) > 1:

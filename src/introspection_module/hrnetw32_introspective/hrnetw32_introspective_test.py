@@ -126,7 +126,7 @@ class HRNetW32IntrospectivePredictor(HRNetW32TrackToDetectPredictor):
         self.introspection_module.reset()
 
 
-    def _update_track_history(self, track_id: int, confidence: float, source: str, coast_count: int) -> None:
+    def _update_track_history(self, track_id: int, confidence: float, source: str, coast_count: int, position: "tuple[float, float]") -> None:
         """
         Updates the stored history for an active track. Only the most recent 
         TRACK_HISTORY_LEN observations are retained.
@@ -136,6 +136,8 @@ class HRNetW32IntrospectivePredictor(HRNetW32TrackToDetectPredictor):
             confidence (float): Confidence score assigned to the track.
             source (str): Source of the detection (e.g. DETECTED or COASTED).
             coast_count (int): Number of consecutive coasted frames.
+            position (tuple[float, float]): Current (cx, cy) bbox-centre position
+                                            of the detection, in image coordinates.
 
         Returns:
             None
@@ -146,6 +148,7 @@ class HRNetW32IntrospectivePredictor(HRNetW32TrackToDetectPredictor):
                 'confidence_history': [],
                 'source_history': [],
                 'coast_count_history': [],
+                'position_history': [],
             }
 
         # Record the Latest Track Information.
@@ -153,9 +156,10 @@ class HRNetW32IntrospectivePredictor(HRNetW32TrackToDetectPredictor):
         history['confidence_history'].append(float(confidence))
         history['source_history'].append(source)
         history['coast_count_history'].append(int(coast_count))
+        history['position_history'].append((float(position[0]), float(position[1])))
 
         # Retain Only the Most Recent Observations.
-        for key in ('confidence_history', 'source_history', 'coast_count_history'):
+        for key in ('confidence_history', 'source_history', 'coast_count_history', 'position_history'):
             history[key] = history[key][-TRACK_HISTORY_LEN:]
 
 
@@ -176,14 +180,18 @@ class HRNetW32IntrospectivePredictor(HRNetW32TrackToDetectPredictor):
         # Retrieve Stored History for the Track, or Use an Empty History if it is New.
         history = self.track_history.get(track_id, {
             'confidence_history': [], 'source_history': [], 'coast_count_history': [],
+            'position_history': [],
         })
 
         # Package Track Information into the Format Expected by the Introspection Module.
         return {
+            'track_id': track_id,
             'confidence_history': history['confidence_history'],
             'source_history': history['source_history'],
             'coast_count_history': history['coast_count_history'],
             'coast_count': coast_count,
+            'position_history': history['position_history'],
+            'position': history['position_history'][-1] if history['position_history'] else None,
         }
 
 
@@ -258,8 +266,12 @@ class HRNetW32IntrospectivePredictor(HRNetW32TrackToDetectPredictor):
                 updated_detections.append(det)
                 continue
 
+            # Extract the Bbox-Centre Position.
+            x1, y1, x2, y2 = det["bbox"]
+            position = ((x1 + x2) / 2.0, (y1 + y2) / 2.0)
+
             # Update Track History and Build the Introspection Input.
-            self._update_track_history(track_id, confidence, source, coast_count)
+            self._update_track_history(track_id, confidence, source, coast_count, position)
             track_state = self._build_track_state(track_id, coast_count)
 
             # Read the Continuous Score & Threshold Behind this Frame's Escalation Decision.
