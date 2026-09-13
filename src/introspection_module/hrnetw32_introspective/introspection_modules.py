@@ -486,25 +486,35 @@ class KalmanNISIntrospectionModule(IntrospectionModule):
         """
         Advances this Track's Kalman Filter by Exactly One Frame and Returns
         the NIS for that Frame, or None if no Prediction Exists Yet to Compare
-        Against (the Track's First Observation).
+        Against (the Track's First Observation), or if this Frame was Coasted.
+
+        Args:
+            track_state (Dict): Per-track signals for this frame, including
+                                'track_id', 'position', and 'source_history'.
+
+        Returns:
+            Optional[float]: This frame's NIS, or None if it could not be
+                             computed (first observation, missing position,
+                             or a coasted frame).
         """
-        # Extract the Track ID, Current Position & Position History from the Track State.
+        # Extract the Track ID, Current Position & Source from the Track State.
         track_id = track_state.get('track_id', -1)
         position = track_state.get('position')
-        position_history: List = track_state.get('position_history', [])
+        source_history: List = track_state.get('source_history', [])
+        source = source_history[-1] if source_history else 'DETECTED'
 
         # Nothing to Do Without a Valid Track or a Position to Compare Against.
         if track_id < 0 or position is None:
             return None
 
-        # Frame Counter for this Track. Grows by Exactly One per Real Frame.
-        frame_index = len(position_history)
+        # Get the Cache Key Associated with this Track ID. 
+        cache_key = id(track_state)
 
         # Retrieve the Existing Kalman Filter State for this Track, if One Exists.
         filt = self._filters.get(track_id)
 
         # Already Stepped this Exact Frame for this Track. Return the Cached Result.
-        if filt is not None and filt['last_frame_index'] == frame_index:
+        if filt is not None and filt.get('last_track_state_id') == cache_key:
             return filt['last_nis']
 
         # Convert the Current Position Measurement into a NumPy Floating-Point Array.
@@ -514,15 +524,24 @@ class KalmanNISIntrospectionModule(IntrospectionModule):
         if filt is None:
             x0 = np.array([z[0], z[1], 0.0, 0.0])
             P0 = np.diag([self.initial_position_var, self.initial_position_var, self.initial_velocity_var, self.initial_velocity_var,])
-            self._filters[track_id] = {'x': x0, 'P': P0, 'last_frame_index': frame_index, 'last_nis': None,}
+            self._filters[track_id] = {'x': x0, 'P': P0, 'last_track_state_id': cache_key, 'last_nis': None,}
             return None
 
         # Build the State-Transition, Measurement, Process-Noise & Measurement-Noise Matrices.
         F, H, Q, R = self._build_matrices(self.process_noise, self.measurement_noise)
 
-        # Predict.
+        # Predict. Always Advances Regardless of Whether this Frame is Detected or Coasted.
         x_pred = F @ filt['x']
         P_pred = F @ filt['P'] @ F.T + Q
+
+        # Coasted Frames: No Genuine Measurement Exists to Update Against. Persist the 
+        # Predicted (Not Updated) State & Report No NIS.
+        if source != 'DETECTED':
+            filt['x'] = x_pred
+            filt['P'] = P_pred
+            filt['last_track_state_id'] = cache_key
+            filt['last_nis'] = None
+            return None
 
         # Innovation & its Covariance.
         innovation = z - H @ x_pred
@@ -539,7 +558,7 @@ class KalmanNISIntrospectionModule(IntrospectionModule):
         # Persist State for the Next Frame and Cache this Frame's Result.
         filt['x'] = x_upd
         filt['P'] = P_upd
-        filt['last_frame_index'] = frame_index
+        filt['last_track_state_id'] = cache_key
         filt['last_nis'] = nis
 
         # Return the NIS Score.
