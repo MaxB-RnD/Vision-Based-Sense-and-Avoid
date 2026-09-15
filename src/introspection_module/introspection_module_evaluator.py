@@ -3,8 +3,8 @@
 # ------------------------------------------------------------------------------
 # File:                    %name: introspection_module_evaluator.py %
 # Date Created:            %date_created: Tue Jul 30 17:06:23 2026 %
-# CM Version               %version: 1 %
-# CM Instance              %instance: 4 %
+# CM Version               %version: 2 %
+# CM Instance              %instance: 1 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -26,7 +26,7 @@
 #         nohup python -m src.introspection_module.introspection_module_evaluator select_module > outputs/logs/introspection_module/introspection_module_evaluation.log 2>&1 &
 #
 #   2. Optional Environment Variables:
-#       - SELECTED_INTROSPECTION_MODULE = (0-3)
+#       - SELECTED_INTROSPECTION_MODULE = (0-4)
 #            0 = None.
 #            1 = Simple Confidence Threshold.
 #            2 = Rolling Confidence Trend / EWMA.
@@ -55,11 +55,14 @@
 import os
 import sys
 
+import csv
 import json
 import torch
 import random
+import inspect
 import subprocess
 from glob import glob
+from typing import Any, Dict
 
 # Because Life, Universe & Everything!
 random.seed(42)
@@ -86,6 +89,92 @@ log(LogLevel.INFO, "introspection_module_evaluator:imports", "Project Root Set: 
 
 
 # ------------------------------------------------------------------------------
+#                   INTROSPECTION HYPERPARAMETER OVERRIDES
+# ------------------------------------------------------------------------------
+def _resolve_module_overrides(module_cls) -> Dict[str, Any]:
+    """
+    Get constructor parameter overrides from environment variables. Environment 
+    variables use the format: INTROSPECTION_PARAM_<PARAMETER_NAME>. Values are 
+    converted to the same type as the parameter's default value.
+
+    Args:
+        module_cls: The introspection module class to inspect.
+
+    Returns:
+        A dictionary of parameter names and their overridden values.
+        Returns an empty dictionary if no overrides are set.
+    """
+    # Collect Overrides Found in the Environment.
+    overrides: Dict[str, Any] = {}
+
+    # Inspect the Constructor to Learn Each Parameter's Name & Default Type.
+    signature = inspect.signature(module_cls.__init__)
+
+    for param_name, param in signature.parameters.items():
+        # Skip 'self' & any Parameter without a Usable Default to Infer Type From.
+        if param_name == "self" or param.default is inspect.Parameter.empty:
+            continue
+
+        # Look for a Matching Environment Variable for this Parameter.
+        env_name = f"INTROSPECTION_PARAM_{param_name.upper()}"
+        if env_name not in os.environ:
+            continue
+
+        # Cast the Raw String Env Var Value to Match the Parameter's Default Type.
+        default_type = type(param.default)
+        overrides[param_name] = default_type(os.environ[env_name])
+
+    # Return Any Valid Overrides.
+    return overrides
+
+
+def _append_sweep_result_row(module_name: str, module_kwargs: Dict[str, Any],
+                              dataset_split: str, run_dir: str, summary: Dict[str, Any]) -> None:
+    """
+    Appends this run's hyperparameters & headline FAR/FNR metrics to a shared
+    sweep-wide CSV, if one has been requested via the INTROSPECTION_SWEEP_RESULTS_CSV 
+    environment variable.
+
+    Args:
+        module_name (str): Identifier of the introspection module evaluated.
+        module_kwargs (Dict[str, Any]): Hyperparameter overrides used for this run.
+        dataset_split (str): Dataset split evaluated on ('validation' or 'test').
+        run_dir (str): Path to this run's output directory.
+        summary (Dict[str, Any]): Summary dict loaded from the run's metrics JSON.
+                                  Must contain 'false_alarm_rate' & 'false_negative_rate'.
+
+    Returns:
+        None
+    """
+    # Nothing to Do if No Sweep CSV was Requested for this Run.
+    csv_path = os.environ.get("INTROSPECTION_SWEEP_RESULTS_CSV")
+    if not csv_path:
+        return
+
+    # Build the Current Row.
+    row = {
+        "module": module_name,
+        "dataset_split": dataset_split,
+        "params_json": json.dumps(module_kwargs, sort_keys=True),
+        "false_alarm_rate": summary.get("false_alarm_rate"),
+        "false_negative_rate": summary.get("false_negative_rate"),
+        "run_dir": run_dir,
+    }
+
+    # Create the CSV with a Header the First Time it's Written To.
+    write_header = not os.path.exists(csv_path)
+    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+
+    # Write the Row to the CSV File.
+    with open(csv_path, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(row.keys()))
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
 #                                   MAIN
 # ------------------------------------------------------------------------------
 def main() -> None:
@@ -109,13 +198,16 @@ def main() -> None:
     DETECTION_THRESHOLD = 0.6
     MIN_TRACK_LEN = 8
 
+    # Select the Dataset Split to Evaluate On.
+    DATASET_SPLIT = os.environ.get("INTROSPECTION_DATASET_SPLIT", "test")
+
     # Set Path to Desired Evaluation Dataset.
-    DATASET_PATH = "configs/datasets/training_subsets/test.txt"
+    DATASET_PATH = f"configs/datasets/training_subsets/{DATASET_SPLIT}.txt"
     DATASET_PARTS = ["part1", "part2", "part3"]
     DATASET_ROOT = os.path.join(PROJECT_ROOT, "data", "corruption_dataset")
 
     # Set Results Variables (Auto-Incrementing Run Directory).
-    RESULTS_DIR = "outputs/results/introspection_module/" + module_list[SELECTED_INTROSPECTION_MODULE]
+    RESULTS_DIR = os.path.join("outputs/results/introspection_module", module_list[SELECTED_INTROSPECTION_MODULE], DATASET_SPLIT)
     run_name = get_next_run_dir(RESULTS_DIR)
 
     # Evaluation Output Folders.
@@ -126,6 +218,7 @@ def main() -> None:
     # Print Summary Statement.
     log(LogLevel.INFO, "introspection_module:config", "Configuration Loaded.")
     print(f"  Introspection Module : {module_list[SELECTED_INTROSPECTION_MODULE]}")
+    print(f"  Dataset Split        : {DATASET_SPLIT}")
     print(f"  Dataset Root         : {DATASET_ROOT}")
     print(f"  Dataset Path         : {DATASET_PATH}")
     print(f"  Dataset Parts        : {DATASET_PARTS}")
@@ -238,8 +331,25 @@ def main() -> None:
             "Invalid SELECTED_INTROSPECTION_MODULE: %s.", SELECTED_INTROSPECTION_MODULE)
         raise ValueError("Please Select a Valid Introspection Module Index.")
 
+    # Resolve any Hyperparameter Overrides Supplied via INTROSPECTION_PARAM_* Environment Variables.
+    module_cls = INTROSPECTION_MODULE_MAP[SELECTED_INTROSPECTION_MODULE]
+    module_kwargs = _resolve_module_overrides(module_cls)
+
+    # Print the Resolved Hyperparameters so Every Run's Log is Self-Describing.
+    log(LogLevel.INFO, "introspection_module_evaluator:config", "Introspection Hyperparameters: %s",
+        module_kwargs if module_kwargs else "(module defaults)")
+
+    # Save the Resolved Hyperparameters with Results Before Inference Starts.
+    os.makedirs(os.path.join(RESULTS_DIR, run_name), exist_ok=True)
+    with open(os.path.join(RESULTS_DIR, run_name, "run_params.json"), "w") as f:
+        json.dump({
+            "module": module_list[SELECTED_INTROSPECTION_MODULE],
+            "dataset_split": DATASET_SPLIT,
+            "params": module_kwargs,
+        }, f, indent=2)
+
     # Instantiate the Selected Introspection Module.
-    introspection_module = INTROSPECTION_MODULE_MAP[SELECTED_INTROSPECTION_MODULE]()
+    introspection_module = module_cls(**module_kwargs)
 
     # Initialise the Predictor & Inject the Selected Introspection Module
     predictor = HRNetW32IntrospectivePredictor()
@@ -314,6 +424,19 @@ def main() -> None:
         print("INTROSPECTION MODULE - FULL TEST DATASET SUMMARY".center(93))
         print("=" * 93)
         print(summary_df.to_string(index=False))
+
+        # Log this Run's Hyperparameters & Headline FAR/FNR into the Shared Sweep 
+        # CSV if Enabled.
+        with open(summary_files[0], "r") as f:
+            summary_metrics = json.load(f)
+
+        _append_sweep_result_row(
+            module_name    = module_list[SELECTED_INTROSPECTION_MODULE],
+            module_kwargs  = module_kwargs,
+            dataset_split  = DATASET_SPLIT,
+            run_dir        = os.path.join(RESULTS_DIR, run_name),
+            summary        = summary_metrics,
+        )
 # ------------------------------------------------------------------------------
 
 
