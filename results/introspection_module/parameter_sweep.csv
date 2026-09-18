@@ -1,0 +1,31 @@
+module,dataset_split,params_json,false_alarm_rate,false_negative_rate,run_dir
+confidence_threshold,validation,"{""threshold"": 0.65, ""window"": 1}",0.0006683520762502543,0.17567567567567569,outputs/results/introspection_module/confidence_threshold/validation/run0
+confidence_threshold,validation,"{""threshold"": 0.65, ""window"": 2}",0.00023247028739139278,0.8986486486486487,outputs/results/introspection_module/confidence_threshold/validation/run1
+confidence_threshold,validation,"{""threshold"": 0.65, ""window"": 3}",0.0002034115014674687,0.9391891891891891,outputs/results/introspection_module/confidence_threshold/validation/run2
+confidence_threshold,validation,"{""threshold"": 0.75, ""window"": 1}",0.0009008223636416471,0.0,outputs/results/introspection_module/confidence_threshold/validation/run3
+confidence_threshold,validation,"{""threshold"": 0.75, ""window"": 2}",0.0007264696480981025,0.08108108108108109,outputs/results/introspection_module/confidence_threshold/validation/run4
+confidence_threshold,validation,"{""threshold"": 0.75, ""window"": 3}",0.0004939993607067097,0.6554054054054054,outputs/results/introspection_module/confidence_threshold/validation/run5
+confidence_threshold,validation,"{""threshold"": 0.85, ""window"": 1}",0.0012204690088048122,0.0,outputs/results/introspection_module/confidence_threshold/validation/run6
+confidence_threshold,validation,"{""threshold"": 0.85, ""window"": 2}",0.0009879987214134194,0.013513513513513514,outputs/results/introspection_module/confidence_threshold/validation/run7
+confidence_threshold,validation,"{""threshold"": 0.85, ""window"": 3}",0.0008136460058698748,0.08783783783783784,outputs/results/introspection_module/confidence_threshold/validation/run8
+confidence_threshold,validation,"{""threshold"": 0.95, ""window"": 1}",0.0012204690088048122,0.0,outputs/results/introspection_module/confidence_threshold/validation/run9
+confidence_threshold,validation,"{""threshold"": 0.95, ""window"": 2}",0.0012204690088048122,0.0,outputs/results/introspection_module/confidence_threshold/validation/run10
+confidence_threshold,validation,"{""threshold"": 0.95, ""window"": 3}",0.0012204690088048122,0.0,outputs/results/introspection_module/confidence_threshold/validation/run11
+rolling_confidence_trend,validation,"{""ewma_threshold"": 0.65, ""slope_threshold"": -1000000000.0}",0.0001743527155435446,0.9256756756756757,outputs/results/introspection_module/rolling_confidence_trend/validation/run0
+rolling_confidence_trend,validation,"{""ewma_threshold"": 0.75, ""slope_threshold"": -1000000000.0}",0.0006392932903263301,0.3716216216216216,outputs/results/introspection_module/rolling_confidence_trend/validation/run1
+rolling_confidence_trend,validation,"{""ewma_threshold"": 0.85, ""slope_threshold"": -1000000000.0}",0.0009589399354894952,0.0,outputs/results/introspection_module/rolling_confidence_trend/validation/run2
+rolling_confidence_trend,validation,"{""ewma_threshold"": 0.95, ""slope_threshold"": -1000000000.0}",0.0012204690088048122,0.0,outputs/results/introspection_module/rolling_confidence_trend/validation/run3
+rolling_confidence_trend,validation,"{""ewma_threshold"": 0.0, ""slope_threshold"": -0.02}",0.0006102345044024061,0.11486486486486487,outputs/results/introspection_module/rolling_confidence_trend/validation/run4
+rolling_confidence_trend,validation,"{""ewma_threshold"": 0.0, ""slope_threshold"": -0.05}",0.0,1.0,outputs/results/introspection_module/rolling_confidence_trend/validation/run5
+rolling_confidence_trend,validation,"{""ewma_threshold"": 0.0, ""slope_threshold"": -0.1}",0.0,1.0,outputs/results/introspection_module/rolling_confidence_trend/validation/run6
+rolling_confidence_trend,validation,"{""ewma_threshold"": 0.0, ""slope_threshold"": -0.2}",0.0,1.0,outputs/results/introspection_module/rolling_confidence_trend/validation/run7
+coast_count_threshold,validation,"{""threshold"": 1}",0.0010751750791851917,0.12837837837837837,outputs/results/introspection_module/coast_count_threshold/validation/run0
+coast_count_threshold,validation,"{""threshold"": 2}",0.0004068230029349374,0.4594594594594595,outputs/results/introspection_module/coast_count_threshold/validation/run1
+coast_count_threshold,validation,"{""threshold"": 3}",8.71763577717723e-05,0.75,outputs/results/introspection_module/coast_count_threshold/validation/run2
+kalman_filter_nis,validation,"{""chi2_threshold"": 1.386}",0.0012204690088048122,0.033783783783783786,outputs/results/introspection_module/kalman_filter_nis/validation/run0
+kalman_filter_nis,validation,"{""chi2_threshold"": 2.408}",0.0012204690088048122,0.060810810810810814,outputs/results/introspection_module/kalman_filter_nis/validation/run1
+kalman_filter_nis,validation,"{""chi2_threshold"": 3.219}",0.0012204690088048122,0.08108108108108109,outputs/results/introspection_module/kalman_filter_nis/validation/run2
+kalman_filter_nis,validation,"{""chi2_threshold"": 4.605}",0.0012204690088048122,0.12162162162162163,outputs/results/introspection_module/kalman_filter_nis/validation/run3
+kalman_filter_nis,validation,"{""chi2_threshold"": 5.991}",0.0012204690088048122,0.23648648648648649,outputs/results/introspection_module/kalman_filter_nis/validation/run4
+kalman_filter_nis,validation,"{""chi2_threshold"": 7.378}",0.001191410222880888,0.2972972972972973,outputs/results/introspection_module/kalman_filter_nis/validation/run5
+kalman_filter_nis,validation,"{""chi2_threshold"": 9.21}",0.001191410222880888,0.35135135135135137,outputs/results/introspection_module/kalman_filter_nis/validation/run6

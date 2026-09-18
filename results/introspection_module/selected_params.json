@@ -1,0 +1,39 @@
+{
+  "target_far": 0.00122,
+  "modules": {
+    "coast_count_threshold": {
+      "params": {
+        "threshold": 1
+      },
+      "false_alarm_rate": 0.0010751750791851,
+      "false_negative_rate": 0.1283783783783783,
+      "validation_run_dir": "outputs/results/introspection_module/coast_count_threshold/validation/run0"
+    },
+    "confidence_threshold": {
+      "params": {
+        "threshold": 0.85,
+        "window": 1
+      },
+      "false_alarm_rate": 0.0012204690088048,
+      "false_negative_rate": 0.0,
+      "validation_run_dir": "outputs/results/introspection_module/confidence_threshold/validation/run6"
+    },
+    "kalman_filter_nis": {
+      "params": {
+        "chi2_threshold": 1.386
+      },
+      "false_alarm_rate": 0.0012204690088048,
+      "false_negative_rate": 0.0337837837837837,
+      "validation_run_dir": "outputs/results/introspection_module/kalman_filter_nis/validation/run0"
+    },
+    "rolling_confidence_trend": {
+      "params": {
+        "ewma_threshold": 0.95,
+        "slope_threshold": -1000000000.0
+      },
+      "false_alarm_rate": 0.0012204690088048,
+      "false_negative_rate": 0.0,
+      "validation_run_dir": "outputs/results/introspection_module/rolling_confidence_trend/validation/run3"
+    }
+  }
+}
