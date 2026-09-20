@@ -1,0 +1,6 @@
+Model,Parameters,AWLT (s),AWLT (Divergence),AWLT (Premature Loss),FNR,FNR (Divergence),FNR (Premature Loss),FAR,Positional Divergence (Mean IoU Slope),Positional Divergence (Drift),AFDR,CEDR,FTPS (Average)
+None (Control),,N/A,N/A,N/A,1.00,1.00,1.00,0.00,-0.004603,56.0%,34.89%,24.63%,0.0051
+Static Confidence Threshold,"Threshold = 0.85, Window = 1, FNR = 0.000",0.80,N/A,0.80,0.0,0.0,0.0,0.0011,-0.004603,56.0%,34.89%,24.63%,0.0051
+Rolling Confidence Trend / EWMA,"EWMA Threshold = 0.95, FNR = 0.000",2.60,N/A,2.60,0.0,0.0,0.0,0.0012,-0.004603,56.0%,34.89%,24.63%,0.0051
+Consecutive Coast-Count,"Threshold = 1, FNR = 0.128",0.50,N/A,0.50,0.0769,0.0,0.0781,0.0010,-0.004603,56.0%,34.89%,24.63%,0.0051
+Kalman Filter NIS,Chi Squared Threshold = 1.386,2.60,N/A,2.60,0.0308,0.5,0.0234,0.0012,-0.004603,56.0%,34.89%,24.63%,0.0051
