@@ -1059,23 +1059,6 @@ def compute_introspection_metrics(df_matches, min_score, num_sequences,
     )
 
 
-def _parse_img_timestamp_ns(img_name):
-    """
-    Extract the nanosecond timestamp from the start of an image filename.
-
-    Args:
-        img_name: Image filename or path.
-
-    Returns:
-        The timestamp as an integer, or None if no leading digits are found.
-    """
-    # Get the Filename & Find any Leading Digits.
-    match = re.match(r'^(\d+)', os.path.basename(str(img_name)))
-
-    # Return the Timestamp if found, Otherwise Return None.
-    return int(match.group(1)) if match else None
-
-
 def write_introspection_outcomes_to_results(df_onset, first_warning, raw_results_dir,
                                              frame_rate_hz=DEFAULT_FRAME_RATE_HZ_,
                                              df_matches=None):
@@ -1290,21 +1273,13 @@ def write_introspection_outcomes_to_results(df_onset, first_warning, raw_results
                         elif info['t_warn_global'] is not None and info['t_warn_global'] <= total_frames:
                             local_warn_frame = info['t_warn_global']
 
-                        # Try to Extract Timestamps Directly from the Image Names.
-                        t0_ns = _parse_img_timestamp_ns(onset_img_name) if onset_img_name else None
-                        twarn_ns = _parse_img_timestamp_ns(warn_img_name) if warn_img_name else None
+                        # Use Standardised Global AWLT Metric Conversion into Seconds.
+                        t0_global = info['t0_global']
+                        t_warn_global = info['t_warn_global']
 
-                        # Prefer Timestamp-Based Lead Time when Both Timestamps Exist.
-                        if t0_ns is not None and twarn_ns is not None:
-                            lead_time_seconds = round((t0_ns - twarn_ns) / 1e11, 3)
-
-                        # Fall Back to Local Frame Numbers when Timestamps are Unavailable.
-                        elif local_onset_frame is not None and local_warn_frame is not None:
-                            lead_time_seconds = round((local_onset_frame - local_warn_frame) / frame_rate_hz, 3)
-
-                        # Use Global Frame Numbers as the Final Fallback.
-                        elif info['t_warn_global'] is not None:
-                            lead_time_seconds = round((info['t0_global'] - info['t_warn_global']) / frame_rate_hz, 3)
+                        # Only Warnings Strictly Before Onset Count as an Advance Warning.
+                        if t_warn_global is not None and t_warn_global < t0_global:
+                            lead_time_seconds = round((t0_global - t_warn_global) / frame_rate_hz, 3)
 
                     # Write the Calculated Outcomes into the Detection.
                     det['failure_onset_frame'] = local_onset_frame
