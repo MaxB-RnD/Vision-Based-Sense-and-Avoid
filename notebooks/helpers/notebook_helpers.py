@@ -962,7 +962,7 @@ def build_introspection_summary(
 
     # Add the Number of Warned Tracks to the Notes when the Count is Available.
     if num_warned is not None:
-        awlt_spread_notes.append(f"(N = {num_warned})")
+        awlt_spread_notes.append(f"(N={num_warned})")
 
     # Combine All AWLT Spread Notes into a Single String.
     awlt_spread_status = " ".join(awlt_spread_notes)
