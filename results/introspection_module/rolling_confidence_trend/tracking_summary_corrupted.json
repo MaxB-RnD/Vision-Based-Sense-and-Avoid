@@ -24,27 +24,48 @@
     "num_non_planned_aircraft": 11404,
     "cedr_mean": 0.24629138500947434,
     "cedr_num_qualifying_encounters": 208,
-    "awlt_mean": 10.484251968503939,
-    "awlt_median": 2.6,
-    "false_negative_rate": 0.0,
-    "false_alarm_rate": 0.0011521279097107923,
-    "num_failed_tracks": 130,
-    "num_correct_tracks": 42530,
+    "awlt_mean": 3.1756410256410224,
+    "awlt_median": 0.2,
+    "awlt_std": 12.578875157703896,
+    "awlt_q25": 0.1,
+    "awlt_q75": 0.7,
+    "awlt_iqr": 0.6,
+    "awlt_min": 0.1,
+    "awlt_max": 88.9,
+    "num_warned_in_advance": 78,
+    "num_missed": 10,
+    "false_negative_rate": 0.08620689655172414,
+    "false_alarm_rate": 0.6511627906976745,
+    "num_false_alarms": 28,
+    "num_failed_tracks": 116,
+    "num_correct_tracks": 43,
     "awlt_mean_by_failure_type": {
-        "early_termination": 10.484251968503939,
+        "early_termination": 3.1756410256410224,
         "sustained": null
     },
     "awlt_median_by_failure_type": {
-        "early_termination": 2.6,
+        "early_termination": 0.2,
         "sustained": null
     },
+    "awlt_std_by_failure_type": {
+        "early_termination": 12.578875157703896,
+        "sustained": null
+    },
+    "awlt_iqr_by_failure_type": {
+        "early_termination": 0.6,
+        "sustained": null
+    },
+    "num_warned_in_advance_by_failure_type": {
+        "early_termination": 78,
+        "sustained": 0
+    },
     "false_negative_rate_by_failure_type": {
-        "early_termination": 0.0,
-        "sustained": 0.0
+        "early_termination": 0.0782608695652174,
+        "sustained": 1.0
     },
     "num_failed_tracks_by_failure_type": {
-        "early_termination": 128,
-        "sustained": 2
+        "early_termination": 115,
+        "sustained": 1
     },
     "mean_iou_slope": -0.004602676484365299,
     "pct_tracks_drifting": 0.5602409638554217,

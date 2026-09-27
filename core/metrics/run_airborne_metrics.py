@@ -159,18 +159,35 @@ def summarize(summaries_dir):
             results['FTPS Eligible Tracks'].append(summary['ftps_num_eligible_tracks'])
 
             # Introspection Metrics.
+            results['AWLT Mean'].append(summary.get('awlt_mean'))
             results['AWLT Median'].append(summary.get('awlt_median'))
+            results['AWLT Std'].append(summary.get('awlt_std'))
+            results['AWLT IQR'].append(summary.get('awlt_iqr'))
+            results['AWLT Min'].append(summary.get('awlt_min'))
+            results['AWLT Max'].append(summary.get('awlt_max'))
+            results['Num Warned In Advance'].append(summary.get('num_warned_in_advance'))
             results['False Negative Rate'].append(round(summary['false_negative_rate'], 5) if summary['false_negative_rate'] is not None else None)
             results['False Alarm Rate'].append(round(summary['false_alarm_rate'], 5) if summary['false_alarm_rate'] is not None else None)
+            results['Num Correct Tracks'].append(summary.get('num_correct_tracks'))
+            results['Num False Alarms'].append(summary.get('num_false_alarms'))
             results['Mean IoU Slope'].append(summary['mean_iou_slope'])
 
             # Introspection Metrics. Split by Failure Type.
+            awlt_mean_by_type = summary.get('awlt_mean_by_failure_type', {})
             awlt_median_by_type = summary.get('awlt_median_by_failure_type', {})
+            awlt_std_by_type = summary.get('awlt_std_by_failure_type', {})
+            awlt_iqr_by_type = summary.get('awlt_iqr_by_failure_type', {})
+            num_warned_by_type = summary.get('num_warned_in_advance_by_failure_type', {})
             fnr_by_type = summary.get('false_negative_rate_by_failure_type', {})
             num_failed_by_type = summary.get('num_failed_tracks_by_failure_type', {})
             for failure_type, column_label in (('sustained', 'Divergence'), ('early_termination', 'Premature Loss')):
                 fnr_value = fnr_by_type.get(failure_type)
+                results['AWLT Mean ({})'.format(column_label)].append(awlt_mean_by_type.get(failure_type))
                 results['AWLT Median ({})'.format(column_label)].append(awlt_median_by_type.get(failure_type))
+                results['AWLT Std ({})'.format(column_label)].append(awlt_std_by_type.get(failure_type))
+                results['AWLT IQR ({})'.format(column_label)].append(awlt_iqr_by_type.get(failure_type))
+                results['Num Warned In Advance ({})'.format(column_label)].append(
+                    num_warned_by_type.get(failure_type))
                 results['False Negative Rate ({})'.format(column_label)].append(
                     round(fnr_value, 5) if fnr_value is not None else None)
                 results['Num Failed Tracks ({})'.format(column_label)].append(

@@ -718,7 +718,8 @@ def compute_ftps(df_matches, min_score, num_sequences,
 def augment_with_failure_onset_frame(df_matches, min_score,
                                       failure_threshold=DEFAULT_INTROSPECTION_FAILURE_THRESHOLD_,
                                       early_termination_margin=DEFAULT_EARLY_TERMINATION_MARGIN_,
-                                      reacquisition_grace_period=DEFAULT_REACQUISITION_GRACE_PERIOD_):
+                                      reacquisition_grace_period=DEFAULT_REACQUISITION_GRACE_PERIOD_,
+                                      min_track_frames=DEFAULT_FTPS_MIN_TRACK_FRAMES_):
     """
     Computes the Failure Onset Frame per Track, using two failure types.
 
@@ -726,9 +727,10 @@ def augment_with_failure_onset_frame(df_matches, min_score,
     such that the trailing unmatched-ratio, computed from t0 to the track's
     final frame, never again drops below failure_threshold. For early
     termination, it is the track's final submitted frame when the
-    ground-truth object remains present beyond early_termination_margin AND
-    is not successfully reacquired (by any track) within
-    reacquisition_grace_period frames of that final submission.
+    ground-truth object remains present for MORE than early_termination_margin
+    frames after that final submission AND is not successfully reacquired (by
+    any track) within reacquisition_grace_period frames of that final
+    submission.
 
     Args:
         df_matches (pd.DataFrame): Ground-truth/detection match dataframe, must 
@@ -742,14 +744,17 @@ def augment_with_failure_onset_frame(df_matches, min_score,
         failure_threshold (float): Unmatched-ratio threshold above which a track 
             is considered a genuine failure.
 
-        early_termination_margin (int): Minimum frame gap between a track's last
-            submission and the ground-truth object's last appearance to count as
-            a CANDIDATE early termination (before the reacquisition check below).
+        early_termination_margin (int): Number of frames by which a track may
+            fall short of the ground-truth object's last appearance and still be
+            successful.
 
         reacquisition_grace_period (int): Number of frames after a track's last
             submission during which the same ground-truth object may be picked
             back up by any track (same or new track_id) and still count as a
             successful reacquisition rather than a failure.
+
+        min_track_frames (int): Minimum track length (in frames) for a track to be
+            eligible for judgement. Shorter tracks are neither failed nor correct.
 
     Returns:
         pd.DataFrame: One row per failed track (either type), with columns
@@ -765,6 +770,9 @@ def augment_with_failure_onset_frame(df_matches, min_score,
     df_frame_level = df.groupby(['flight_id', 'track_id', 'frame'])['gt_det_match'].max().reset_index()
     df_frame_level = df_frame_level.sort_values(['flight_id', 'track_id', 'frame'])
 
+    # Number of Frames in Each Track.
+    track_num_frames = df_frame_level.groupby(['flight_id', 'track_id']).size()
+
     # Initialise Storage for Onset Rows.
     sustained_rows = []
     sustained_track_ids = set()
@@ -775,6 +783,10 @@ def augment_with_failure_onset_frame(df_matches, min_score,
         frames = group['frame'].tolist()
         matches = group['gt_det_match'].tolist()
         n = len(frames)
+
+        # Not Eligible for Judgement.
+        if n < min_track_frames:
+            continue
 
         # Skip Tracks Below the Failure Threshold.
         overall_unmatched_ratio = 1 - (sum(matches) / n)
@@ -840,6 +852,10 @@ def augment_with_failure_onset_frame(df_matches, min_score,
         if (flight_id, track_id) in sustained_track_ids:
             continue
 
+        # Skip Tracks that are Not Eligible for Judgement.
+        if track_num_frames.get((flight_id, track_id), 0) < min_track_frames:
+            continue
+
         # Skip Tracks Without a Dominant GT Object.
         if (flight_id, track_id) not in dominant_gt.index:
             continue
@@ -879,10 +895,142 @@ def augment_with_failure_onset_frame(df_matches, min_score,
         })
 
     # Combine Sustained and Early Termination Failures.
-    return pd.DataFrame(sustained_rows + early_term_rows)
+    return pd.DataFrame(sustained_rows + early_term_rows,
+                        columns=['flight_id', 'track_id', 'failure_onset_frame',
+                                 'tot_num_frames', 'failure_type'])
 
 
-def _awlt_and_fnr_for_tracks(df_onset, first_warning, frame_rate_hz=DEFAULT_FRAME_RATE_HZ_):
+def _eligible_track_ids(df_matches, min_track_frames=DEFAULT_FTPS_MIN_TRACK_FRAMES_):
+    """
+    Identify tracks that have enough frames to be eligible for judgement.
+
+    Args:
+        df_matches (pd.DataFrame): DataFrame containing the matched tracking results.
+            It must contain 'flight_id', 'track_id', and 'frame' columns.
+
+        min_track_frames (int): Minimum number of frames required for a track to be
+            considered eligible for judgement. Defaults to DEFAULT_FTPS_MIN_TRACK_FRAMES_.
+
+    Returns:
+        set: A set of (flight_id, track_id) tuples for tracks that contain at least 
+            min_track_frames frames.
+    """
+    # Count the Number of Matching Rows for Each Unique Frame Belonging to Each Track.
+    df_track_frames = df_matches.groupby(['flight_id', 'track_id', 'frame']).size().reset_index()
+
+    # Group the Unique Flight Combinations By Flight & Track to Determine How Many 
+    # Frames are Present.
+    track_lengths = df_track_frames.groupby(['flight_id', 'track_id']).size()
+
+    # Keep Only Tracks with at Least the Required Number of Frames.
+    return set(track_lengths[track_lengths >= min_track_frames].index)
+
+
+def _last_warning_episode_start_frame(df_matches, df_onset):
+    """
+    For Each Failed Track, the Frame on Which the CONTINUOUS Run of Warnings
+    Immediately Preceding its Failure Onset Frame Began.
+
+    Args:
+        df_matches (pd.DataFrame): Full Matches Table. Must Include 'flight_id',
+            'track_id', 'frame', 'warning'.
+        df_onset (pd.DataFrame): Rows for the Failed Tracks to Evaluate. Must
+            Include 'flight_id', 'track_id', 'failure_onset_frame'.
+
+    Returns:
+        Dict[Tuple, int]: Maps (flight_id, track_id) -> episode_start_frame, for
+        Every Failed Track with At Least One Warning Strictly Before Onset.
+        Tracks Never Warned Before Onset (Whether Never Warned at All, or Only
+        Warned At/After Onset) have No Entry.
+    """
+    # Nothing to Do without any Failed Tracks.
+    result = {}
+    if df_onset.empty:
+        return result
+
+    # Failure Onset Frame per Failed Track.
+    onset_lookup = {(row.flight_id, row.track_id): row.failure_onset_frame
+                     for row in df_onset.itertuples()}
+
+    # Only Rows that Belong to a Real Track.
+    df_tracks = df_matches[df_matches['track_id'].notna()]
+
+    # Walk Each Failed Track's Own Frame Sequence Backward from Onset.
+    for (flight_id, track_id), group in df_tracks.groupby(['flight_id', 'track_id']):
+        key = (flight_id, track_id)
+        t0 = onset_lookup.get(key)
+
+        # Only Failed Tracks are of Interest Here.
+        if t0 is None:
+            continue
+
+        # Frames Strictly Before Onset, in Frame Order.
+        pre = group.sort_values('frame')
+        pre = pre[pre['frame'] < t0]
+        if pre.empty:
+            continue
+        warn = pre['warning'].fillna(False).astype(bool).to_numpy()
+        frames = pre['frame'].to_numpy()
+
+        # No Warning Was Raised Before Onset at All.
+        warned_idx = np.flatnonzero(warn)
+        if warned_idx.size == 0:
+            continue
+
+        # Walk Backward from the Warning Nearest Onset Through the Unbroken Run.
+        start_idx = warned_idx[-1]
+        while start_idx - 1 >= 0 and warn[start_idx - 1]:
+            start_idx -= 1
+
+        # Record the Frame on Which that Run Began.
+        result[key] = int(frames[start_idx])
+
+    # Return the Per-Track Episode-Start Frames.
+    return result
+
+
+def _lead_time_spread_stats(lead_times):
+    """
+    Spread statistics for a set of per-track warning lead times.
+
+    Computed across tracks (one lead time per failed track that was warned
+    about strictly before onset), so they describe how consistent the warning
+    lead time is from track to track. Std and quartiles are undefined for a
+    single track, so they are returned as none Unless at least two lead times
+    are available.
+
+    Args:
+        lead_times (List[float]): Per-track lead times, in SECONDS.
+
+    Returns:
+        Dict: n, std (sample, ddof=1), q25, q75, iqr, min, max -- all in
+              SECONDS except n. Entries that cannot be computed are None.
+    """
+    # Start with Everything Undefined.
+    stats = dict(n=len(lead_times), std=None, q25=None, q75=None, iqr=None, min=None, max=None)
+
+    # No Warned Tracks, So Nothing to Summarise.
+    if not lead_times:
+        return stats
+
+    # Range is Defined for a Single Track.
+    lead_arr = np.asarray(lead_times, dtype=float)
+    stats['min'] = float(lead_arr.min())
+    stats['max'] = float(lead_arr.max())
+
+    # Spread Needs At Least Two Tracks. Sample (ddof=1) Standard Deviation.
+    if len(lead_arr) >= 2:
+        q25, q75 = np.percentile(lead_arr, [25, 75])
+        stats['std'] = float(np.std(lead_arr, ddof=1))
+        stats['q25'] = float(q25)
+        stats['q75'] = float(q75)
+        stats['iqr'] = float(q75 - q25)
+
+    # Return the Spread Statistics.
+    return stats
+
+
+def _awlt_and_fnr_for_tracks(df_onset, first_warning, episode_start, frame_rate_hz=DEFAULT_FRAME_RATE_HZ_):
     """
     Shared AWLT (Mean & Median) / False Negative Rate Calculation Over a Set
     of Failed Tracks.
@@ -895,14 +1043,18 @@ def _awlt_and_fnr_for_tracks(df_onset, first_warning, frame_rate_hz=DEFAULT_FRAM
         df_onset (pd.DataFrame): Rows for the Failed Tracks to Evaluate.
             Must Include 'flight_id', 'track_id', 'failure_onset_frame'.
         first_warning (Dict[Tuple, int]): Maps (flight_id, track_id) to the
-            First Frame on Which that Track was Ever Warned About.
+            First Frame on Which that Track was EVER Warned About (Regardless of
+            Onset).
+        episode_start (Dict[Tuple, int]): Maps (flight_id, track_id) to the Frame
+            on Which the Track's LAST Unbroken Run of Warnings Before Onset
+            Began.
         frame_rate_hz (float): Frame rate used to convert the raw frame-count
             lead time into seconds, matching the units written per-flight
             into result.json by write_introspection_outcomes_to_results().
 
     Returns:
-        Tuple[Optional[float], Optional[float], float, int, int]: (awlt_mean, awlt_median, fnr, num_warned_in_advance, num_missed).
-        awlt_mean / awlt_median are in SECONDS.
+        Tuple[Optional[float], Optional[float], Optional[float], int, int, Dict]: (awlt_mean, awlt_median, fnr, num_warned_in_advance, num_missed, awlt_spread).
+        fnr is None if there are no failed tracks. awlt_mean / awlt_median are in SECONDS. awlt_spread is the dict from _lead_time_spread_stats().
     """
     # AWLT & False Negative Rate (Over the Supplied Failed Tracks)
     lead_times = []
@@ -913,37 +1065,33 @@ def _awlt_and_fnr_for_tracks(df_onset, first_warning, frame_rate_hz=DEFAULT_FRAM
         # Store the Warnings & Onset Frame.
         key = (row['flight_id'], row['track_id'])
         t0 = row['failure_onset_frame']
-        t_warn = first_warning.get(key)
 
-        # Never Warned About at All. Counts as a Missed Failure.
-        if t_warn is None:
+        # Never Warned About at All (Before or During the Failure). Counts as a Missed Failure.
+        if first_warning.get(key) is None:
             num_missed += 1
 
-        # Only Warnings Issued Strictly Before Failure Count Toward AWLT.
-        elif t_warn < t0:
-            # Warned About STRICTLY BEFORE Onset. Convert the raw frame
-            # delta to seconds -- this used to be left as a raw frame
-            # count, which silently disagreed (by a factor of
-            # frame_rate_hz) with the per-flight warning_lead_time_seconds
-            # values written into each flight's result.json.
-            lead_times.append((t0 - t_warn) / frame_rate_hz)
+        # A Warning was Raised Before Onset. Use the Start of the Unbroken Warning Run Immediately 
+        # Preceding Onset, NOT the Track's First-Ever Warning.
+        elif key in episode_start:
+            lead_times.append((t0 - episode_start[key]) / frame_rate_hz)
 
     # Average Warning Lead Time (Seconds) Over Tracks Warned Before Failure Onset.
     awlt_mean = (sum(lead_times) / len(lead_times)) if lead_times else None
     awlt_median = float(np.median(lead_times)) if lead_times else None
 
     # False Negative Rate = Missed Failures / Total Failed Tracks.
-    fnr = (num_missed / len(df_onset)) if len(df_onset) else 0.0
+    fnr = (num_missed / len(df_onset)) if len(df_onset) else None
 
     # Return the Results. 
-    return awlt_mean, awlt_median, fnr, len(lead_times), num_missed
+    return awlt_mean, awlt_median, fnr, len(lead_times), num_missed, _lead_time_spread_stats(lead_times)
 
 
 def compute_introspection_metrics(df_matches, min_score, num_sequences,
                                    failure_threshold=DEFAULT_INTROSPECTION_FAILURE_THRESHOLD_,
                                    early_termination_margin=DEFAULT_EARLY_TERMINATION_MARGIN_,
                                    reacquisition_grace_period=DEFAULT_REACQUISITION_GRACE_PERIOD_,
-                                   frame_rate_hz=DEFAULT_FRAME_RATE_HZ_):
+                                   frame_rate_hz=DEFAULT_FRAME_RATE_HZ_,
+                                   min_track_frames=DEFAULT_FTPS_MIN_TRACK_FRAMES_):
     """
     Computes Average Warning Lead Time (AWLT), False Negative Rate, and False 
     Alarm Rate (FAR) Together.
@@ -952,9 +1100,10 @@ def compute_introspection_metrics(df_matches, min_score, num_sequences,
     groundwork, so they're computed in a single pass rather than three separate 
     functions re-deriving the same intermediate data.
 
-    AWLT: Mean number of frames between a track's first introspection warning 
-        and its Failure Onset Frame, averaged only over failed tracks that were 
-        warned about strictly BEFORE onset (a genuine advance warning).
+    AWLT: Mean number of frames between the start of a track's LAST unbroken
+        run of warnings before its Failure Onset Frame and that onset, averaged
+        only over failed tracks that were warned about strictly BEFORE onset (a
+        genuine advance warning).
 
     False Negative Rate: Proportion of genuine failures (per Failure Onset Frame 
         / FTPS) for which no warning was ever raised, before or during the failure.
@@ -978,6 +1127,8 @@ def compute_introspection_metrics(df_matches, min_score, num_sequences,
             -- see that function's docstring.
         reacquisition_grace_period (int): Forwarded to augment_with_failure_onset_frame()
             -- see that function's docstring.
+        min_track_frames (int): Minimum track length for a track to be eligible for
+            judgement (failed or correct). Forwarded to augment_with_failure_onset_frame().
 
     Returns:
         dict: {
@@ -985,13 +1136,13 @@ def compute_introspection_metrics(df_matches, min_score, num_sequences,
                     before its onset frame), pooled over ALL failure types,
             awlt_median: median lead time in SECONDS (None if no track was ever warned about strictly 
                     before its onset frame), pooled over ALL failure types,
-            fnr: False Negative Rate, pooled over ALL failure types,
-            far: False Alarm Rate,
+            fnr: False Negative Rate, pooled over ALL failure types (None if there are no failed tracks),
+            far: False Alarm Rate (correct tracks warned at least once / correct tracks; None if there are no correct tracks),
             num_failed_tracks: total tracks FTPS/onset classifies as genuine failures,
-            num_correct_tracks: total tracks never classified as a failure,
+            num_correct_tracks: total eligible tracks not classified as a failure,
             num_warned_in_advance: number of failed tracks that contributed a lead time to AWLT,
             num_missed: number of failed tracks never warned about at all,
-            num_false_alarms: number of correct tracks warned about anyway,
+            num_false_alarms: number of correct tracks warned about at least once,
             by_failure_type: dict keyed by failure_type ('sustained', i.e. divergence-type, and 
                              'early_termination', i.e. premature track-loss).
         }
@@ -1012,7 +1163,8 @@ def compute_introspection_metrics(df_matches, min_score, num_sequences,
     df_onset = augment_with_failure_onset_frame(
         df_matches, min_score, failure_threshold,
         early_termination_margin=early_termination_margin,
-        reacquisition_grace_period=reacquisition_grace_period)
+        reacquisition_grace_period=reacquisition_grace_period,
+        min_track_frames=min_track_frames)
     failed_track_ids = set(zip(df_onset['flight_id'], df_onset['track_id']))
 
     # Find the First Frame on Which Each Track Was Ever Warned About.
@@ -1020,26 +1172,29 @@ def compute_introspection_metrics(df_matches, min_score, num_sequences,
     df_warn = df_warn.rename(columns={'frame': 'first_warning_frame'})
     first_warning = {(r.flight_id, r.track_id): r.first_warning_frame for r in df_warn.itertuples()}
 
-    # "Correct" Tracks are Every Track NOT Classified as a Genuine Failure.
-    all_track_ids = set(zip(df_matches['flight_id'], df_matches['track_id']))
-    correct_track_ids = all_track_ids - failed_track_ids
+    # Find the Frame on Which Each Failed Track's LAST Unbroken Warning Run Before Onset Began.
+    episode_start = _last_warning_episode_start_frame(df_matches, df_onset)
+
+    # Correct Tracks are Every Real Track Eligible for Judgement (At Least min_track_frames
+    # Frames) that was NOT Classified as a Genuine Failure.
+    correct_track_ids = _eligible_track_ids(df_matches, min_track_frames) - failed_track_ids
 
     # False Alarm Rate (Over Correct Tracks). Not Failure-Type-Specific.
     num_false_alarms = sum(1 for key in correct_track_ids if key in first_warning)
-    far = (num_false_alarms / len(correct_track_ids)) if correct_track_ids else 0.0
+    far = (num_false_alarms / len(correct_track_ids)) if correct_track_ids else None
 
     # AWLT (Mean & Median) & False Negative Rate, Pooled Over ALL Failure Types.
-    awlt_mean, awlt_median, fnr, num_warned_in_advance, num_missed = _awlt_and_fnr_for_tracks(
-        df_onset, first_warning, frame_rate_hz=frame_rate_hz)
+    awlt_mean, awlt_median, fnr, num_warned_in_advance, num_missed, awlt_spread = _awlt_and_fnr_for_tracks(
+        df_onset, first_warning, episode_start, frame_rate_hz=frame_rate_hz)
 
     # Same Calculation Again, but Restricted to Each Failure Type in Turn.
     by_failure_type = {}
     for failure_type in sorted(df_onset['failure_type'].unique()) if len(df_onset) else []:
         df_onset_type = df_onset[df_onset['failure_type'] == failure_type]
-        type_awlt_mean, type_awlt_median, type_fnr, type_num_warned, type_num_missed = _awlt_and_fnr_for_tracks(
-            df_onset_type, first_warning, frame_rate_hz=frame_rate_hz)
+        type_awlt_mean, type_awlt_median, type_fnr, type_num_warned, type_num_missed, type_awlt_spread = _awlt_and_fnr_for_tracks(
+            df_onset_type, first_warning, episode_start, frame_rate_hz=frame_rate_hz)
         by_failure_type[failure_type] = dict(
-            awlt_mean=type_awlt_mean, awlt_median=type_awlt_median, fnr=type_fnr,
+            awlt_mean=type_awlt_mean, awlt_median=type_awlt_median, awlt_spread=type_awlt_spread, fnr=type_fnr,
             num_failed_tracks=len(df_onset_type),
             num_warned_in_advance=type_num_warned,
             num_missed=type_num_missed,
@@ -1047,7 +1202,7 @@ def compute_introspection_metrics(df_matches, min_score, num_sequences,
 
     # Return All Three Pooled Metrics Plus the Per-Failure-Type Breakdown.
     return dict(
-        awlt_mean=awlt_mean, awlt_median=awlt_median, fnr=fnr, far=far,
+        awlt_mean=awlt_mean, awlt_median=awlt_median, awlt_spread=awlt_spread, fnr=fnr, far=far,
         num_failed_tracks=len(df_onset),
         num_correct_tracks=len(correct_track_ids),
         num_warned_in_advance=num_warned_in_advance,
@@ -1056,10 +1211,11 @@ def compute_introspection_metrics(df_matches, min_score, num_sequences,
         by_failure_type=by_failure_type,
         df_onset=df_onset,
         first_warning=first_warning,
+        episode_start=episode_start,
     )
 
 
-def write_introspection_outcomes_to_results(df_onset, first_warning, raw_results_dir,
+def write_introspection_outcomes_to_results(df_onset, episode_start, raw_results_dir,
                                              frame_rate_hz=DEFAULT_FRAME_RATE_HZ_,
                                              df_matches=None):
     """
@@ -1067,7 +1223,8 @@ def write_introspection_outcomes_to_results(df_onset, first_warning, raw_results
 
     Args:
         df_onset: DataFrame containing failure onset information.
-        first_warning: Mapping of flight and track IDs to warning frames.
+        episode_start: Mapping of flight and track IDs to the start frame of the
+                       track's last unbroken warning run before onset.
         raw_results_dir: Directory containing the raw result folders.
         frame_rate_hz: Frame rate used to calculate lead time.
         df_matches: Optional DataFrame mapping global frames to image names.
@@ -1100,9 +1257,9 @@ def write_introspection_outcomes_to_results(df_onset, first_warning, raw_results
             frame_to_img[(str(row.flight_id), int(row.frame))] = os.path.basename(str(row.img_name))
 
     # Normalise Warning Keys so Flight & Track IDs Use the Same Format.
-    norm_first_warning = {}
-    for (fid, tid), warn_frame in first_warning.items():
-        norm_first_warning[(str(fid), _norm_track_id(tid))] = int(warn_frame)
+    norm_episode_start = {}
+    for (fid, tid), warn_frame in episode_start.items():
+        norm_episode_start[(str(fid), _norm_track_id(tid))] = int(warn_frame)
 
     # Build an Onset Lookup for Each Failed Track.
     onset_lookup = {}
@@ -1113,8 +1270,8 @@ def write_introspection_outcomes_to_results(df_onset, first_warning, raw_results
         # Get the Global Failure Onset Frame.
         t0_global = int(row.failure_onset_frame)
 
-        # Get the First Warning Frame for this Track, if Available.
-        t_warn_global = norm_first_warning.get((fid, norm_tid))
+        # Get this Track's AWLT Reference Frame (Last Warning-Episode Start), if Available.
+        t_warn_global = norm_episode_start.get((fid, norm_tid))
 
         # Store the Global Frames & Matching Image Names.
         onset_lookup[(fid, norm_tid)] = {
@@ -1720,8 +1877,9 @@ def run(flags):
 
     # Additional Introspection Visualisation Metrics.
     df_onset = introspection_metrics.pop('df_onset')
-    first_warning = introspection_metrics.pop('first_warning')
-    write_introspection_outcomes_to_results(df_onset, first_warning, flags.raw_results_dir, df_matches=df_gt_det_matches)
+    introspection_metrics.pop('first_warning')
+    episode_start = introspection_metrics.pop('episode_start')
+    write_introspection_outcomes_to_results(df_onset, episode_start, flags.raw_results_dir, df_matches=df_gt_det_matches)
 
     # saving intermidiate results
     log.info('Saving results')
@@ -1804,8 +1962,17 @@ def run(flags):
              len(df_cedr), DEFAULT_CEDR_MIN_ENCOUNTER_FRAMES_, summary['cedr_mean'])
     summary['awlt_mean'] = introspection_metrics['awlt_mean']
     summary['awlt_median'] = introspection_metrics['awlt_median']
+    summary['awlt_std'] = introspection_metrics['awlt_spread']['std']
+    summary['awlt_q25'] = introspection_metrics['awlt_spread']['q25']
+    summary['awlt_q75'] = introspection_metrics['awlt_spread']['q75']
+    summary['awlt_iqr'] = introspection_metrics['awlt_spread']['iqr']
+    summary['awlt_min'] = introspection_metrics['awlt_spread']['min']
+    summary['awlt_max'] = introspection_metrics['awlt_spread']['max']
+    summary['num_warned_in_advance'] = introspection_metrics['num_warned_in_advance']
+    summary['num_missed'] = introspection_metrics['num_missed']
     summary['false_negative_rate'] = introspection_metrics['fnr']
     summary['false_alarm_rate'] = introspection_metrics['far']
+    summary['num_false_alarms'] = introspection_metrics['num_false_alarms']
     summary['num_failed_tracks'] = introspection_metrics['num_failed_tracks']
     summary['num_correct_tracks'] = introspection_metrics['num_correct_tracks']
     summary['awlt_mean_by_failure_type'] = {
@@ -1813,6 +1980,15 @@ def run(flags):
     }
     summary['awlt_median_by_failure_type'] = {
         ft: metrics['awlt_median'] for ft, metrics in introspection_metrics['by_failure_type'].items()
+    }
+    summary['awlt_std_by_failure_type'] = {
+        ft: metrics['awlt_spread']['std'] for ft, metrics in introspection_metrics['by_failure_type'].items()
+    }
+    summary['awlt_iqr_by_failure_type'] = {
+        ft: metrics['awlt_spread']['iqr'] for ft, metrics in introspection_metrics['by_failure_type'].items()
+    }
+    summary['num_warned_in_advance_by_failure_type'] = {
+        ft: metrics['num_warned_in_advance'] for ft, metrics in introspection_metrics['by_failure_type'].items()
     }
     summary['false_negative_rate_by_failure_type'] = {
         ft: metrics['fnr'] for ft, metrics in introspection_metrics['by_failure_type'].items()
@@ -1823,9 +1999,13 @@ def run(flags):
     summary['mean_iou_slope'] = divergence_metrics['mean_iou_slope']
     summary['pct_tracks_drifting'] = divergence_metrics['pct_tracks_drifting']
     summary['num_eligible_drift_tracks'] = divergence_metrics['num_eligible_tracks']
-    log.info('AWLT Mean: %s | AWLT Median: %s | FNR: %.4f | FAR: %.4f | Mean IoU Slope: %s',
+    log.info('AWLT Mean: %s | AWLT Median: %s | AWLT Std: %s | AWLT IQR: %s | AWLT Range: [%s, %s] | N Warned: %d | '
+             'FNR: %s | FAR: %s (%d of %d Correct Tracks Warned) | Mean IoU Slope: %s',
              introspection_metrics['awlt_mean'], introspection_metrics['awlt_median'],
+             summary['awlt_std'], summary['awlt_iqr'], summary['awlt_min'], summary['awlt_max'],
+             introspection_metrics['num_warned_in_advance'],
              introspection_metrics['fnr'], introspection_metrics['far'],
+             introspection_metrics['num_false_alarms'], introspection_metrics['num_correct_tracks'],
              divergence_metrics['mean_iou_slope'])
     log.info('By Failure Type -- AWLT Median: %s | FNR: %s',
              summary['awlt_median_by_failure_type'], summary['false_negative_rate_by_failure_type'])

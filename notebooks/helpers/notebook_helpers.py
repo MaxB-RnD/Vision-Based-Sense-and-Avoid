@@ -902,6 +902,11 @@ def build_introspection_summary(
     # Extract Introspection Metrics -- Use .get() Rather than Direct Indexing, 
     # Since Older summary.json Files Won't Have these Keys.
     awlt_median = summary.get("awlt_median")
+    awlt_q25 = summary.get("awlt_q25")
+    awlt_q75 = summary.get("awlt_q75")
+    awlt_min = summary.get("awlt_min")
+    awlt_max = summary.get("awlt_max")
+    num_warned = summary.get("num_warned_in_advance")
     fnr = summary.get("false_negative_rate")
     far = summary.get("false_alarm_rate")
     num_correct = summary.get("num_correct_tracks")
@@ -912,6 +917,7 @@ def build_introspection_summary(
     # Per-Failure-Type Breakdown Metrics for Introspection -- Use .get() Rather
     # than Direct Indexing, Since Older summary.json Files Won't Have these Keys.
     awlt_median_by_type = summary.get("awlt_median_by_failure_type", {})
+    num_false_alarms    = summary.get("num_false_alarms")
     fnr_by_type         = summary.get("false_negative_rate_by_failure_type", {})
     num_failed_by_type  = summary.get("num_failed_tracks_by_failure_type", {})
 
@@ -942,7 +948,24 @@ def build_introspection_summary(
         return " | ".join(parts)
 
     # Format AWLT to 2 Decimal Places for Display.
-    awlt_status = _format_by_type_status(awlt_median_by_type, num_failed_by_type, lambda v: f"{v:.2f}")
+    awlt_median_status = _format_by_type_status(awlt_median_by_type, num_failed_by_type, lambda v: f"{v:.2f}")
+
+    # Format the AWLT Spread as "Q25-Q75".
+    awlt_spread_value = f"{awlt_q25:.2f}-{awlt_q75:.2f}" if awlt_q25 is not None else "N/A"
+
+    # Create an Empty List to Store Additional AWLT Spread Information.
+    awlt_spread_notes = []
+
+    # Add the AWLT Range to the Notes when Both the Minimum & Maximum Values are Available.
+    if awlt_min is not None and awlt_max is not None:
+        awlt_spread_notes.append(f"Range: {awlt_min:.2f}-{awlt_max:.2f}")
+
+    # Add the Number of Warned Tracks to the Notes when the Count is Available.
+    if num_warned is not None:
+        awlt_spread_notes.append(f"(N={num_warned})")
+
+    # Combine All AWLT Spread Notes into a Single String.
+    awlt_spread_status = " ".join(awlt_spread_notes)
 
     # Format FNR to 4 Decimal Places for Display.
     fnr_status  = _format_by_type_status(fnr_by_type, num_failed_by_type, lambda v: f"{v:.4f}")
@@ -954,9 +977,10 @@ def build_introspection_summary(
     rows = [
         # Introspection Metrics.
         {"Metric": "", "Value": "", "Status": ""},
-        {"Metric": "Average Warning Lead Time (s)",                "Value": f"{awlt_median:.2f}" if awlt_median is not None else "N/A",                  "Status": awlt_status},
+        {"Metric": "AWLT Median (s)",                             "Value": f"{awlt_median:.2f}" if awlt_median is not None else "N/A",                  "Status": awlt_median_status},
+        {"Metric": "AWLT IQR (s)",                                "Value": awlt_spread_value,                                                           "Status": awlt_spread_status},
         {"Metric": "False Negative Rate",                         "Value": f"{fnr:.4f}" if fnr is not None else "N/A",                                  "Status": fnr_status},
-        {"Metric": "False Alarm Rate (FAR)",                      "Value": f"{far:.4f}" if far is not None else "N/A",                                  "Status": f"N = {num_correct} Correct Tracks" if num_correct is not None else ""},
+        {"Metric": "False Alarm Rate (FAR)",                      "Value": f"{far:.4f}" if far is not None else "N/A",                                  "Status": f"{num_false_alarms} of {num_correct} Correct Tracks Warned" if (num_false_alarms is not None and num_correct is not None) else ""},
         {"Metric": "Positional Divergence (Mean IoU Slope)",      "Value": f"{mean_iou_slope:.6f}" if mean_iou_slope is not None else "N/A",            "Status": f"N = {num_drift_tracks} Tracks, {pct_drifting:.1%} Drifting" if num_drift_tracks is not None else ""},
 
         # Detection Metrics.
