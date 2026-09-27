@@ -24,7 +24,7 @@
 #         python -m src.introspection_module.select_introspection_configs --csv outputs/results/introspection_module/parameter_sweep.csv --show-curves
 #
 #   2. Then Select at a Shared Target FAR:
-#         python -m src.introspection_module.select_introspection_configs --csv outputs/results/introspection_module/parameter_sweep.csv --target-far select_target --output outputs/results/introspection_module/selected_params.json
+#         python -m src.introspection_module.select_introspection_configs --csv outputs/results/introspection_module/parameter_sweep.csv --target-far 0.525 --output outputs/results/introspection_module/selected_params.json
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -

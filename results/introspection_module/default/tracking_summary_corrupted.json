@@ -26,10 +26,19 @@
     "cedr_num_qualifying_encounters": 208,
     "awlt_mean": null,
     "awlt_median": null,
+    "awlt_std": null,
+    "awlt_q25": null,
+    "awlt_q75": null,
+    "awlt_iqr": null,
+    "awlt_min": null,
+    "awlt_max": null,
+    "num_warned_in_advance": 0,
+    "num_missed": 116,
     "false_negative_rate": 1.0,
     "false_alarm_rate": 0.0,
-    "num_failed_tracks": 130,
-    "num_correct_tracks": 42530,
+    "num_false_alarms": 0,
+    "num_failed_tracks": 116,
+    "num_correct_tracks": 43,
     "awlt_mean_by_failure_type": {
         "early_termination": null,
         "sustained": null
@@ -38,13 +47,25 @@
         "early_termination": null,
         "sustained": null
     },
+    "awlt_std_by_failure_type": {
+        "early_termination": null,
+        "sustained": null
+    },
+    "awlt_iqr_by_failure_type": {
+        "early_termination": null,
+        "sustained": null
+    },
+    "num_warned_in_advance_by_failure_type": {
+        "early_termination": 0,
+        "sustained": 0
+    },
     "false_negative_rate_by_failure_type": {
         "early_termination": 1.0,
         "sustained": 1.0
     },
     "num_failed_tracks_by_failure_type": {
-        "early_termination": 128,
-        "sustained": 2
+        "early_termination": 115,
+        "sustained": 1
     },
     "mean_iou_slope": -0.004602676484365299,
     "pct_tracks_drifting": 0.5602409638554217,
