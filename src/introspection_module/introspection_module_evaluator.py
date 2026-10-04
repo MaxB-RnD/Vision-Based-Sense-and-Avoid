@@ -187,6 +187,9 @@ def main() -> None:
     # 4 -> Kalman Filter NIS.
     module_list = ["none", "confidence_threshold", "rolling_confidence_trend", "coast_count_threshold", "kalman_filter_nis"]
 
+    # Select Predictor Architecture Type from Environment (Defaults to HRNet-W32).
+    PREDICTOR_KIND = os.environ.get("INTROSPECTION_PREDICTOR", "hrnet")   # "hrnet" | "winning"
+
     # Allow Introspection Module Selection from Command Line.
     if len(sys.argv) > 1:
         SELECTED_INTROSPECTION_MODULE = int(sys.argv[1])
@@ -206,8 +209,11 @@ def main() -> None:
     DATASET_PARTS = ["part1", "part2", "part3"]
     DATASET_ROOT = os.path.join(PROJECT_ROOT, "data", "corruption_dataset")
 
+    # Determine Base Result Directory Name Based on Selected Predictor Type.
+    results_name = module_list[SELECTED_INTROSPECTION_MODULE] if PREDICTOR_KIND == "hrnet" else "winning_solution"
+
     # Set Results Variables (Auto-Incrementing Run Directory).
-    RESULTS_DIR = os.path.join("outputs/results/introspection_module", module_list[SELECTED_INTROSPECTION_MODULE], DATASET_SPLIT)
+    RESULTS_DIR = os.path.join("outputs/results/introspection_module", results_name, DATASET_SPLIT)
     run_name = get_next_run_dir(RESULTS_DIR)
 
     # Evaluation Output Folders.
@@ -351,9 +357,15 @@ def main() -> None:
     # Instantiate the Selected Introspection Module.
     introspection_module = module_cls(**module_kwargs)
 
-    # Initialise the Predictor & Inject the Selected Introspection Module
-    predictor = HRNetW32IntrospectivePredictor()
-    predictor.introspection_module = introspection_module
+    # Initialise the Target Predictor Based on Architecture Selection.
+    if PREDICTOR_KIND == "winning":
+        # Import & Instantiate the Full Ensemble Predictor.
+        from src.introspection_module.winning_solution_star.seg_test import WinningSolutionPredictor
+        predictor = WinningSolutionPredictor()
+    else:
+        # Instantiate Single-Backbone Predictor & Inject the Introspection Module.
+        predictor = HRNetW32IntrospectivePredictor()
+        predictor.introspection_module = introspection_module
 
     # Load Models Before Measuring Complexity.
     print()
@@ -363,6 +375,9 @@ def main() -> None:
     print()
     complexity = measure_predictor_complexity(predictor)
 
+    # Run Warm-Up Compilation Over Dynamic Tensor Shapes.
+    predictor.warmup()
+    
     # Run Inference Over all Flights.
     print()
     predictor.run()
