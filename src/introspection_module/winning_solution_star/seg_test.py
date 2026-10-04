@@ -33,6 +33,12 @@
 #       - MIN_SCORE=0.6
 #           Minimum confidence score required for final output detections.
 #
+#       - STAGE_TIMING=1
+#           Enables detailed stage timing and profiling across pipeline models.
+#
+#       - COMPLEXITY_CROP_COUNT=6
+#           Upper bound multiplier for Stage-2 per-crop FLOPs computation.
+#
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
 # ------------------------------------------------------------------------------
@@ -65,9 +71,11 @@ import matplotlib.patches
 import matplotlib.pyplot as plt
  
 sys.path.insert(0, os.path.dirname(__file__))
+from src.introspection_module.utils import warmup_models as wm
 from notebooks.helpers.notebook_helpers import record_fps_stats
-from src.core_improvement.winning_solution_star.evaluator.airborne_detection import AirbornePredictor
-from src.core_improvement.winning_solution_star.seg_tracker.seg_tracker import SegDetector, SegTrackerFromOffset
+from src.introspection_module.utils.timing_profiling import StageTimer, full_frame_input_shape
+from src.introspection_module.winning_solution_star.evaluator.airborne_detection import AirbornePredictor
+from src.introspection_module.winning_solution_star.seg_tracker.seg_tracker import SegDetector, SegTrackerFromOffset
 
 # ------------------------------------------------------------------------------
 #                           CONFIGURATION VARIABLES
@@ -77,6 +85,9 @@ MIN_TRACK_LEN = int(os.getenv("MIN_TRACK_LEN", 30))
 
 # Minimum Confidence Score Required for a Detection to Be Committed to Results.
 MIN_SCORE = float(os.getenv("MIN_SCORE", 0.6))
+
+# Stage-2 FLOPs are Multiplied by this Variable. (6 = Max Crops Possible Per Frame).
+COMPLEXITY_CROP_COUNT = int(os.getenv("COMPLEXITY_CROP_COUNT", 6))
 # ------------------------------------------------------------------------------
 
 
@@ -96,6 +107,17 @@ class WinningSolutionPredictor(AirbornePredictor):
     test_data_path     = None
     vocabulary_path    = None
 
+    def __init__(self) -> None:
+        """
+        Initialises the predictor instance and applies timeout extensions.
+
+        Warm-up compilation and cold model compilation can take extended
+        periods. This lifts the base predictor setup and flight runtime limits.
+        """
+        super().__init__()
+        wm.apply_timeout_buffer(self)
+
+
     def inference_setup(self) -> None:
         """
         Initialises the segmentation detector and tracker.
@@ -110,49 +132,95 @@ class WinningSolutionPredictor(AirbornePredictor):
 
         # Accumulates Per-Frame Wall-Clock Inference Times Across All Flights.
         self.frame_times: List[float] = []
-    
+        self.timer = StageTimer(enabled=os.getenv("STAGE_TIMING") == "1")
+        self.detector.timer = self.timer
+
+        # Run Model Compilation and Input Shape Warm-Up.
+        self.warmup()
+
+
+    def warmup(self) -> None:
+        """
+        Compiles and exercises all dynamic tensor shapes before inference.
+
+        Warms up full-frame shapes and crop batch sizes (1 to 6) through the
+        underlying ensemble, clears alignment caches by reinstantiating the
+        tracker, and exports a warm-up timing report to the output directory.
+        """
+        # Check If Warm-Up Is Enabled.
+        if not wm.enabled():
+            print("[warm-up] disabled (WARMUP=0).", flush=True)
+            return
+
+        # Start the Warm-Up Timer & Create a New Warm-Up Report.
+        t0 = time.perf_counter()
+        report = wm.new_report("winning_solution_ensemble")
+
+        # Warm Up the Ensemble Using the Full Frame Shape.
+        wm.warmup_ensemble(self.detector, wm.resolve_full_shape(self.test_data_path), report)
+
+        # Create a Fresh Tracker (Its Constructor also Clears the Alignment Cache).
+        self.tracker = SegTrackerFromOffset(detector=self.detector)
+
+        # Save the Warm-Up Report & Timing.
+        wm.finish_report(report, os.path.join(self.get_results_directory(), "warmup_report.json"), t0)
+
+
+    def set_timer(self, timer: StageTimer) -> None:
+        """
+        Assigns an external StageTimer to the predictor and underlying detector.
+
+        Args:
+            timer (StageTimer): Timer instance to use for profiling stages.
+        """
+        self.timer = timer
+        self.detector.timer = timer
+
     
     def get_complexity_targets(self) -> List[dict]:
         """
-        Declares the models and input shapes to be measured by 
-        measure_predictor_complexity() in notebook_helpers.py. Returns one 
-        entry per model in the ensemble. 
- 
+        Declares the models and input configurations for FLOP/complexity profiling.
+
+        Stage 1 (seg1, seg2) runs on the full padded frame. Stage 2 (seg3, dla)
+        runs on 512x512 crops (batch 1-6) and is profiled per crop, multiplied by
+        COMPLEXITY_CROP_COUNT. The alignment model runs on a 2048x1280 crop.
+
         Returns:
-            List[dict]: Each entry has keys:
-                model        : torch.nn.Module to profile.
-                input_shape  : (B, C, H, W) dummy input shape.
-                label        : Human-readable name for logging.
+            List[dict]: Specifications of models, input shapes, multipliers,
+                input overrides, and logging labels.
         """
+        # Determine the Dimensions of the Full Image. 
+        full = full_frame_input_shape(self.test_data_path)
+
+        # Return the Model Shape Results. 
         return [
             {
                 "model"       : self.detector._model_seg1_raw,
-                "input_shape" : (1, 2, 2048, 2432),
+                "input_shape" : full,
                 "label"       : "HRNet32 (model_seg1)",
             },
             {
                 "model"       : self.detector._model_seg2_raw,
-                "input_shape" : (1, 2, 2048, 2432),
+                "input_shape" : full,
                 "label"       : "GerNet-M BiFPN (model_seg2)",
             },
             {
                 "model"       : self.detector._model_seg3_raw,
-                "input_shape" : (1, 2, 2048, 2432),
-                "label"       : "HRNet48 (model_seg3)",
+                "input_shape" : (1, 2, 512, 512),
+                "count"       : COMPLEXITY_CROP_COUNT,
+                "label"       : "HRNet48 (model_seg3) per crop",
             },
             {
                 "model"       : self.detector._model_dla_raw,
-                "input_shape" : (1, 2, 2048, 2432),
-                "label"       : "DLA60-Res2Next (model_dla)",
+                "input_shape" : (1, 2, 512, 512),
+                "count"       : COMPLEXITY_CROP_COUNT,
+                "label"       : "DLA60-Res2Next (model_dla) per crop",
             },
             {
-                "model"       : self.detector.model_transform.flops_model,
+                "model"          : self.detector.model_transform.flops_model,
                 "input_shape"    : None,
-                "input_override" : (
-                    torch.zeros(1, 1024, 1024),  # prev_frame.
-                    torch.zeros(1, 1024, 1024),  # cur_frame.
-                ),
-                "label"       : "ResNet34-TSM Transform (model_transform)",
+                "input_override" : (torch.zeros(1, 1280, 2048), torch.zeros(1, 1280, 2048)),
+                "label"          : "ResNet34-TSM Transform (model_transform)",
             },
         ]
 
@@ -285,19 +353,22 @@ class WinningSolutionPredictor(AirbornePredictor):
             if prev_frame is None:
                 prev_frame = frame
                 continue
-            
+
             # Start Timing FPS.
+            self.timer.begin_frame()
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
             _t0 = time.perf_counter()
 
-            # Run Tracker on the Current and Previous Frame.
-            results    = self.tracker.predict(image=frame, prev_image=prev_frame)
+            # Run Tracker on the Current & Previous Frame.
+            results = self.tracker.predict(image=frame, prev_image=prev_frame)
 
             # End Timing FPS.
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
-            self.frame_times.append(time.perf_counter() - _t0)
+            _total = time.perf_counter() - _t0
+            self.frame_times.append(_total)
+            self.timer.end_frame(_total)
             
             # Update the Previous Frame & Assign Class Name. 
             prev_frame = frame
@@ -322,7 +393,7 @@ class WinningSolutionPredictor(AirbornePredictor):
                 bbox = [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2]
 
                 # Register the Detection.
-                self.register_object_and_location(class_name, track_id, bbox, confidence, frame_image)
+                self.proxy_register_object_and_location(class_name, track_id, bbox, confidence, frame_image)
 
                 # Draw BBox Overlay if Visualisation is Enabled.
                 if self.visualize_pred and ax is not None:
@@ -354,6 +425,21 @@ class WinningSolutionPredictor(AirbornePredictor):
                 frame_times_sec = self.frame_times,
                 run_dir         = self.get_results_directory(),
                 warmup_frames   = 10,
+            )
+
+        # Save Stage Profiling Metrics to JSON if Enabled.
+        if self.timer.enabled and self.timer.n_frames:
+            self.timer.save(
+                os.path.join(self.get_results_directory(), "stage_timing.json"),
+                warmup_frames=10,
+                extra=dict(
+                    pipeline="winning_solution_ensemble",
+                    model_map={"stage1/model0": "HRNet32 (seg1)", 
+                               "stage1/model1": "GerNet-M (seg2)",
+                               "stage2/model0": "HRNet48 (seg3)", 
+                               "stage2/model1": "DLA60 (dla)"
+                    },
+                ),
             )
 # ------------------------------------------------------------------------------
 

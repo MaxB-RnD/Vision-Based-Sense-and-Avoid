@@ -91,7 +91,9 @@ class HRNetW32IntrospectivePredictor(HRNetW32TrackToDetectPredictor):
 
         # Initialise Counters Used for Reporting.
         self.num_escalations: int = 0
+        self.num_track_checks: int = 0
         self.num_frames_processed: int = 0
+        self.num_escalated_frames: int = 0
 
         ### TODO: Restore Conditional Ensemble Loading.
         self._ensemble_detector = None
@@ -252,9 +254,12 @@ class HRNetW32IntrospectivePredictor(HRNetW32TrackToDetectPredictor):
             self, frame, prev_frame, frame_name, flight_id
         )
         self.num_frames_processed += 1
+        _ti = time.perf_counter()
 
         # Evaluate Each Detection Using the Selected Introspection Strategy.
         updated_detections = []
+        frame_escalated = False
+
         for det in detections:
             track_id = det.get("track_id", -1)
             confidence = det.get("confidence", 0.0)
@@ -265,6 +270,9 @@ class HRNetW32IntrospectivePredictor(HRNetW32TrackToDetectPredictor):
             if track_id < 0:
                 updated_detections.append(det)
                 continue
+
+            # Increment the Number of Valid Tracks. 
+            self.num_track_checks += 1
 
             # Extract the Bbox-Centre Position.
             x1, y1, x2, y2 = det["bbox"]
@@ -295,6 +303,9 @@ class HRNetW32IntrospectivePredictor(HRNetW32TrackToDetectPredictor):
 
                 # Mark this Detection as Having Been Warned About.
                 det["warning"] = True
+
+                # Mark that the Frame was Escalated. 
+                frame_escalated = True
             else:
                 # No Flag Raised for this Track on this Frame.
                 det["warning"] = False
@@ -302,11 +313,17 @@ class HRNetW32IntrospectivePredictor(HRNetW32TrackToDetectPredictor):
             # Append the Detection to this Frame's Output.
             updated_detections.append(det)
 
+        # Increase the Escaltation Count if Valid. 
+        if frame_escalated:
+            self.num_escalated_frames += 1
+
         # Update Timing to Include Introspection and Escalation Overhead.
+        self.timer.add("introspection", time.perf_counter() - _ti)
         if torch.cuda.is_available():
             torch.cuda.synchronize()
         if self.frame_times:
             self.frame_times[-1] = time.perf_counter() - t0
+            self.timer.amend_last_total(self.frame_times[-1])
 
         # Return the Updated Detections.
         return updated_detections
@@ -327,12 +344,15 @@ class HRNetW32IntrospectivePredictor(HRNetW32TrackToDetectPredictor):
 
         # Calculate and Report the Frequency of Escalation Requests.
         if self.num_frames_processed:
-            escalation_rate = self.num_escalations / self.num_frames_processed
-
+            # Calculate the Escalation Rate for Tracks and Frames.
+            track_rate = self.num_escalations / max(self.num_track_checks, 1)
+            frame_rate = self.num_escalated_frames / max(self.num_frames_processed, 1)
+            
             # Log the Final Introspection Statistics.
             log(LogLevel.INFO, "hrnetw32_introspective:run",
-                "Escalations: %d / %d Frame-Track Checks (%.4f Rate) --> Introspection: %s",
-                self.num_escalations, self.num_frames_processed, escalation_rate,
+                "Escalations: %d / %d Track Checks (%.4f) | Escalated Frames: %d / %d (%.4f) --> Introspection: %s",
+                self.num_escalations, self.num_track_checks, track_rate,
+                self.num_escalated_frames, self.num_frames_processed, frame_rate,
                 self.introspection_module.name)
 # ------------------------------------------------------------------------------
 

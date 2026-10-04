@@ -61,7 +61,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from omegaconf import OmegaConf
+
 from effdet import get_efficientdet_config, EfficientDet
+import effdet.efficientdet as _effdet_impl
+_effdet_impl._USE_SCALE = True
 
 from . import config
 from . import models_dla_conv

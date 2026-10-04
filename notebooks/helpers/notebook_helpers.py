@@ -439,8 +439,8 @@ def measure_model_complexity(
 
             # Compute Total FLOPs (Counts MACs * 2 Internally).
             total_flops = flop_counter.total()
-            gflops = round(total_flops / 1e9, 3) # Convert FLOPs to GFLOPs.
-            gmacs  = round(gflops / 2.0, 3)      # Convert GFLOPs to GMACs.
+            gflops = round(gmacs * 2.0, 3)        # Convert FLOPs to GFLOPs.
+            gmacs  = round(total_flops / 1e9, 3)  # Convert GFLOPs to GMACs.         
 
         except Exception as e:
             # Create Tag for Storing the Model Name.
@@ -521,15 +521,16 @@ def measure_predictor_complexity(predictor: "AirbornePredictor") -> dict:
         # Accumulate Parameter Counts (Always Safe to Sum).
         totals["total_params"]     += result["total_params"]
         totals["trainable_params"] += result["trainable_params"]
-
+        
         # If Any Model Fails FLOPs Calculation, Mark Entire Result as Invalid.
         if result["gflops"] == -1.0:
             flops_valid = False
 
         # Only Accumulate FLOPs/MACs if All Previous Computations are Valid.
         if flops_valid:
-            totals["gflops"] += result["gflops"]
-            totals["gmacs"]  += result["gmacs"]
+            count = int(target.get("count", 1))
+            totals["gflops"] += result["gflops"] * count
+            totals["gmacs"]  += result["gmacs"]  * count
     
     # Finalise FLOPs/MACs Results.
     if not flops_valid:

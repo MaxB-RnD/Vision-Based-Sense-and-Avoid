@@ -39,6 +39,8 @@ import torch
 import numpy as np
 import cv2
 
+from contextlib import nullcontext
+
 from . import models_segmentation
 from . import models_transformation
 from . import offset_grid_to_transform
@@ -237,6 +239,9 @@ class SegDetector:
         # Frame Counter (Used Externally for Diagnostics).
         self.frames = 0
 
+        # Optional StageTimer (Set By the Predictor).
+        self.timer = None
+
 
     def reset_transform_cache(self) -> None:
         """
@@ -344,37 +349,41 @@ class SegDetector:
         img_crop      = img     [y0:y0 + crop_h, x0:x0 + crop_w]
         img_crop_prev = prev_img[y0:y0 + crop_h, x0:x0 + crop_w]
 
-        # Convert Cropped Images into PyTorch Tensors & Normalise to [0, 1].
-        img_crop_t      = torch.from_numpy(img_crop      / 255.0).float().to(self.device)
-        img_crop_prev_t = torch.from_numpy(img_crop_prev / 255.0).float().to(self.device)
+        # Profile Feature Extraction & Offset Inference via Alignment Network.
+        with self._stage("transform/model"):
+            # Convert Cropped Images into PyTorch Tensors & Normalise to [0, 1].
+            img_crop_t      = torch.from_numpy(img_crop      / 255.0).float().to(self.device)
+            img_crop_prev_t = torch.from_numpy(img_crop_prev / 255.0).float().to(self.device)
 
-        # Run Inference Without Gradient Tracking for Efficiency.
-        with torch.no_grad():
-            with torch.amp.autocast(self.device.type):
-                heatmap, offsets = self.model_transform(
-                    img_crop_prev_t[None, :], img_crop_t[None, :]
-                )
+            # Run Alignment Network Forward Pass.
+            with torch.no_grad():
+                with torch.amp.autocast(self.device.type):
+                    heatmap, offsets = self.model_transform(
+                        img_crop_prev_t[None, :], img_crop_t[None, :]
+                    )
 
-        # Move Model Outputs Back to CPU NumPy Arrays.
-        heatmap = heatmap.detach().float().cpu().numpy()
-        offsets = offsets.detach().float().cpu().numpy()
+            # Move Model Outputs Back to CPU NumPy Arrays.
+            heatmap = heatmap.detach().float().cpu().numpy()
+            offsets = offsets.detach().float().cpu().numpy()
 
-        # Create a Regular Grid of Points in the Previous Frame Crop.
-        prev_points = np.zeros((2, crop_h_points, crop_w_points), dtype=np.float32)
-        prev_points[0, :, :] = np.arange(16, crop_w, 32)[None, :]
-        prev_points[1, :, :] = np.arange(16, crop_h, 32)[:, None]
-        prev_points = prev_points[..., 2:-2, 2:-2]
+        # Profile Affine Transformation Fitting & Least-Squares Solver.
+        with self._stage("transform/solve"):
+            # Create a Regular Grid of Points in the Previous Frame Crop.
+            prev_points = np.zeros((2, crop_h_points, crop_w_points), dtype=np.float32)
+            prev_points[0, :, :] = np.arange(16, crop_w, 32)[None, :]
+            prev_points[1, :, :] = np.arange(16, crop_h, 32)[:, None]
+            prev_points = prev_points[..., 2:-2, 2:-2]
 
-        # Convert Crop-Local Coordinates Back into Full-Image Coordinates.
-        points_offset = np.array([x0, y0])[:, None]
-        cur_points    = prev_points + offsets[0]
+            # Convert Crop-Local Coordinates Back into Full-Image Coordinates.
+            points_offset = np.array([x0, y0])[:, None]
+            cur_points    = prev_points + offsets[0]
 
-        # Estimate the Global Affine Transform Using Weighted Point Matches.
-        tr, err = offset_grid_to_transform.offset_grid_to_transform(
-            prev_frame_points = prev_points.reshape(2, -1) + points_offset,
-            cur_frame_points  = cur_points.reshape(2, -1)  + points_offset,
-            points_weight     = heatmap[0].reshape(-1) ** 2,
-        )
+            # Estimate the Global Affine Transform Using Weighted Point Matches.
+            tr, err = offset_grid_to_transform.offset_grid_to_transform(
+                prev_frame_points = prev_points.reshape(2, -1) + points_offset,
+                cur_frame_points  = cur_points.reshape(2, -1)  + points_offset,
+                points_weight     = heatmap[0].reshape(-1) ** 2,
+            )
 
         # Return the Estimated Affine Transformation Matrix.
         return tr
@@ -405,20 +414,23 @@ class SegDetector:
             )
         X = self._detect_buffer
 
-        # Estimate the Full Affine Transform Between Frames.
-        prev_tr = self.estimate_transformation_full(prev_img=prev_image, img=image)
+        # Profile Full Inter-Frame Alignment Transform.
+        with self._stage("transform"):
+            prev_tr = self.estimate_transformation_full(prev_img=prev_image, img=image)
 
-        # Warp the Previous Frame into Alignment with the Current Frame.
-        prev_img_aligned = cv2.warpAffine(
-            prev_image,
-            prev_tr[:2, :],
-            dsize=(w, h),
-            flags=cv2.INTER_LINEAR,
-        )
+        # Profile Image Alignment Warping & Input Preparation.
+        with self._stage("prep"):
+            # Warp the Previous Frame into Alignment with the Current Frame.
+            prev_img_aligned = cv2.warpAffine(
+                prev_image,
+                prev_tr[:2, :],
+                dsize=(w, h),
+                flags=cv2.INTER_LINEAR,
+            )
 
-        # Insert Aligned Previous Frame and Current Frame into Input Buffer.
-        X[0, 0, :, padding:-padding] = prev_img_aligned
-        X[0, 1, :, padding:-padding] = image
+            # Insert Aligned Previous Frame & Current Frame into Input Buffer.
+            X[0, 0, :, padding:-padding] = prev_img_aligned
+            X[0, 1, :, padding:-padding] = image
 
         # Run the Four-Model Ensemble to Produce Detection Candidates.
         detected_objects = predict_ensemble.predict_ensemble(
@@ -428,9 +440,23 @@ class SegDetector:
             full_res_threshold = 0.35,
             x_offset           = -padding,
             device             = self.device,
+            timer              = self.timer,
         )
 
         return detected_objects, prev_tr
+
+
+    def _stage(self, name: str):
+        """
+        Wraps Execution Within a Profiling Stage Context if Timer is Configured.
+
+        Args:
+            name (str): Identifier for the profiling stage.
+
+        Returns:
+            ContextManager: Stage context or nullcontext if timer is absent.
+        """
+        return self.timer.stage(name) if self.timer is not None else nullcontext()
 # ------------------------------------------------------------------------------
 
 
@@ -529,42 +555,46 @@ class SegTrackerFromOffset:
             image=image, prev_image=prev_image
         )
 
-        # Convert Raw Detections into DetectedItem Structures for the Tracker.
-        detected_items = [
-            DetectedItem(
-                cx         = it['cx'] + it['offset'][0],
-                cy         = it['cy'] + it['offset'][1],
-                w          = it['w'],
-                h          = it['h'],
-                distance   = it['distance'],
-                confidence = it['conf'],
-                track_id   = -1,
-                dx         = it['tracking'][0],
-                dy         = it['tracking'][1],
-                item_id    = '',
+        # Profile Tracking Assignment & Output Formulation.
+        with self.detector._stage("tracking"):
+            # Convert Raw Detections into DetectedItem Structures for the Tracker.
+            detected_items = [
+                DetectedItem(
+                    cx         = it['cx'] + it['offset'][0],
+                    cy         = it['cy'] + it['offset'][1],
+                    w          = it['w'],
+                    h          = it['h'],
+                    distance   = it['distance'],
+                    confidence = it['conf'],
+                    track_id   = -1,
+                    dx         = it['tracking'][0],
+                    dy         = it['tracking'][1],
+                    item_id    = '',
+                )
+
+                # Only Keep Sufficiently Confident Detections.
+                for it in detected_objects
+                if it['conf'] >= self.tracker.threshold_to_continue
+            ]
+
+            # Update Tracker State and Assign Track IDs.
+            items_to_submit = self.tracker.process_frame_detections(
+                detected_items, prev_tr
             )
 
-            # Only Keep Sufficiently Confident Detections.
-            for it in detected_objects
-            if it['conf'] >= self.tracker.threshold_to_continue
-        ]
+            # Format & Return Final Tracked Detections.
+            out = [
+                dict(
+                    cx       = it.cx,
+                    cy       = it.cy,
+                    w        = it.w,
+                    h        = it.h,
+                    track_id = it.track_id,
+                    conf     = it.confidence,
+                    offset   = [0.0, 0.0],
+                )
+                for it in items_to_submit
+            ]
 
-        # Update Tracker State and Assign Track IDs.
-        items_to_submit = self.tracker.process_frame_detections(
-            detected_items, prev_tr
-        )
-
-        # Format and Return Final Tracked Detections.
-        return [
-            dict(
-                cx       = it.cx,
-                cy       = it.cy,
-                w        = it.w,
-                h        = it.h,
-                track_id = it.track_id,
-                conf     = it.confidence,
-                offset   = [0.0, 0.0],
-            )
-            for it in items_to_submit
-        ]
+        return out
 # ------------------------------------------------------------------------------
