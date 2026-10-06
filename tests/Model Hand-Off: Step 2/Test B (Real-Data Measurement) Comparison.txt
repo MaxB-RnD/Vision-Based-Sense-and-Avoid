@@ -1,0 +1,23 @@
+python - <<'EOF' 2>&1 | tee outputs/results/verification_testing/"Model Hand-Off: Step 2"/"Test B Comparison Results.txt"
+import json, os, numpy as np
+root = os.getenv("INFERENCE_OUTPUT_PATH", os.getcwd() + "/data/results/")
+flights = ["part11b3a52c0f1764533b32e36992b17b6e1", "part1036edfd6ece44c37b8ca9562fd701682"]
+
+def load(env, fl):
+    d = {}
+    for r in json.load(open(os.path.join(root, env, fl, "result.json"))):
+        for det in r["detections"]:
+            d[(r["img_name"], det["track_id"])] = det
+    return d
+
+for fl in flights:
+    a, b = load("step2_diag", fl), load("step2_fixed", fl)
+    both = set(a) & set(b)
+    shift = lambda k: float(np.hypot(a[k]["x"] - b[k]["x"], a[k]["y"] - b[k]["y"]))
+    coast = [shift(k) for k in both if "COASTED" in (a[k]["source"], b[k]["source"])]
+    other = [shift(k) for k in both if "COASTED" not in (a[k]["source"], b[k]["source"])]
+    print(fl)
+    print(f"  detections before={len(a)} after={len(b)}  only-before={len(set(a)-set(b))}  only-after={len(set(b)-set(a))}")
+    print(f"  coasted shift (px): n={len(coast)} median={np.median(coast) if coast else 0:.2f} max={max(coast) if coast else 0:.2f}")
+    print(f"  non-coasted shift (px): n={len(other)} max={max(other) if other else 0:.2f}")
+EOF

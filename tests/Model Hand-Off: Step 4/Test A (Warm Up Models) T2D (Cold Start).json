@@ -1,0 +1,16 @@
+{
+  "which": "t2d",
+  "tag": "cold",
+  "gpu": "Quadro RTX 8000",
+  "setup_s": 324.7262414290017,
+  "warmup_total_s": 319.6,
+  "flight_s": 151.28166545298882,
+  "frames": 1198,
+  "median_ms": 97.23918800591491,
+  "p95_ms": 103.36562125885392,
+  "max_ms": 112.33043999527581,
+  "stalled_frames": 0,
+  "graphs_before": 3,
+  "graphs_after": 3,
+  "inductor_cache_dir": "/tmp/ind_o7ej8sge"
+}

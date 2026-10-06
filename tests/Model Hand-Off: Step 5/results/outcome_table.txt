@@ -1,0 +1,30 @@
+range limit: 699.9811862165178 m | A=outputs/results/introspection_module/none/test/run2 | B=outputs/results/introspection_module/winning_solution/test/run1
+
+=== ALL in-range GT frames  (N = 36755 GT frames) ===
+                  ensemble hit  ensemble miss
+HRNet hit                11694           1264
+HRNet miss                 103          23694
+HRNet recall 0.3526 | ensemble recall 0.3210
+escalation gain: ensemble recovers 103 of 23797 HRNet misses (0.4%)
+ensemble loses 1264 of 12958 HRNet hits (9.8%)
+HRNet hits that are coasted-only: 316
+
+=== above horizon  (N = 11819 GT frames) ===
+                  ensemble hit  ensemble miss
+HRNet hit                 4231            336
+HRNet miss                  46           7206
+HRNet recall 0.3864 | ensemble recall 0.3619
+escalation gain: ensemble recovers 46 of 7252 HRNet misses (0.6%)
+ensemble loses 336 of 4567 HRNet hits (7.4%)
+HRNet hits that are coasted-only: 100
+
+=== below horizon  (N = 908 GT frames) ===
+                  ensemble hit  ensemble miss
+HRNet hit                  310             25
+HRNet miss                   0            573
+HRNet recall 0.3689 | ensemble recall 0.3414
+escalation gain: ensemble recovers 0 of 573 HRNet misses (0.0%)
+ensemble loses 25 of 335 HRNet hits (7.5%)
+HRNet hits that are coasted-only: 8
+
+saved outputs/results/verification_testing/Model Hand-Off: Step 5/outcomes_frame_level.csv

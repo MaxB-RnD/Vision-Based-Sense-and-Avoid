@@ -1,0 +1,58 @@
+python - <<'EOF' 2>&1 | tee outputs/results/introspection_module/step1_checks/testA_filter_parity.txt
+from src.introspection_module.winning_solution_star import seg_test as seg_mod
+from src.introspection_module.hrnetw32_introspective import hrnetw32_track_to_detect_test as t2d_mod
+
+assert seg_mod.MIN_TRACK_LEN == t2d_mod.MIN_TRACK_LEN
+assert seg_mod.MIN_SCORE == t2d_mod.MIN_SCORE
+MTL, MS = seg_mod.MIN_TRACK_LEN, seg_mod.MIN_SCORE
+print(f"Constants: MIN_TRACK_LEN={MTL} MIN_SCORE={MS} (identical in both modules)")
+
+seq = []
+for i in range(80):
+    seq.append((i, 1, 0.9))                           # clean track
+    seq.append((i, 2, 0.9 if i % 2 == 0 else 0.5))    # half below MIN_SCORE
+    if i >= 50:
+        seq.append((i, 3, 0.9))                       # late track
+
+def reference():
+    count, out = {}, []
+    for i, tid, conf in seq:
+        count[tid] = count.get(tid, 0) + 1
+        if count[tid] > MTL and conf >= MS:
+            out.append((tid, f"f{i}.png"))
+    return out
+
+def run(cls, method):
+    pred = cls.__new__(cls)
+    out = []
+    pred.register_object_and_location = lambda cn, tid, bbox, conf, img, **kw: out.append((tid, img))
+    pred.track_len_so_far, pred.visited_frame = {}, {}
+    fn = getattr(pred, method)
+    for i, tid, conf in seq:
+        fn("airborne", tid, [0, 0, 10, 10], conf, f"f{i}.png")
+    return pred, fn, out
+
+seg_pred, seg_fn, seg_out = run(seg_mod.WinningSolutionPredictor, "proxy_register_object_and_location")
+t2d_pred, t2d_fn, t2d_out = run(t2d_mod.HRNetW32TrackToDetectPredictor, "_proxy_register")
+ref = reference()
+print(f"Registered: seg={len(seg_out)} t2d={len(t2d_out)} reference={len(ref)}")
+assert seg_out == t2d_out == ref, "filter parity FAILED"
+print("Parity on synthetic sequence: OK")
+
+for name, fn in (("seg", seg_fn), ("t2d", t2d_fn)):
+    raised = False
+    try:
+        fn("airborne", 1, [0, 0, 10, 10], 0.9, "f79.png")
+    except Exception:
+        raised = True
+    assert raised, f"{name}: duplicate ID not caught"
+print("Duplicate-ID guard: OK (both)")
+
+t2d_pred.track_len_so_far, t2d_pred.visited_frame = {}, {}
+n_before = len(t2d_out)
+for k in range(40):
+    t2d_fn("airborne", 9, [0, 0, 10, 10], 0.9, f"c{k}.png", source="COASTED")
+assert len(t2d_out) == n_before
+print("Coasted frames do not build track length (t2d): OK")
+print("Test A passed")
+EOF

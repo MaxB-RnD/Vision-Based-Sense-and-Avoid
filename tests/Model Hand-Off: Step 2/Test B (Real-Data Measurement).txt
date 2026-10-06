@@ -1,0 +1,89 @@
+DATASET_ENV=step2_fixed PARTIAL_RUN_FLIGHTS=part11b3a52c0f1764533b32e36992b17b6e1,part1036edfd6ece44c37b8ca9562fd701682 python - <<'EOF' 2>/dev/null | tee outputs/results/verification_testing/"Model Hand-Off: Step 2"/"Test B (Real-Data Measurement) Results (Fixed).txt"
+import numpy as np
+from src.introspection_module.hrnetw32_introspective.hrnetw32_track_to_detect_test import HRNetW32TrackToDetectPredictor as P
+
+COAST_LOG = []
+PAIRS = []
+OUTCOMES = {}
+
+
+class Diag(P):
+    def flight_started(self):
+        super().flight_started()
+        self._snap = {}
+
+    def _estimate_transform(self, prev_img, img):
+        tr = super()._estimate_transform(prev_img, img)
+        self._last_tr = tr
+        return tr
+
+    def _coast_item(self, last_item, prev_tr, coast_count):
+        pos = np.array([last_item.cx, last_item.cy])
+        shift = (prev_tr[:2, :2] @ pos + prev_tr[:2, 2]) - pos
+        COAST_LOG.append((coast_count, float(np.hypot(*shift)), float(np.hypot(last_item.dx, last_item.dy))))
+        return super()._coast_item(last_item, prev_tr, coast_count)
+
+    def run_model_on_frame(self, frame, prev_frame, frame_name, flight_id):
+        out = super().run_model_on_frame(frame, prev_frame, frame_name, flight_id)
+        if prev_frame is None:
+            return out
+        T = self._last_tr
+        for tid, it in self.active_tracks.items():
+            src = getattr(it, "source", "DETECTED")
+            prev = self._snap.get(tid)
+            if prev is None:
+                continue
+            if src == "DETECTED" and prev[2] == "DETECTED":
+                a = T[:2, :2] @ np.array(prev[:2]) + T[:2, 2]
+                m = np.array([it.cx, it.cy]) - a
+                PAIRS.append((m[0], m[1], it.dx, it.dy))
+        for tid, prev in self._snap.items():
+            if prev[2] == "COASTED":
+                now = self.active_tracks.get(tid)
+                o = OUTCOMES.setdefault(prev[3], {"reacquired": 0, "continued": 0, "expired": 0})
+                if now is None:
+                    o["expired"] += 1
+                elif getattr(now, "source", "DETECTED") == "DETECTED":
+                    o["reacquired"] += 1
+                else:
+                    o["continued"] += 1
+        self._snap = {tid: (it.cx, it.cy, getattr(it, "source", "DETECTED"), getattr(it, "coast_count", 0))
+                      for tid, it in self.active_tracks.items()}
+        return out
+
+
+def summarise():
+    print("\n=== 1. CAMERA-MOTION SHIFT AT COAST EVENTS (size of the double-projection error per step) ===")
+    for c in (1, 2, 3):
+        s = np.array([x[1] for x in COAST_LOG if x[0] == c])
+        if len(s):
+            print(f"coast step {c}: n={len(s):5d}  median={np.median(s):6.2f} px  p95={np.percentile(s, 95):6.2f} px  "
+                  f">5px: {np.mean(s > 5) * 100:4.0f}%   >10px: {np.mean(s > 10) * 100:4.0f}%")
+    print("(Error accumulates: after k coast steps the position is off by roughly the sum of k such shifts.)")
+
+    print("\n=== 2. SIGN OF THE MODEL'S TRACKING VECTOR vs OBSERVED MOTION ===")
+    A = np.array(PAIRS) if PAIRS else np.zeros((0, 4))
+    sel = np.hypot(A[:, 0], A[:, 1]) > 1.0 if len(A) else np.zeros(0, bool)
+    print(f"consecutive real-detection pairs: {len(A)}   with observed motion > 1 px: {int(sel.sum())}")
+    if sel.sum() >= 20:
+        m, d = A[sel, :2], A[sel, 2:]
+        slope = (m * d).sum() / (m * m).sum()
+        frac_neg = float(np.mean((m * d).sum(1) < 0))
+        print(f"least-squares slope of tracking vector on observed motion: {slope:+.3f}")
+        print(f"fraction of pairs where they point opposite ways: {frac_neg * 100:.0f}%")
+        print("Reading: strongly negative => vector points BACK to the previous position (coasting adds it with the wrong sign).")
+        print("         strongly positive => vector points FORWARD (coasting sign is fine).")
+    else:
+        print("Too few moving pairs to judge; use a flight with more object motion.")
+
+    print("\n=== 3. WHAT HAPPENS AFTER EACH COAST STEP (baseline T2D, no hand-off) ===")
+    for c in sorted(OUTCOMES):
+        o = OUTCOMES[c]; n = sum(o.values())
+        print(f"after coast step {c}: n={n:4d}  reacquired={o['reacquired']:4d} ({o['reacquired'] / max(n, 1) * 100:4.0f}%)  "
+              f"still coasting={o['continued']:4d}  expired={o['expired']:4d}")
+
+
+p = Diag()
+p.run()
+summarise()
+EOF

@@ -1,0 +1,24 @@
+[32;1m<INFO ><hrnetw32_ttd:inference_setup> Segmentation Weights Loaded: configs/models/introspection_module/hrnetw32/HRNetW32_Complete.pt
+[0m[32;1m<INFO ><hrnetw32_ttd:inference_setup> Transform Model Loaded.
+[0m[32;1m<INFO ><hrnetw32_ttd:inference_setup> HRNetW32TrackToDetectPredictor Ready.
+[0m
+[32;1m<INFO ><notebook_helpers:record_fps> FPS - Mean: 8.5 | Std: 2.1 | Min: 5.1 | Max: 11.3 | P95: 10.9 (2385 frames)
+
+[0m
+=== 1. CAMERA-MOTION SHIFT AT COAST EVENTS (size of the double-projection error per step) ===
+coast step 1: n=   14  median=  0.20 px  p95=  0.50 px  >5px:    0%   >10px:    0%
+coast step 2: n=    9  median=  0.18 px  p95=  0.65 px  >5px:    0%   >10px:    0%
+coast step 3: n=    5  median=  0.16 px  p95=  0.47 px  >5px:    0%   >10px:    0%
+(Error accumulates: after k coast steps the position is off by roughly the sum of k such shifts.)
+
+=== 2. SIGN OF THE MODEL'S TRACKING VECTOR vs OBSERVED MOTION ===
+consecutive real-detection pairs: 1099   with observed motion > 1 px: 1087
+least-squares slope of tracking vector on observed motion: -0.891
+fraction of pairs where they point opposite ways: 95%
+Reading: strongly negative => vector points BACK to the previous position (coasting adds it with the wrong sign).
+         strongly positive => vector points FORWARD (coasting sign is fine).
+
+=== 3. WHAT HAPPENS AFTER EACH COAST STEP (baseline T2D, no hand-off) ===
+after coast step 1: n=  14  reacquired=   5 (  36%)  still coasting=   9  expired=   0
+after coast step 2: n=   9  reacquired=   4 (  44%)  still coasting=   5  expired=   0
+after coast step 3: n=   5  reacquired=   1 (  20%)  still coasting=   0  expired=   4

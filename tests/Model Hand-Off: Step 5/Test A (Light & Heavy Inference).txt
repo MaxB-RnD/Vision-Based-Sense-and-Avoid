@@ -1,0 +1,24 @@
+cat > /tmp/step5_overnight.sh <<'EOF'
+#!/bin/bash
+# Throwaway: always-light run, then always-ensemble run, then the 2x2 table.
+cd ~/Projects/Vision-Based-Sense-and-Avoid || exit 1
+source .venv/bin/activate
+L=outputs/logs/introspection_module
+mkdir -p $L outputs/results/introspection_module/step5_checks
+
+echo "[$(date)] START always-light"
+INTROSPECTION_DATASET_SPLIT=test python -m src.introspection_module.introspection_module_evaluator 0 > $L/step5_always_light.log 2>&1
+echo "[$(date)] light exit code $?"
+
+echo "[$(date)] START always-ensemble"
+INTROSPECTION_PREDICTOR=winning INTROSPECTION_DATASET_SPLIT=test python -m src.introspection_module.introspection_module_evaluator 0 > $L/step5_always_ensemble.log 2>&1
+echo "[$(date)] ensemble exit code $?"
+
+A=$(ls -d outputs/results/introspection_module/none/test/run* | sort -V | tail -1)
+B=$(ls -d outputs/results/introspection_module/winning_solution/test/run* | sort -V | tail -1)
+echo "[$(date)] 2x2 on A=$A B=$B"
+python -m src.introspection_module.outcome_table $A $B 2>&1 | tee outputs/results/introspection_module/step5_checks/outcome_table.txt
+echo "[$(date)] DONE"
+EOF
+chmod +x /tmp/step5_overnight.sh
+nohup /tmp/step5_overnight.sh > /tmp/step5_overnight.log 2>&1 &

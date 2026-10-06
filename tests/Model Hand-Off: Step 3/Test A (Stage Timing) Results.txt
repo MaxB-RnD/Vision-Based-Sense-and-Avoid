@@ -1,0 +1,133 @@
+================ winning ================
+Expected full-frame model input: (1, 2, 2048, 2560)
+  PASS  seg1 FLOPs shape == full frame
+  PASS  seg2 FLOPs shape == full frame
+  PASS  model_seg3 FLOPs shape == (1,2,512,512) x 6 crops
+  PASS  model_dla FLOPs shape == (1,2,512,512) x 6 crops
+  PASS  transform FLOPs shape == 2048x1280 crop
+  1%|▏         | 2/150 [01:20<1:38:49, 40.06s/it]
+  2%|▏         | 3/150 [01:23<1:00:13, 24.58s/it]
+  3%|▎         | 4/150 [01:23<37:40, 15.48s/it]  
+  3%|▎         | 5/150 [01:23<24:32, 10.16s/it]
+  4%|▍         | 6/150 [01:23<16:25,  6.84s/it]
+  5%|▍         | 7/150 [01:23<11:11,  4.69s/it]
+  5%|▌         | 8/150 [01:23<07:44,  3.27s/it]
+  6%|▌         | 9/150 [01:24<05:25,  2.31s/it]
+  7%|▋         | 10/150 [01:24<03:51,  1.65s/it]
+  7%|▋         | 11/150 [01:24<02:46,  1.20s/it]
+  9%|▊         | 13/150 [02:18<38:49, 17.00s/it]
+  9%|▉         | 14/150 [02:18<27:02, 11.93s/it]
+ 10%|█         | 15/150 [02:19<18:52,  8.39s/it]
+ 11%|█         | 16/150 [02:19<13:13,  5.92s/it]
+ 11%|█▏        | 17/150 [02:19<09:17,  4.19s/it]
+ 12%|█▏        | 18/150 [02:19<06:33,  2.98s/it]
+ 13%|█▎        | 19/150 [02:21<05:36,  2.57s/it]
+ 13%|█▎        | 20/150 [02:21<04:00,  1.85s/it]
+ 14%|█▍        | 21/150 [02:21<02:53,  1.34s/it]
+100%|██████████| 150/150 [02:45<00:00,  1.10s/it]
+Timed frames: off=149 on=149
+  PASS  runtime input buffer (1, 2, 2048, 2560) == expected
+  PASS  timer saw every frame once
+  PASS  detections identical with/without timer: only_off=0 only_on=0 common=134 max_dscore=0.00000 max_dbox_px=0.0000
+  PASS  top-level stages present ['prep', 'stage1', 'tracking', 'transform']
+  PASS  stages sum to frame total (unaccounted 0.09% of total, median 0.13 ms)
+  PASS  stage-1 children present
+  PASS  crop-count buckets {1: 118, 2: 27, 3: 4} sum to 149 frames
+  PASS  crop counts within 0..6
+  INFO  mean FPS timer off 1.80 / on 6.67 (sync overhead; use STAGE_TIMING only in separate runs)
+  INFO  cold frames excluded: 3, kept: 137
+        prep                   mean     5.89 ms  p95     6.42 ms  n=137
+        stage1                 mean    96.94 ms  p95    99.93 ms  n=137
+        stage1/model0          mean    63.77 ms  p95    65.68 ms  n=137
+        stage1/model1          mean    22.70 ms  p95    23.57 ms  n=137
+        stage1/postproc        mean     0.59 ms  p95     0.67 ms  n=137
+        stage1/upload          mean     9.81 ms  p95    10.79 ms  n=137
+        stage2                 mean    25.02 ms  p95    34.15 ms  n=137
+        stage2/crops_build     mean     0.14 ms  p95     0.15 ms  n=137
+        stage2/model0          mean    19.75 ms  p95    26.45 ms  n=137
+        stage2/model1          mean     4.89 ms  p95     7.14 ms  n=137
+        stage2/rescore         mean     0.17 ms  p95     0.23 ms  n=137
+        stage2_by_n/1          mean    22.62 ms  p95    24.73 ms  n=108
+        stage2_by_n/2          mean    32.97 ms  p95    34.73 ms  n=26
+        stage2_by_n/3          mean    42.19 ms  p95    43.97 ms  n=3
+        tracking               mean     0.22 ms  p95     0.24 ms  n=137
+        transform              mean    21.64 ms  p95    21.87 ms  n=137
+        transform/model        mean    19.82 ms  p95    20.05 ms  n=137
+        transform/solve        mean     1.77 ms  p95     1.82 ms  n=137
+[32;1m<INFO ><notebook_helpers:measure_complexity> [HRNet32 (model_seg1)] Params: 29,559,440 total / 29,559,440 trainable | GFLOPs: 849.023 | GMACs: 424.512
+[0m[32;1m<INFO ><notebook_helpers:measure_complexity> [GerNet-M BiFPN (model_seg2)] Params: 20,262,917 total / 20,262,917 trainable | GFLOPs: 332.660 | GMACs: 166.330
+[0m[32;1m<INFO ><notebook_helpers:measure_complexity> [HRNet48 (model_seg3) per crop] Params: 65,701,904 total / 65,701,904 trainable | GFLOPs: 86.522 | GMACs: 43.261
+[0m[32;1m<INFO ><notebook_helpers:measure_complexity> [DLA60-Res2Next (model_dla) per crop] Params: 11,575,344 total / 11,575,344 trainable | GFLOPs: 27.365 | GMACs: 13.682
+[0m[32;1m<INFO ><notebook_helpers:measure_complexity> [ResNet34-TSM Transform (model_transform)] Params: 21,281,475 total / 21,281,475 trainable | GFLOPs: 375.339 | GMACs: 187.669
+[0m[32;1m<INFO ><notebook_helpers:measure_predictor_complexity> Total - Params: 148,381,080 | GFLOPs: 2240.344 | GMACs: 1120.169
+[0m  INFO  complexity: {"total_params": 148381080, "trainable_params": 148381080, "gflops": 2240.344, "gmacs": 1120.169}
+  PASS  FLOPs computed for every target (not -1)
+[winning] ALL CHECKS PASSED
+================ t2d ================
+[32;1m<INFO ><hrnetw32_ttd:inference_setup> Segmentation Weights Loaded: configs/models/introspection_module/hrnetw32/HRNetW32_Complete.pt
+[0m[32;1m<INFO ><hrnetw32_ttd:inference_setup> Transform Model Loaded.
+[0m[32;1m<INFO ><hrnetw32_ttd:inference_setup> HRNetW32TrackToDetectPredictor Ready.
+[0m
+[32;1m<INFO ><hrnetw32_introspective:inference_setup> Introspection Module 'none' Selected. Ensemble NOT Loaded.
+[0m[32;1m<INFO ><hrnetw32_introspective:inference_setup> HRNetW32IntrospectivePredictor Ready (Introspection: none).
+[0mExpected full-frame model input: (1, 2, 2048, 2560)
+  PASS  HRNet FLOPs shape == full frame
+  PASS  transform FLOPs shape == 1024x1024 crop
+  triton_mm_1 0.0102 ms 100.0% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=128, BLOCK_M=32, BLOCK_N=16, B_PROLOGUE_CAST_TYPE=None, EVEN_K=True, GROUP_M=8, num_stages=2, num_warps=2
+  triton_mm_4 0.0102 ms 99.7% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=128, BLOCK_M=64, BLOCK_N=16, B_PROLOGUE_CAST_TYPE=None, EVEN_K=True, GROUP_M=8, num_stages=5, num_warps=4
+  triton_mm_10 0.0102 ms 99.7% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=128, BLOCK_M=64, BLOCK_N=16, B_PROLOGUE_CAST_TYPE=None, EVEN_K=True, GROUP_M=8, num_stages=4, num_warps=4
+  addmm 0.0110 ms 92.7% 
+  triton_mm_7 0.0135 ms 75.4% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=64, BLOCK_M=64, BLOCK_N=16, B_PROLOGUE_CAST_TYPE=None, EVEN_K=True, GROUP_M=8, num_stages=3, num_warps=4
+  triton_mm_15 0.0161 ms 63.4% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=64, BLOCK_M=128, BLOCK_N=16, B_PROLOGUE_CAST_TYPE=None, EVEN_K=True, GROUP_M=8, num_stages=5, num_warps=8
+  triton_mm_2 0.0164 ms 62.3% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=32, BLOCK_N=16, B_PROLOGUE_CAST_TYPE=None, EVEN_K=True, GROUP_M=8, num_stages=5, num_warps=2
+  triton_mm_14 0.0170 ms 60.2% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=64, BLOCK_M=128, BLOCK_N=16, B_PROLOGUE_CAST_TYPE=None, EVEN_K=True, GROUP_M=8, num_stages=3, num_warps=4
+  triton_mm_3 0.0184 ms 55.4% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=64, BLOCK_N=16, B_PROLOGUE_CAST_TYPE=None, EVEN_K=True, GROUP_M=8, num_stages=5, num_warps=4
+  triton_mm_6 0.0184 ms 55.4% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=64, BLOCK_N=16, B_PROLOGUE_CAST_TYPE=None, EVEN_K=True, GROUP_M=8, num_stages=2, num_warps=4
+SingleProcess AUTOTUNE benchmarking takes 1.9663 seconds and 0.0059 seconds precompiling for 17 choices
+AUTOTUNE addmm(784x2, 784x1024, 1024x2)
+  triton_mm_17 0.0092 ms 100.0% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=128, BLOCK_M=32, BLOCK_N=16, B_PROLOGUE_CAST_TYPE=None, EVEN_K=True, GROUP_M=8, num_stages=2, num_warps=2
+  bias_addmm 0.0101 ms 90.2% 
+  triton_mm_20 0.0102 ms 89.4% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=128, BLOCK_M=64, BLOCK_N=16, B_PROLOGUE_CAST_TYPE=None, EVEN_K=True, GROUP_M=8, num_stages=5, num_warps=4
+  triton_mm_26 0.0102 ms 89.4% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=128, BLOCK_M=64, BLOCK_N=16, B_PROLOGUE_CAST_TYPE=None, EVEN_K=True, GROUP_M=8, num_stages=4, num_warps=4
+  triton_mm_23 0.0128 ms 71.3% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=64, BLOCK_M=64, BLOCK_N=16, B_PROLOGUE_CAST_TYPE=None, EVEN_K=True, GROUP_M=8, num_stages=3, num_warps=4
+  addmm 0.0143 ms 64.1% 
+  triton_mm_31 0.0164 ms 56.0% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=64, BLOCK_M=128, BLOCK_N=16, B_PROLOGUE_CAST_TYPE=None, EVEN_K=True, GROUP_M=8, num_stages=5, num_warps=8
+  triton_mm_30 0.0164 ms 55.9% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=64, BLOCK_M=128, BLOCK_N=16, B_PROLOGUE_CAST_TYPE=None, EVEN_K=True, GROUP_M=8, num_stages=3, num_warps=4
+  triton_mm_18 0.0165 ms 55.4% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=32, BLOCK_N=16, B_PROLOGUE_CAST_TYPE=None, EVEN_K=True, GROUP_M=8, num_stages=5, num_warps=2
+  triton_mm_19 0.0185 ms 49.4% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=64, BLOCK_N=16, B_PROLOGUE_CAST_TYPE=None, EVEN_K=True, GROUP_M=8, num_stages=5, num_warps=4
+SingleProcess AUTOTUNE benchmarking takes 1.9894 seconds and 0.0018 seconds precompiling for 18 choices
+Flight part1036edfd6ece44c37b8ca9562fd701682:   1%|▏         | 2/150 [01:22<1:41:09, 41.01s/it]
+Flight part1036edfd6ece44c37b8ca9562fd701682:   2%|▏         | 3/150 [01:23<1:00:23, 24.65s/it]
+Flight part1036edfd6ece44c37b8ca9562fd701682:   3%|▎         | 4/150 [01:23<37:43, 15.50s/it]  
+Flight part1036edfd6ece44c37b8ca9562fd701682:   3%|▎         | 5/150 [01:24<24:33, 10.16s/it]
+Flight part1036edfd6ece44c37b8ca9562fd701682:   4%|▍         | 6/150 [01:24<16:23,  6.83s/it]
+Flight part1036edfd6ece44c37b8ca9562fd701682:   5%|▍         | 7/150 [01:24<11:08,  4.67s/it]
+Flight part1036edfd6ece44c37b8ca9562fd701682:   5%|▌         | 8/150 [01:24<07:40,  3.24s/it]
+Flight part1036edfd6ece44c37b8ca9562fd701682:   6%|▌         | 9/150 [01:24<05:20,  2.27s/it]
+Flight part1036edfd6ece44c37b8ca9562fd701682:   7%|▋         | 10/150 [01:24<03:45,  1.61s/it]
+Flight part1036edfd6ece44c37b8ca9562fd701682:   7%|▋         | 11/150 [01:24<02:41,  1.16s/it]
+Timed frames: off=149 on=149
+  PASS  runtime input buffer (1, 2, 2048, 2560) == expected
+  PASS  timer saw every frame once
+  PASS  detections identical with/without timer: only_off=0 only_on=0 common=139 max_dscore=0.00000 max_dbox_px=0.0000
+  PASS  top-level stages present ['prep', 'stage1', 'tracking', 'transform']
+  PASS  stages sum to frame total (unaccounted 1.49% of total, median 1.39 ms)
+  INFO  mean FPS timer off 10.78 / on 10.63 (sync overhead; use STAGE_TIMING only in separate runs)
+  INFO  cold frames excluded: 1, kept: 139
+        introspection          mean     0.01 ms  p95     0.02 ms  n=139
+        prep                   mean     7.07 ms  p95     8.08 ms  n=139
+        stage1                 mean    73.54 ms  p95    75.31 ms  n=139
+        stage1/model0          mean    62.60 ms  p95    63.65 ms  n=139
+        stage1/postproc        mean     0.88 ms  p95     1.00 ms  n=139
+        stage1/upload          mean     9.99 ms  p95    11.98 ms  n=139
+        tracking               mean     0.25 ms  p95     0.29 ms  n=139
+        transform              mean    11.80 ms  p95    14.80 ms  n=139
+        transform/model        mean    10.02 ms  p95    12.97 ms  n=139
+        transform/solve        mean     1.72 ms  p95     2.28 ms  n=139
+[32;1m<INFO ><notebook_helpers:measure_complexity> [HRNet-W32 (segmentation)] Params: 29,559,440 total / 29,559,440 trainable | GFLOPs: 849.023 | GMACs: 424.512
+[0m[32;1m<INFO ><notebook_helpers:measure_complexity> [ResNet34-TSM Transform (model_transform)] Params: 21,281,475 total / 21,281,475 trainable | GFLOPs: 150.135 | GMACs: 75.067
+[0m[32;1m<INFO ><notebook_helpers:measure_predictor_complexity> Total - Params: 50,840,915 | GFLOPs: 999.158 | GMACs: 499.579
+[0m  INFO  complexity: {"total_params": 50840915, "trainable_params": 50840915, "gflops": 999.158, "gmacs": 499.579}
+  PASS  FLOPs computed for every target (not -1)
+[t2d] ALL CHECKS PASSED
+STEP 3 CHECK: ALL PASSED

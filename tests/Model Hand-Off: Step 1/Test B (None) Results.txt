@@ -1,0 +1,16 @@
+<INFO ><hrnetw32_ttd:inference_setup> Segmentation Weights Loaded: configs/models/introspection_module/hrnetw32/HRNetW32_Complete.pt
+<INFO ><hrnetw32_ttd:inference_setup> Transform Model Loaded.
+<INFO ><hrnetw32_ttd:inference_setup> HRNetW32TrackToDetectPredictor Ready.
+
+<INFO ><hrnetw32_introspective:inference_setup> Introspection Module 'none' Selected. Ensemble NOT Loaded.
+<INFO ><hrnetw32_introspective:inference_setup> HRNetW32IntrospectivePredictor Ready (Introspection: none).
+Flight part11b3a52c0f1764533b32e36992b17b6e1: 100%|██████████| 1198/1198 [03:20<00:00,  5.99it/s]
+Flight part1036edfd6ece44c37b8ca9562fd701682: 100%|██████████| 1199/1199 [03:03<00:00,  6.53it/s]
+
+<INFO ><notebook_helpers:record_fps> FPS - Mean: 8.6 | Std: 1.9 | Min: 5.0 | Max: 11.5 | P95: 10.8 (2385 frames)
+
+<INFO ><hrnetw32_introspective:run> Escalations: 1141 / 1141 Track Checks (1.0000) | Escalated Frames: 1141 / 2395 (0.4764) --> Introspection: none
+
+[always] output: det=1141 warn=1141 warn_frames=1141
+[always] counters: checks=1141 esc=1141 esc_frames=1141 frames=2395
+Test B (always) passed

@@ -1,0 +1,173 @@
+mkdir -p outputs/results/introspection_module/step3_checks
+
+cat > src/introspection_module/step3_check.py <<'EOF'
+"""
+Step 3 self-check. One command:
+    python -m src.introspection_module.step3_check
+Optional env: STEP3_FLIGHT, STEP3_FRAMES (default 150), STEP3_FLOPS=0 to skip the FLOPs run.
+Each predictor runs in its own process so GPU memory is released between them.
+"""
+import os
+import sys
+import json
+import argparse
+import subprocess
+
+FLIGHT   = os.getenv("STEP3_FLIGHT", "part1036edfd6ece44c37b8ca9562fd701682")
+N_FRAMES = int(os.getenv("STEP3_FRAMES", "150"))
+WARMUP   = 10
+OUT_DIR  = "outputs/results/introspection_module/step3_checks"
+
+
+def flat(results):
+    out = {}
+    for r in results:
+        for d in r["detections"]:
+            key = (r["img_name"], d["track_id"])
+            assert key not in out, f"duplicate {key}"
+            out[key] = d
+    return out
+
+
+def compare(a, b, tol_s=1e-2, tol_px=1.0):
+    ka, kb = set(a), set(b)
+    both = ka & kb
+    ds = max((abs(a[k]["s"] - b[k]["s"]) for k in both), default=0.0)
+    dpx = max((max(abs(a[k][f] - b[k][f]) for f in ("x", "y", "w", "h")) for k in both), default=0.0)
+    ok = (ka == kb) and ds < tol_s and dpx < tol_px
+    return ok, f"only_off={len(ka - kb)} only_on={len(kb - ka)} common={len(both)} max_dscore={ds:.5f} max_dbox_px={dpx:.4f}"
+
+
+def shp(t):
+    return tuple(t["input_override"][0].shape), tuple(t["input_override"][1].shape)
+
+
+def run_child(which):
+    os.environ["MIN_TRACK_LEN"] = "0"
+    os.environ["MIN_SCORE"] = "0"
+    os.environ["PARTIAL_RUN_FLIGHTS"] = FLIGHT
+
+    import torch
+    from src.introspection_module.profiling_utils import StageTimer, full_frame_input_shape
+
+    if which == "winning":
+        from src.introspection_module.winning_solution_star.seg_test import WinningSolutionPredictor as P
+    else:
+        from src.introspection_module.hrnetw32_introspective.hrnetw32_introspective_test import (
+            HRNetW32IntrospectivePredictor as P)
+
+    orig = P.get_all_frame_images
+    P.get_all_frame_images = lambda self, fid: orig(self, fid)[:N_FRAMES]
+
+    fails = []
+
+    def expect(cond, msg):
+        print(("  PASS  " if cond else "  FAIL  ") + msg)
+        if not cond:
+            fails.append(msg)
+
+    p = P()
+    p.inference_setup()
+    expected = full_frame_input_shape(p.test_data_path)
+    print(f"Expected full-frame model input: {expected}")
+
+    # ---- 1. FLOPs target shapes ----
+    T = {t["label"]: t for t in p.get_complexity_targets()}
+
+    def get(sub):
+        m = [t for l, t in T.items() if sub in l]
+        assert len(m) == 1, f"target '{sub}' not found exactly once in {list(T)}"
+        return m[0]
+
+    if which == "winning":
+        crops = int(os.getenv("COMPLEXITY_CROP_COUNT", "6"))
+        expect(get("model_seg1")["input_shape"] == expected, "seg1 FLOPs shape == full frame")
+        expect(get("model_seg2")["input_shape"] == expected, "seg2 FLOPs shape == full frame")
+        for k in ("model_seg3", "model_dla"):
+            t = get(k)
+            expect(t["input_shape"] == (1, 2, 512, 512) and t.get("count") == crops,
+                   f"{k} FLOPs shape == (1,2,512,512) x {crops} crops")
+        expect(shp(get("model_transform")) == ((1, 1280, 2048),) * 2, "transform FLOPs shape == 2048x1280 crop")
+    else:
+        expect(get("segmentation")["input_shape"] == expected, "HRNet FLOPs shape == full frame")
+        expect(shp(get("model_transform")) == ((1, 1024, 1024),) * 2, "transform FLOPs shape == 1024x1024 crop")
+
+    # ---- 2. run with timer off, then on ----
+    def run_flight(timing):
+        p.results, p.current_flight_results, p.frame_times = [], [], []
+        t = StageTimer(enabled=timing)
+        p.set_timer(t)
+        p.inference(FLIGHT)
+        return p.results, t, list(p.frame_times)
+
+    r_off, t_off, ft_off = run_flight(False)
+    r_on,  t_on,  ft_on  = run_flight(True)
+    print(f"Timed frames: off={len(ft_off)} on={len(ft_on)}")
+
+    buf = p.detector._detect_buffer if which == "winning" else p._input_buffer
+    expect(tuple(buf.shape) == expected, f"runtime input buffer {tuple(buf.shape)} == expected")
+    expect(len(t_on.totals) == len(ft_on) == N_FRAMES - 1, "timer saw every frame once")
+
+    # ---- 3. detections unchanged by timing ----
+    ok, msg = compare(flat(r_off), flat(r_on))
+    expect(ok, "detections identical with/without timer: " + msg)
+
+    # ---- 4. stage sums and buckets ----
+    s = t_on.summary(WARMUP)
+    required = {"transform", "prep", "stage1", "tracking"}
+    expect(required <= set(s["stages"]), f"top-level stages present {sorted(required)}")
+    ua = s["unaccounted"]
+    if ua is None:
+        expect(False, "no kept frames after warm-up/cold exclusion")
+    else:
+        expect(ua["fraction_of_total"] < 0.05,
+               f"stages sum to frame total (unaccounted {ua['fraction_of_total']*100:.2f}% of total, "
+               f"median {ua['median_ms']:.2f} ms)")
+    if which == "winning":
+        expect({"stage1/model0", "stage1/model1", "stage1/postproc"} <= set(s["stages"]), "stage-1 children present")
+        counts = {int(k): v["frames_all"] for k, v in s["by_crop_count"].items()}
+        expect(sum(counts.values()) == len(t_on.totals), f"crop-count buckets {counts} sum to {len(t_on.totals)} frames")
+        expect(all(0 <= n <= 6 for n in counts), "crop counts within 0..6")
+
+    fps_off = 1.0 / (sum(ft_off[WARMUP:]) / max(len(ft_off[WARMUP:]), 1))
+    fps_on  = 1.0 / (sum(ft_on[WARMUP:]) / max(len(ft_on[WARMUP:]), 1))
+    print(f"  INFO  mean FPS timer off {fps_off:.2f} / on {fps_on:.2f} (sync overhead; use STAGE_TIMING only in separate runs)")
+    print(f"  INFO  cold frames excluded: {s['n_cold_frames']}, kept: {s['n_frames_kept']}")
+    for name, st in s["stages"].items():
+        print(f"        {name:22s} mean {st['mean_ms']:8.2f} ms  p95 {st['p95_ms']:8.2f} ms  n={st['n']}")
+
+    os.makedirs(OUT_DIR, exist_ok=True)
+    t_on.save(os.path.join(OUT_DIR, f"stage_timing_{which}.json"), WARMUP, extra=dict(pipeline=which, check_frames=N_FRAMES))
+
+    # ---- 5. FLOPs actually computes (runs last: it moves models to CPU and back) ----
+    if os.getenv("STEP3_FLOPS", "1") != "0":
+        from notebooks.helpers.notebook_helpers import measure_predictor_complexity
+        c = measure_predictor_complexity(p)
+        print("  INFO  complexity:", json.dumps(c))
+        expect(c["gflops"] > 0, "FLOPs computed for every target (not -1)")
+
+    print(f"[{which}] " + ("ALL CHECKS PASSED" if not fails else f"{len(fails)} CHECK(S) FAILED"))
+    sys.exit(1 if fails else 0)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--only", choices=["winning", "t2d"])
+    args = ap.parse_args()
+    if args.only:
+        run_child(args.only)
+        return
+    rc = 0
+    for name in ("winning", "t2d"):
+        print(f"\n================ {name} ================", flush=True)
+        r = subprocess.run([sys.executable, "-m", "src.introspection_module.step3_check", "--only", name])
+        rc |= int(r.returncode != 0)
+    print("\nSTEP 3 CHECK:", "ALL PASSED" if rc == 0 else "FAILED")
+    sys.exit(rc)
+
+
+if __name__ == "__main__":
+    main()
+EOF
+
+python -m src.introspection_module.step3_check 2>&1 | tr '\r' '\n' | grep -v -E "^\s*$|it/s|Warning" | tee outputs/results/introspection_module/step3_checks/step3_check_output.txt
