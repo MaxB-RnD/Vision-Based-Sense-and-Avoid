@@ -1,0 +1,22 @@
+{
+  "run_name": "run9",
+  "flags": [
+    "--corrupted-fraction",
+    "1.0",
+    "--ramp-shape",
+    "sigmoid",
+    "--ramp-length-frames",
+    "20",
+    "--peak-severity",
+    "1.0",
+    "--seed",
+    "42",
+    "--active-corruptions",
+    "iso_noise",
+    "defocus_blur",
+    "colour_quantisation",
+    "near_focus",
+    "far_focus",
+    "low_light"
+  ]
+}

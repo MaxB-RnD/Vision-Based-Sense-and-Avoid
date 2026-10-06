@@ -21,7 +21,7 @@
 # evaluation is selected via a command-line argument.
 #
 # USAGE INSTRUCTIONS:
-#   1. Run the Script from this Folder:
+#   1. Run the Script from the Project Root:
 #         nohup python -m src.core_improvement.core_improvement_evaluator select_model > outputs/logs/core_improvement/core_improvement_evaluation.log 2>&1 &
 #
 #   2. Optional Environment Variables:
@@ -115,6 +115,7 @@ def main() -> None:
     # Set Path to Desired Evaluation Dataset.
     DATASET_PATH = "configs/datasets/training_subsets/test.txt"
     DATASET_PARTS = ["part1", "part2", "part3"]
+    DATASET_ROOT = os.path.join(PROJECT_ROOT, "data", "original_dataset")
 
     # Set Results Variables (Auto-Incrementing Run Directory).
     RESULTS_DIR = "outputs/results/core_improvement/" + model_list[SELECTED_MODEL]
@@ -128,6 +129,7 @@ def main() -> None:
     # Print Summary Statement.
     log(LogLevel.INFO, "core_improvement_evaluator:config", "Configuration Loaded.")
     print(f"  Model Selected : {model_list[SELECTED_MODEL]}")
+    print(f"  Dataset Root   : {DATASET_ROOT}")
     print(f"  Dataset Path   : {DATASET_PATH}")
     print(f"  Dataset Parts  : {DATASET_PARTS}")
     print(f"  Run Name       : {run_name}")
@@ -136,7 +138,7 @@ def main() -> None:
     print(f"  Min Track Len  : {MIN_TRACK_LEN}")
     
     # Find all Available Sequences from the Provided Dataset.
-    local_flights = resolve_local_flights(DATASET_PATH, PROJECT_ROOT)
+    local_flights = resolve_local_flights(DATASET_PATH, DATASET_ROOT)
 
     # Add Spacing in Console Output for Readability.
     print()
@@ -157,7 +159,7 @@ def main() -> None:
         log(LogLevel.DEBUG, "core_improvement_evaluator:preprocessing", " ... and %d more.", len(local_flights) - 5)
 
     # Load & Filter Ground Truth to Include Local Flights Only. 
-    combined_gt = load_combined_gt(DATASET_PARTS, local_flights, PROJECT_ROOT)
+    combined_gt = load_combined_gt(DATASET_PARTS, local_flights, DATASET_ROOT)
     log(LogLevel.INFO, "core_improvement_evaluator:preprocessing", "Flights in Filtered Ground Truth: %d", len(combined_gt['samples']))
 
     # Build Set of Image Filenames That Physically Exist on Disk.
@@ -317,10 +319,10 @@ def main() -> None:
         )
     
         # Print Summary to Console.
-        print("\n" + "=" * 60)
-        print(" NEW BACKBONE MODEL - FULL HARD DATASET BENCHMARK SUMMARY")
-        print("=" * 60)
-        print(summary_df.set_index("Metric").to_string())
+        print("\n" + "=" * 75)
+        print("CORE BACKBONE IMPROVEMENT - FULL TEST DATASET SUMMARY".center(75))
+        print("=" * 75)
+        print(summary_df.to_string(index=False))
 # ------------------------------------------------------------------------------
 
 

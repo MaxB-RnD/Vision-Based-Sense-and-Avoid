@@ -1,0 +1,231 @@
+cat > src/introspection_module/step4_check.py <<'EOF'
+"""
+Step 4 check. Every stage runs in its own process with FRESH inductor/triton cache dirs
+(cold start), so nothing is pre-tuned.
+    python -m src.introspection_module.step4_check [--stages winning,t2d,latency,equiv]
+Env: STEP4_FLIGHT, STEP4_FRAMES (0 = whole flight), STEP4_EQUIV_FRAMES=60,
+     STEP4_CACHE=both (also re-run each pipeline on its now-populated cache),
+     STEP4_KEEP_CACHE=1 (keep the temp cache dirs).
+"""
+import os
+import sys
+import json
+import time
+import shutil
+import argparse
+import tempfile
+import subprocess
+
+import numpy as np
+
+FLIGHT = os.getenv("STEP4_FLIGHT", "part1036edfd6ece44c37b8ca9562fd701682")
+N_FRAMES = int(os.getenv("STEP4_FRAMES", "0"))
+EQUIV_FRAMES = int(os.getenv("STEP4_EQUIV_FRAMES", "60"))
+OUT_DIR = "outputs/results/introspection_module/step4_checks"
+
+
+def _env(name):
+    os.environ["MIN_TRACK_LEN"] = "0"
+    os.environ["MIN_SCORE"] = "0"
+    os.environ["PARTIAL_RUN_FLIGHTS"] = FLIGHT
+    os.environ.setdefault("DATASET_ENV", f"step4_{name}")
+
+
+def _cls(which):
+    if which == "winning":
+        from src.introspection_module.winning_solution_star.seg_test import WinningSolutionPredictor
+        return WinningSolutionPredictor
+    from src.introspection_module.hrnetw32_introspective.hrnetw32_track_to_detect_test import (
+        HRNetW32TrackToDetectPredictor)
+    return HRNetW32TrackToDetectPredictor
+
+
+def _limit(P, n):
+    if n:
+        orig = P.get_all_frame_images
+        P.get_all_frame_images = lambda self, fid: orig(self, fid)[:n]
+
+
+def run_child(which, tag):
+    _env(f"{which}_{tag}")
+    import torch
+    from src.introspection_module.utils import warmup_models as wm
+    P = _cls(which)
+    _limit(P, N_FRAMES)
+    fails = []
+
+    def expect(cond, msg):
+        print(("  PASS  " if cond else "  FAIL  ") + msg, flush=True)
+        if not cond:
+            fails.append(msg)
+
+    p = P()
+    expect(p.inference_setup_timeout >= wm.SETUP_TIMEOUT_S and p.inference_flight_timeout >= wm.FLIGHT_TIMEOUT_S,
+           f"timeouts lifted (setup {p.inference_setup_timeout} s, flight {p.inference_flight_timeout} s)")
+    print(f"cache dirs: inductor={os.getenv('TORCHINDUCTOR_CACHE_DIR')} triton={os.getenv('TRITON_CACHE_DIR')}")
+
+    t0 = time.perf_counter()
+    p.inference_setup()
+    setup_s = time.perf_counter() - t0
+    print(f"  INFO  inference_setup (model load + warm-up): {setup_s:.1f} s")
+
+    # ---- warm-up coverage ----
+    rep_path = os.path.join(p.get_results_directory(), "warmup_report.json")
+    expect(os.path.exists(rep_path), "warmup_report.json written")
+    rep = json.load(open(rep_path))
+    by = {e["label"]: e for e in rep["entries"]}
+    labels = wm.ensemble_labels() if which == "winning" else wm.t2d_labels()
+    missing = [l for l in labels if l not in by]
+    expect(not missing, f"warm-up covered all {len(labels)} expected shapes (missing: {missing})")
+    slow = [l for l in labels if l in by and by[l]["times_s"][-1] > 0.5]
+    expect(not slow, f"final warm-up rep of every shape < 0.5 s (slow: {slow})")
+    print("        shape                          first rep (s)   last rep (s)")
+    for l in labels:
+        if l in by:
+            print(f"        {l:30s} {by[l]['times_s'][0]:12.2f} {by[l]['times_s'][-1]:14.3f}")
+
+    # ---- coverage probe: first post-warm-up call must not be a stall ----
+    if which == "winning":
+        dev = p.detector.device
+        full = wm.resolve_full_shape(p.test_data_path)
+        probes = [(wm.LBL_SEG1, p.detector.model_seg1, full, torch.float32),
+                  (wm.LBL_SEG2, p.detector.model_seg2, full, torch.float32)]
+        for n in range(1, wm.MAX_CROPS + 1):
+            probes.append((wm.crop_label(wm.CROP_MODELS[0], n), p.detector.model_seg3,
+                           (n, 2, wm.CROP, wm.CROP), torch.float32))
+            probes.append((wm.crop_label(wm.CROP_MODELS[1], n), p.detector.model_dla,
+                           (n, 2, wm.CROP, wm.CROP), torch.float32))
+    else:
+        dev = p.device
+        probes = [(wm.LBL_T2D, p.model_seg, wm.resolve_full_shape(p.test_data_path), torch.float16)]
+    for name, m, shape, dt in probes:
+        first, med = wm.probe_shape(m, shape, dt, dev)
+        expect(first <= 2.0 * med + 0.010,
+               f"{name}: first call after warm-up {first*1e3:.1f} ms vs steady {med*1e3:.1f} ms")
+
+    # ---- full flight: no stalls, no new compiles ----
+    g0 = wm.unique_graphs()
+    p.results, p.current_flight_results, p.frame_times = [], [], []
+    t0 = time.perf_counter()
+    p.inference(FLIGHT)
+    flight_s = time.perf_counter() - t0
+    g1 = wm.unique_graphs()
+    ft = np.array(p.frame_times)
+    med = float(np.median(ft))
+    thr = max(0.5, 3.0 * med)
+    stall_idx = [int(i) for i in np.where(ft > thr)[0]]
+    print(f"  INFO  flight: {len(ft)} frames in {flight_s:.1f} s | median {med*1e3:.1f} ms | "
+          f"p95 {np.percentile(ft, 95)*1e3:.1f} ms | max {ft.max()*1e3:.1f} ms | "
+          f"first 3 frames (ms): {[round(x*1e3, 1) for x in ft[:3]]}")
+    expect(len(stall_idx) == 0,
+           f"no stalled frames (> {thr*1e3:.0f} ms); stalled frame indices: {stall_idx[:10]}")
+    expect(g0 is None or g1 == g0, f"no new graphs compiled during the flight (dynamo graphs {g0} -> {g1})")
+    expect(flight_s < p.inference_flight_timeout, "flight finished inside the per-flight timeout")
+
+    os.makedirs(OUT_DIR, exist_ok=True)
+    json.dump(dict(which=which, tag=tag, gpu=rep["gpu"], setup_s=setup_s, warmup_total_s=rep["total_s"],
+                   flight_s=flight_s, frames=int(len(ft)), median_ms=med * 1e3,
+                   p95_ms=float(np.percentile(ft, 95) * 1e3), max_ms=float(ft.max() * 1e3),
+                   stalled_frames=len(stall_idx), graphs_before=g0, graphs_after=g1,
+                   inductor_cache_dir=os.getenv("TORCHINDUCTOR_CACHE_DIR")),
+              open(os.path.join(OUT_DIR, f"step4_{which}_{tag}.json"), "w"), indent=2)
+    print(f"[{which}/{tag}] " + ("ALL CHECKS PASSED" if not fails else f"{len(fails)} CHECK(S) FAILED"))
+    sys.exit(1 if fails else 0)
+
+
+def run_equiv(tag):
+    """First EQUIV_FRAMES frames with warm-up on/off; parent compares detections."""
+    if tag == "nowarm":
+        os.environ["WARMUP"] = "0"
+    _env(f"equiv_{tag}")
+    P = _cls("winning")
+    _limit(P, EQUIV_FRAMES)
+    p = P()
+    p.inference_setup()
+    p.results, p.current_flight_results, p.frame_times = [], [], []
+    p.inference(FLIGHT)
+    flat = {}
+    for r in p.results:
+        for d in r["detections"]:
+            flat[f"{r['img_name']}|{d['track_id']}"] = [d["x"], d["y"], d["w"], d["h"], d["s"]]
+    os.makedirs(OUT_DIR, exist_ok=True)
+    json.dump(flat, open(os.path.join(OUT_DIR, f"equiv_{tag}.json"), "w"))
+    print(f"[equiv/{tag}] {len(flat)} detections over {EQUIV_FRAMES} frames")
+
+
+def compare_equiv():
+    a = json.load(open(os.path.join(OUT_DIR, "equiv_warm.json")))
+    b = json.load(open(os.path.join(OUT_DIR, "equiv_nowarm.json")))
+    ka, kb = set(a), set(b)
+    both = ka & kb
+    jac = len(both) / max(len(ka | kb), 1)
+    ds = max((abs(a[k][4] - b[k][4]) for k in both), default=0.0)
+    dpx = max((max(abs(a[k][i] - b[k][i]) for i in range(4)) for k in both), default=0.0)
+    ok = jac >= 0.98 and ds < 0.05 and dpx < 3.0
+    print(("  PASS  " if ok else "  FAIL  ") +
+          f"warm-up does not change detections: overlap={jac:.3f} common={len(both)} "
+          f"only_warm={len(ka - kb)} only_nowarm={len(kb - ka)} max_dscore={ds:.4f} max_dbox_px={dpx:.3f}")
+    return ok
+
+
+def launch(mod_args, name, dirs=None):
+    dirs = dirs or (tempfile.mkdtemp(prefix="ind_"), tempfile.mkdtemp(prefix="tri_"))
+    env = dict(os.environ)
+    env["TORCHINDUCTOR_CACHE_DIR"], env["TRITON_CACHE_DIR"] = dirs
+    env["DATASET_ENV"] = f"step4_{name}"
+    r = subprocess.run([sys.executable, "-m"] + mod_args, env=env)
+    return r.returncode, dirs
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--only", choices=["winning", "t2d"])
+    ap.add_argument("--tag", default="cold")
+    ap.add_argument("--equiv", choices=["warm", "nowarm"])
+    ap.add_argument("--stages", default="winning,t2d,latency,equiv")
+    a = ap.parse_args()
+    if a.only:
+        run_child(a.only, a.tag)
+        return
+    if a.equiv:
+        run_equiv(a.equiv)
+        return
+
+    me = "src.introspection_module.step4_check"
+    stages = a.stages.split(",")
+    results, to_clean = {}, []
+    for which in ("winning", "t2d"):
+        if which in stages:
+            print(f"\n================ {which} (cold caches) ================", flush=True)
+            rc, dirs = launch([me, "--only", which, "--tag", "cold"], f"{which}_cold")
+            results[which] = rc == 0
+            to_clean += list(dirs)
+            if os.getenv("STEP4_CACHE") == "both":
+                print(f"\n================ {which} (re-run on populated cache) ================", flush=True)
+                rc, _ = launch([me, "--only", which, "--tag", "warmcache"], f"{which}_warmcache", dirs)
+                results[which + "_warmcache"] = rc == 0
+    if "latency" in stages:
+        print("\n================ first-heavy-after-idle latency (cold caches) ================", flush=True)
+        rc, dirs = launch(["src.introspection_module.utils.latency_benchmarking"], "latency")
+        results["latency"] = rc == 0
+        to_clean += list(dirs)
+    if "equiv" in stages:
+        print("\n================ warm-up equivalence (cold caches) ================", flush=True)
+        for tag in ("warm", "nowarm"):
+            rc, dirs = launch([me, "--equiv", tag], f"equiv_{tag}")
+            to_clean += list(dirs)
+            if rc != 0:
+                results["equiv"] = False
+        if "equiv" not in results:
+            results["equiv"] = compare_equiv()
+
+    if not os.getenv("STEP4_KEEP_CACHE"):
+        for d in to_clean:
+            shutil.rmtree(d, ignore_errors=True)
+    print("\nSTEP 4 SUMMARY: " + ", ".join(f"{k}={'PASS' if v else 'FAIL'}" for k, v in results.items()))
+    sys.exit(0 if all(results.values()) else 1)
+
+
+if __name__ == "__main__":
+    main()
+EOF

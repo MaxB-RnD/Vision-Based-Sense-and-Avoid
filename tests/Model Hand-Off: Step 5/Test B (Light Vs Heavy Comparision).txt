@@ -1,0 +1,77 @@
+cat > src/introspection_module/outcome_table.py <<'EOF'
+"""
+Read-only frame-level 2x2: for each planned-intruder GT box in range, did run A (HRNet) and
+run B (ensemble) hit it (competition matching: extended IoU >= 0.2, same score/track filters).
+    python -m src.introspection_module.outcome_table RUN_A_DIR RUN_B_DIR
+Env: MAX_RANGE overrides the range limit (default: max_range from run A's summary json).
+"""
+import os, sys, glob, json
+import pandas as pd
+
+KEY = ["flight_id", "img_name", "gt_left", "gt_top", "gt_right", "gt_bottom"]
+OUT = "outputs/results/verification_testing/Model Hand-Off: Step 5"
+
+
+def find(run, pattern):
+    return sorted(glob.glob(os.path.join(run, "**", pattern), recursive=True))
+
+
+def load(run, max_range):
+    files = find(run, "gt_det_matches*.csv")
+    assert len(files) == 1, f"expected exactly one matches csv under {run}, found {files}"
+    df = pd.read_csv(files[0])
+    df = df[df["gt_left"].notna() & df["range_distance_m"].between(0, max_range)]
+    out = df.groupby(KEY).agg(hit=("gt_det_match", "max"),
+                              range_m=("range_distance_m", "first"),
+                              above=("is_above_horizon", "first"))
+    out["hit"] = out["hit"].fillna(0).astype(int)
+    if "source" in df.columns:
+        matched = df[df["gt_det_match"] == 1]
+        coast = matched.groupby(KEY)["source"].apply(lambda s: bool((s == "COASTED").all()))
+        out["coast_only"] = coast.reindex(out.index).fillna(False).astype(bool)
+    else:
+        out["coast_only"] = False
+    return out
+
+
+def table(m, title):
+    n = len(m)
+    if n == 0:
+        print(f"\n{title}: no rows"); return
+    ar, br = m["hit_a"] == 1, m["hit_b"] == 1
+    both, a_only, b_only, neither = (ar & br).sum(), (ar & ~br).sum(), (~ar & br).sum(), (~ar & ~br).sum()
+    print(f"\n=== {title}  (N = {n} GT frames) ===")
+    print(f"{'':16s}{'ensemble hit':>14s}{'ensemble miss':>15s}")
+    print(f"{'HRNet hit':16s}{both:>14d}{a_only:>15d}")
+    print(f"{'HRNet miss':16s}{b_only:>14d}{neither:>15d}")
+    a_miss = n - ar.sum()
+    print(f"HRNet recall {ar.mean():.4f} | ensemble recall {br.mean():.4f}")
+    if a_miss:
+        print(f"escalation gain: ensemble recovers {b_only} of {a_miss} HRNet misses ({b_only / a_miss:.1%})")
+    if ar.sum():
+        print(f"ensemble loses {a_only} of {ar.sum()} HRNet hits ({a_only / ar.sum():.1%})")
+    print(f"HRNet hits that are coasted-only: {int((ar & m['coast_only_a']).sum())}")
+
+
+a_dir, b_dir = sys.argv[1], sys.argv[2]
+max_range = os.getenv("MAX_RANGE")
+if max_range is None:
+    sj = find(a_dir, "summaries/*summary*.json")
+    assert sj, f"no summary json under {a_dir}; set MAX_RANGE"
+    max_range = json.load(open(sj[0]))["max_range"]
+max_range = float(max_range)
+print(f"range limit: {max_range} m | A={a_dir} | B={b_dir}")
+
+a, b = load(a_dir, max_range), load(b_dir, max_range)
+if not a.index.equals(b.index):
+    print(f"WARNING: GT rows differ (A {len(a)}, B {len(b)}); using the {len(a.index.intersection(b.index))} common rows")
+m = a.join(b, lsuffix="_a", rsuffix="_b", how="inner")
+
+table(m, "ALL in-range GT frames")
+for flag, name in ((True, "above horizon"), (False, "below horizon")):
+    table(m[m["above_a"] == flag], name)
+
+os.makedirs(OUT, exist_ok=True)
+m.reset_index().to_csv(os.path.join(OUT, "outcomes_frame_level.csv"), index=False)
+print(f"\nsaved {OUT}/outcomes_frame_level.csv")
+EOF

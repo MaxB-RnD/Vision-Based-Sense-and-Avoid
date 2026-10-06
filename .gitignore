@@ -47,7 +47,7 @@
 
 # Ignore Custom AOT Folders.
 /data
-model_training/
-*/results*
 /wandb/
+*/results*
+model_training/
 # ==============================================================================

@@ -1,0 +1,914 @@
+# ------------------------------------------------------------------------------
+# -               V E R S I O N   I D E N T I F I C A T I O N                  -
+# ------------------------------------------------------------------------------
+# File:                    %name: hrnetw32_track_to_detect_test.py %
+# Date Created:            %date_created: Thur Jul 16 17:09:23 2026 %
+# CM Version               %version: 1 %
+# CM Instance              %instance: 4 %
+# Author:                  %created_by: MBusato %
+# ------------------------------------------------------------------------------
+# -                          D E S C R I P T I O N                             -
+# ------------------------------------------------------------------------------
+# Inference entrypoint for the HRNet-W32 backbone, tracking-to-detect variant.
+# Runs the same HRNet-W32 backbone and weights as hrnet_w32_test.py, isolating
+# the individual backbone's contribution for the complexity vs AFDR experiment
+# (H1). The offset tracker here additionally coasts confirmed tracks through
+# up to 3 consecutive frames with no matching detection using motion
+# prediction, rather than dropping the track immediately (see
+# hrnetw32_track_to_detect/tracking.py for the full mechanism).
+#
+# USAGE INSTRUCTIONS:
+#   1. Run the Script from the Project Root:
+#       - python -m src.introspection_module.hrnetw32_introspective.hrnetw32_track_to_detect_test
+#
+#   2. Optional Environment Variables:
+#       - DEBUG_MODEL_INIT=1
+#           Enables verbose/debug logging during model initialisation.
+#
+#       - MODEL_PATH=/path/to/checkpoint.pt
+#           Overrides the default segmentation model checkpoint path.
+#
+#       - MIN_TRACK_LEN=30
+#           Minimum track length before detections are committed to results.
+#
+#       - MIN_SCORE=0.6
+#           Minimum confidence score required for final output detections.
+#
+#       - DETECTION_THRESHOLD=0.6
+#           Detection threshold passed directly to the segmentation model.
+#           Should generally be <= MIN_SCORE.
+#
+#       - STAGE_TIMING=1
+#           Enables detailed stage-by-stage timing and latency profiling.
+#
+#   3. Tracking-to-Detect Behaviour:
+#       Coasting is fixed at 3 consecutive frames maximum, with confidence
+#       decaying by 0.9 per coasted frame (see max_coast_frames / coast_decay
+#       on the SimpleOffsetTracker in inference_setup()). This is not exposed as 
+#       an environment variable.
+#
+# ------------------------------------------------------------------------------
+# -                          L I C E N S I N G                                 -
+# ------------------------------------------------------------------------------
+# This software and its contents are the intellectual property of Lockheed
+# Martin Australia and are protected under applicable copyright and intellectual
+# property laws.
+#
+# All rights reserved. No part of this software may be reproduced, distributed,
+# modified, or transmitted in any form or by any means without the prior written
+# permission of Lockheed Martin Australia.
+#
+# Unauthorised use, copying, or distribution of this software is strictly
+# prohibited.
+# ------------------------------------------------------------------------------
+
+import os
+import sys
+import cv2
+import time
+import torch
+import numpy as np
+
+import logging
+import warnings
+
+from tqdm import tqdm
+from contextlib import nullcontext
+from typing import List, Dict, Any
+from logging_module import LogLevel, log, set_level
+
+sys.path.insert(0, os.path.dirname(__file__))
+from src.introspection_module.utils import warmup_models as wm
+from notebooks.helpers.notebook_helpers import record_fps_stats
+from src.introspection_module.utils.timing_profiling import StageTimer, full_frame_input_shape
+from src.introspection_module.winning_solution_star.evaluator.airborne_detection import AirbornePredictor
+
+# ------------------------------------------------------------------------------
+#                           CONFIGURATION VARIABLES
+# ------------------------------------------------------------------------------
+# Path to the Fine-Tuned Model Checkpoint Directory.
+MODEL_PATH = os.getenv("MODEL_PATH", "configs/models/introspection_module/hrnetw32/HRNetW32_Complete.pt")
+
+# Minimum Number of Frames a Track Must Span Before Being Committed to Results.
+MIN_TRACK_LEN = int(os.getenv("MIN_TRACK_LEN", 30))
+
+# Minimum Confidence Score Required for a Detection to Be Committed to Results.
+MIN_SCORE = float(os.getenv("MIN_SCORE", 0.6))
+
+# Detection Confidence Threshold Passed Directly to the Model.
+# NOTE: Set Equal to or Lower than MIN_SCORE.
+DETECTION_THRESHOLD = float(os.getenv("DETECTION_THRESHOLD", 0.6))
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
+#                  HRNET-W32 TRACKING TO DETECT PREDICTOR CLASS
+# ------------------------------------------------------------------------------
+class HRNetW32TrackToDetectPredictor(AirbornePredictor):
+    """
+    Inference predictor for the HRNet-W32 backbone, using a tracking-to-detect
+    offset tracker that bridges brief detection gaps via motion prediction
+    (coasting) instead of dropping a track the moment a frame is missed.
+    Implements inference_setup() and run_model_on_frame() from the
+    ModelPredictor template. All other pipeline methods are inherited.
+    """
+    # These are Required by AirbornePredictor But Not Used in this Adapter.
+    training_data_path = None
+    test_data_path     = None
+    vocabulary_path    = None
+
+    def __init__(self) -> None:
+        """
+        Initialises the predictor instance and applies timeout buffers.
+
+        Warm-up compilation and cold model compilation can take extended
+        periods; lifts the base predictor setup and flight runtime limits.
+        """
+        super().__init__()
+        wm.apply_timeout_buffer(self)
+
+
+    def inference_setup(self) -> None:
+        """
+        Loads all models into GPU memory before any flights are processed.
+        Called once automatically before inference begins.
+        """
+        # Import Modules Required Only During Inference Setup.
+        # Keeping these Imports Local can Reduce Startup/Import Overhead.
+        from src.introspection_module.hrnetw32_introspective.tracking_to_detect.prediction_structure import (
+            DetectedItem
+        )
+
+        from src.introspection_module.hrnetw32_introspective.tracking_to_detect import (
+            models_segmentation,
+            models_transformation,
+            offset_grid_to_transform,
+            seg_prediction_to_items,
+            tracking,
+        )
+
+        # Suppress torch.compile / inductor verbosity:
+        #   - TypedStorage deprecation warning from select_algorithm.py.
+        #   - AUTOTUNE addmm benchmarking tables.
+        #   - Autotune Choices Stats JSON lines.
+        logging.getLogger("torch._inductor").setLevel(logging.ERROR)
+        logging.getLogger("torch._inductor.select_algorithm").setLevel(logging.ERROR)
+        logging.getLogger("torch._dynamo").setLevel(logging.ERROR)
+        warnings.filterwarnings(
+            "ignore",
+            message="TypedStorage is deprecated",
+            category=UserWarning,
+        )
+
+        # Check if the Code Has Been Called in Debug Mode.
+        if os.getenv("DEBUG_MODEL_INIT"):
+            set_level(log_level=LogLevel.DEBUG)
+
+        # Set the Device to GPU if Available.
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        log(LogLevel.DEBUG, "hrnet_w32:inference_setup", "Device: %s", self.device)
+
+        # Configuration Dictionary for the HRNetW32 Segmentation Model.
+        seg_cfg = {
+            "base_model_name"       : "hrnet_w32",
+            "input_frames"          : 2,
+            "feature_location"      : "",
+            "combine_outputs_dim"   : 512,
+            "combine_outputs_kernel": 1,
+            "output_binary_mask"    : True,
+            "output_above_horizon"  : True,
+            "pred_scale"            : 8,
+        }
+
+        # Create the Segmentation Model Architecture.
+        self.model_seg = models_segmentation.HRNetSegmentation(
+            cfg=seg_cfg, pretrained=False
+        )
+
+        # Check if the Pretrained Checkpoint Exists.
+        if os.path.exists(MODEL_PATH):
+            # Load Checkpoint Onto the Selected Device.
+            ckpt  = torch.load(MODEL_PATH, map_location=self.device,
+                               weights_only=False)
+
+            # Extract State Dictionary.
+            state = ckpt.get("model_state_dict", ckpt)
+            state = {k.replace("_orig_mod.", ""): v for k, v in state.items()}
+
+            # Load Weights into the Model.
+            self.model_seg.load_state_dict(state, strict=False)
+            log(LogLevel.INFO, "hrnetw32_ttd:inference_setup",
+                "Segmentation Weights Loaded: %s", MODEL_PATH)
+
+        else:
+            # Warn if Checkpoint is Missing. Model Will Run with Random/Untrained Weights.
+            log(LogLevel.WARNING, "hrnet_w32:inference_setup",
+                "Checkpoint Not Found: %s. Using Random Weights.", MODEL_PATH)
+
+        # Move Model Onto Inference Device.
+        self.model_seg = self.model_seg.to(self.device)
+
+        # Set Model to Evaluation Mode.
+        self.model_seg.eval()
+
+        # Keep a Raw Model Reference for FLOPs Measurement. Avoids the Dynamo Object Conflict.
+        self._model_seg_raw = self.model_seg
+
+        # Compile for Faster Repeated Inference.
+        self.model_seg = torch.compile(self.model_seg, mode="max-autotune")
+
+        # Directory Containing Transformation Model Weights.
+        models_dir = "configs/models/introspection_module"
+
+        # Create Transform Estimation Model.
+        self._model_transform_raw = models_transformation.TrEstimatorTsmCached(
+            cfg=dict(base_model_name="resnet34", weight_scale=3), pretrained=False
+        )
+
+        # Load Pretrained Transformation Model Weights.
+        self._model_transform_raw.load_state_dict(
+            torch.load(
+                f"{models_dir}/ResNet34_Transforms_Original.pth",
+                map_location=self.device, weights_only=False
+            )["model_state_dict"]
+        )
+
+        # Move Transform Model to Inference Device.
+        self._model_transform_raw = self._model_transform_raw.to(self.device)
+
+        # Set Transform Model to Evaluation Mode.
+        self._model_transform_raw.eval()
+
+        # Prevent Adding Cache Branch into Compiled Graph & Breaking CUDA Graph Capture.
+        self.model_transform = self._model_transform_raw
+        log(LogLevel.INFO, "hrnetw32_ttd:inference_setup", "Transform Model Loaded.")
+
+        # Tracker Used to Maintain Object Identities Between Frames.
+        self._offset_tracker = tracking.SimpleOffsetTracker(
+            min_track_size        = 8,
+            threshold_to_find     = 0.6,
+            threshold_to_continue = 0.6,
+            threshold_distance    = 40,
+            min_distance          = 1000,
+            max_coast_frames      = 3,
+            coast_decay           = 0.9,
+        )
+
+        # Store Last Known DetectedItem per Confirmed track_id.
+        self.active_tracks: dict = {}
+
+        # Store Frame Processing Times for Performance Monitoring.
+        self.frame_times: List[float] = []
+
+        # Configure Stage-Level Performance Timing & Profiling.
+        self.timer = StageTimer(enabled=os.getenv("STAGE_TIMING") == "1")
+        log(LogLevel.INFO, "hrnetw32_ttd:inference_setup", "HRNetW32TrackToDetectPredictor Ready.")
+
+        # Store Helper Modules/Functions as Instance Members for Reuse.
+        self._offset_grid_to_transform = offset_grid_to_transform
+        self._seg_prediction_to_items  = seg_prediction_to_items
+        self._tracking                 = tracking
+        self._DetectedItem             = DetectedItem
+
+        # Run Model Compilation & Input Shape Warm-Up.
+        self.warmup()
+
+
+    def warmup(self) -> None:
+        """
+        Compiles the full-frame fp16 shape and warms the alignment model.
+
+        Exercises the model graphs and dynamic shapes before evaluation
+        starts, then serialises a warm-up execution report.
+        """
+        # Check If Warm-Up Is Enabled.
+        if not wm.enabled():
+            print("[warm-up] disabled (WARMUP=0).", flush=True)
+            return
+
+        # Start the Warm-Up Timer & Create a New Warm-Up Report.
+        t0 = time.perf_counter()
+        report = wm.new_report("hrnetw32_t2d")
+
+        # Warm Up the T2D Model Using the Full Frame Shape.
+        wm.warmup_t2d(self, wm.resolve_full_shape(self.test_data_path), report)
+
+        # Save the Warm-Up Report & Timing.
+        wm.finish_report(report, os.path.join(self.get_results_directory(), "warmup_report.json"), t0)
+
+
+    def set_timer(self, timer: StageTimer) -> None:
+        """
+        Assigns an external StageTimer instance for stage profiling.
+
+        Args:
+            timer (StageTimer): Timer instance to use for profiling.
+        """
+        self.timer = timer
+
+
+    def _stage(self, name: str):
+        """
+        Wraps execution within a profiling stage context if a timer is active.
+
+        Args:
+            name (str): Identifier for the profiling stage.
+
+        Returns:
+            ContextManager: Stage context manager or nullcontext if disabled.
+        """
+        # Retrieve the Configured Timer, or None if it Does Not Exist.
+        t = getattr(self, "timer", None)
+
+        # Return the Profiling Stage when a Timer is Active.
+        return t.stage(name) if t is not None else nullcontext()
+
+
+    def get_complexity_targets(self) -> List[dict]:
+        """
+        Declares the models and input shapes to be measured by
+        measure_predictor_complexity() in notebook_helpers.py. Returns one
+        entry per model.
+
+        Returns:
+            List[dict]: Each entry has keys:
+                model          : torch.nn.Module to profile.
+                input_shape    : (B, C, H, W) dummy input shape, or None if overridden.
+                input_override : Tuple of tensors to pass directly to flops_model.
+                label          : Human-readable name for logging.
+        """
+        # Determine the Dimensions of the Full Image. 
+        full = full_frame_input_shape(self.test_data_path)
+
+        # Return the Model Shape Results. 
+        return [
+            {
+                "model"       : self._model_seg_raw,
+                "input_shape" : full,
+                "label"       : "HRNet-W32 (segmentation)",
+            },
+            {
+                "model"          : self._model_transform_raw.flops_model,
+                "input_shape"    : None,
+                "input_override" : (torch.zeros(1, 1024, 1024), torch.zeros(1, 1024, 1024)),
+                "label"          : "ResNet34-TSM Transform (model_transform)",
+            },
+        ]
+
+
+    def run_model_on_frame(self, frame: Any, prev_frame: Any, frame_name: str, flight_id: str) -> List[Dict]:
+        """
+        Run the model on a single frame and return detected objects.
+
+        Args:
+            frame: Current frame as a numpy array (BGR format).
+            prev_frame: Previous frame, or None if this is the first frame.
+            frame_name: Name of the current frame file.
+            flight_id: Identifier for the flight sequence.
+
+        Returns:
+            List[Dict]: A list of detections, where each detection contains:
+                - track_id: Unique identifier for the object.
+                - bbox: Bounding box coordinates.
+                - confidence: Detection confidence score (0-1).
+                - class_name: Label of the detected object.
+                - source: Detection origin ('DETECTED' or 'COASTED').
+                - coast_count: Number of consecutive frames this track has coasted.
+        """
+        # Cannot Estimate Motion or Perform Temporal Inference Without a Previous Frame.
+        if prev_frame is None:
+            return []
+
+        # Convert Frames to Grayscale.
+        frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
+        prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY) if len(prev_frame.shape) == 3 else prev_frame
+
+        # Start Timing FPS & Frame Stage Execution.
+        self.timer.begin_frame()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        t0 = time.perf_counter()
+
+        # Profile Frame-to-Frame Affine Transform Estimation.
+        with self._stage("transform"):
+            prev_tr = self._estimate_transform(prev_gray, frame_gray)
+
+        # Build Two-Frame Model Input Buffer with Padding.
+        h, w = frame_gray.shape
+        padding = (16 + 32 + 64) // 2   # = 56
+
+        # Profile Image Alignment Warping & Tensor Allocation.
+        with self._stage("prep"):
+            if not hasattr(self, "_input_buffer"):
+                self._input_buffer = np.zeros((1, 2, h, w + padding * 2), dtype=np.uint8)
+            X = self._input_buffer
+
+            # Warp the Previous Frame into Alignment with the Current Frame.
+            prev_aligned = cv2.warpAffine(prev_gray, prev_tr[:2, :], dsize=(w, h),
+                                           flags=cv2.INTER_LINEAR)
+
+            # Insert Aligned Previous Frame and Current Frame into Model Input.
+            X[0, 0, :, padding:-padding] = prev_aligned
+            X[0, 1, :, padding:-padding] = frame_gray
+
+        # Profile Tensor Upload, Segmentation Inference & Post-Processing.
+        with self._stage("stage1"):
+            # Convert Input Array into Normalised Half-Precision Device Tensor.
+            with self._stage("stage1/upload"):
+                X_t = torch.from_numpy(X).float().to(self.device, dtype=torch.float16).mul_(1.0 / 255.0)
+
+            # Run Segmentation Model Forward Pass.
+            with self._stage("stage1/model0"):
+                with torch.no_grad():
+                    with torch.amp.autocast(self.device.type):
+                        pred = self.model_seg(X_t)
+
+                # Pull All Outputs in One Shot (Avoids Repeated Host-to-Device Round-Trips).
+                out_keys = ["mask", "offset", "size", "tracking", "distance", "above_horizon"]
+                cpu_preds = {k: pred[k][0].cpu() for k in out_keys}
+
+            # Post-Process Heatmaps & Extract Object Candidates.
+            with self._stage("stage1/postproc"):
+                mask          = torch.sigmoid(cpu_preds["mask"][0].float()).numpy()
+                offset        = cpu_preds["offset"].float().numpy()
+                size          = cpu_preds["size"].float().numpy()
+                tracking_out  = cpu_preds["tracking"].float().numpy()
+                distance      = cpu_preds["distance"][0].float().numpy()
+                above_horizon = cpu_preds["above_horizon"][0].float().numpy()
+
+                # Remove Border Artefacts.
+                border_x = padding // 8 + 4
+                border_y = 4
+
+                # Zero Out Unreliable Border Padding Regions.
+                mask[:border_y, :]      = 0.0
+                mask[-border_y - 4:, :] = 0.0
+                mask[:, :border_x]      = 0.0
+                mask[:, -border_x:]     = 0.0
+
+                # Convert Heatmaps into Detection Candidates.
+                detected = self._seg_prediction_to_items.pred_to_items(
+                    comb_pred     = mask,
+                    offset        = offset,
+                    size          = size,
+                    tracking      = tracking_out,
+                    distance      = distance,
+                    above_horizon = above_horizon,
+                    conf_threshold = DETECTION_THRESHOLD,
+                    pred_scale    = 8,
+                    x_offset      = -padding,
+                )
+
+        # Profile Multi-Frame Object Tracking & Trajectory Coasting.
+        with self._stage("tracking"):
+            # Convert Raw Detections into DetectedItem Structures for the Tracker.
+            detected_items = [
+                self._DetectedItem(
+                    cx         = it["cx"] + it["offset"][0],
+                    cy         = it["cy"] + it["offset"][1],
+                    w          = it["w"],
+                    h          = it["h"],
+                    distance   = it["distance"],
+                    confidence = it["conf"],
+                    track_id   = -1,
+                    dx         = it["tracking"][0],
+                    dy         = it["tracking"][1],
+                    item_id    = "",
+                )
+                
+                # Only Keep Sufficiently Confident Detections.
+                for it in detected
+                if it["conf"] >= self._offset_tracker.threshold_to_continue
+            ]
+
+            # Update Tracker State & Assign Track IDs.
+            items_to_submit = self._offset_tracker.process_frame_detections(
+                detected_items, prev_tr
+            )
+
+            # Collect Track IDs Successfully Matched During the Current Frame.
+            matched_this_frame = {it.track_id for it in items_to_submit if it.track_id >= 0}
+
+            # Store Coasted Predictions & Updated Active Track State.
+            coasted_items = []
+            new_active_tracks = {}
+
+            # Process Tracks that were Not Matched This Frame.
+            for track_id, last_item in self.active_tracks.items():
+                # Skip Tracks Already Updated by a Detection.
+                if track_id in matched_this_frame:
+                    continue
+
+                # Increment the Consecutive Miss Counter.
+                coast_count = last_item.coast_count + 1
+
+                # Release the Track ID Once the Maximum Coast Duration is Exceeded.
+                if coast_count > self._offset_tracker.max_coast_frames:
+                    self._offset_tracker.release_track_id(track_id)
+                    continue
+
+                # Predict Missing Detection Using Motion Extrapolation.
+                predicted = self._coast_item(last_item, prev_tr, coast_count)
+                
+                # Store Coasted Detection for Output & Future Association.
+                coasted_items.append(predicted)
+                new_active_tracks[track_id] = predicted
+
+            # Update the Active Track List Using Successfully Detected Objects.
+            for it in items_to_submit:
+                if it.track_id >= 0:
+                    new_active_tracks[it.track_id] = it
+
+            # Replace the Previous Active Track State.
+            self.active_tracks = new_active_tracks
+
+            # Reinsert Coasted Objects into the Tracker for Future Association.
+            if coasted_items:
+                self._offset_tracker.inject_coasted_items(coasted_items)
+
+            # Return Both Measured & Coasted Detections.
+            items_to_submit = items_to_submit + coasted_items
+
+        # End Timing FPS & Frame Stage Execution.
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        total = time.perf_counter() - t0
+        self.frame_times.append(total)
+        self.timer.end_frame(total)
+
+        # Convert Internal Detection Objects into Submission Format.
+        return [
+            {
+                "track_id"   : item.track_id,
+                "bbox"       : [item.cx - item.w/2, item.cy - item.h/2,
+                                item.cx + item.w/2, item.cy + item.h/2],
+                "confidence" : float(item.confidence),
+                "class_name" : "airborne",
+                "source"     : item.source,
+                "coast_count": item.coast_count,
+            }
+            for item in items_to_submit
+        ]
+
+
+    def _coast_item(self, last_item, prev_tr, coast_count):
+        """
+        Predict the Next Object State When a Detection is Temporarily Missing.
+
+        Args:
+            last_item: Most recent detection associated with the track.
+            prev_tr: Estimated affine transform mapping the previous frame into
+                     the current frame.
+            coast_count: Number of consecutive frames the track has been coasted.
+
+        Returns:
+            DetectedItem: Predicted detection representing the coasted object
+            state for the current frame.
+        """
+        # Relative Object Motion Offset is Inherited Directly.
+        predicted_cx = float(last_item.cx - last_item.dx)
+        predicted_cy = float(last_item.cy - last_item.dy)
+
+        # Build the Coasted Detection.
+        item = self._DetectedItem(
+            cx          = predicted_cx,
+            cy          = predicted_cy,
+            w           = last_item.w,
+            h           = last_item.h,
+            item_id     = last_item.item_id,
+            distance    = last_item.distance,
+            confidence  = last_item.confidence * self._offset_tracker.coast_decay,
+            dx          = last_item.dx,
+            dy          = last_item.dy,
+            track_id    = last_item.track_id,
+            add_to_submit = True,
+            source      = 'COASTED',
+            coast_count = coast_count,
+        )
+
+        # Initialise Runtime Tracking Attributes Expected by the Association Logic.
+        item.next_item_idx = None
+        item.prev_item_idx = None
+        item.items_in_track = last_item.items_in_track  # Preserved NOT Advanced.
+
+        # Return the Coast Item. 
+        return item
+
+
+    def _estimate_transform(self, prev_img: np.ndarray,
+                             img: np.ndarray) -> np.ndarray:
+        """
+        Estimate the affine transform between two consecutive frames using
+        the ResNet34-TSM motion estimation model.
+
+        Args:
+            prev_img (np.ndarray):
+                Previous grayscale image/frame as a 2D NumPy array.
+            img (np.ndarray):
+                Current grayscale image/frame as a 2D NumPy array.
+
+        Returns:
+            np.ndarray:
+                Estimated affine transformation matrix mapping points from the
+                previous frame into the current frame coordinate system.
+        """
+        # Define the Fixed Crop Size Used for Motion Estimation.
+        crop_w, crop_h = 1024, 1024
+
+        # Get Image Dimensions.
+        h, w = img.shape
+
+        # Centre the Crop Vertically and Horizontally.
+        y0 = (h - crop_h) // 2
+        x0 = (w - crop_w) // 2
+
+        # Number of Tracking Points in the Model Output Grid.
+        cw_pts = crop_w // 32
+        ch_pts = crop_h // 32
+
+        # Extract Matching Crops from the Current & Previous Frames.
+        crop      = img[y0:y0+crop_h,      x0:x0+crop_w]
+        crop_prev = prev_img[y0:y0+crop_h, x0:x0+crop_w]
+
+        # Profile Feature Extraction & Offset Inference via Alignment Network.
+        with self._stage("transform/model"):
+            # Convert Cropped Images into PyTorch Tensors & Normalise to [0, 1].
+            t_cur  = torch.from_numpy(crop      / 255.0).float().to(self.device)
+            t_prev = torch.from_numpy(crop_prev / 255.0).float().to(self.device)
+
+            # Run Inference Without Gradient Tracking for Efficiency.
+            with torch.no_grad():
+                with torch.amp.autocast(self.device.type):
+                    heatmap, offsets = self.model_transform(t_prev[None], t_cur[None])
+
+            # Move Model Outputs Back to CPU NumPy Arrays.
+            heatmap = heatmap.detach().float().cpu().numpy()
+            offsets = offsets.detach().float().cpu().numpy()
+
+        # Profile Affine Transformation Fitting & Least-Squares Solver.
+        with self._stage("transform/solve"):
+            # Create a Regular Grid of Points in the Previous Frame Crop.
+            prev_pts = np.zeros((2, ch_pts, cw_pts), dtype=np.float32)
+            prev_pts[0] = np.arange(16, crop_w, 32)[None, :]
+            prev_pts[1] = np.arange(16, crop_h, 32)[:, None]
+            prev_pts = prev_pts[..., 2:-2, 2:-2]
+
+            # Convert Crop-Local Coordinates Back into Full-Image Coordinates.
+            pts_offset = np.array([x0, y0])[:, None]
+            cur_pts = prev_pts + offsets[0]
+
+            # Estimate Global Affine Transform Using Weighted Point Matches.
+            tr, _ = self._offset_grid_to_transform.offset_grid_to_transform(
+                prev_frame_points = prev_pts.reshape(2, -1) + pts_offset,
+                cur_frame_points  = cur_pts.reshape(2, -1) + pts_offset,
+                points_weight     = heatmap[0].reshape(-1) ** 2,
+            )
+        
+        # Return the Estimated Affine Transformation Matrix.
+        return tr
+
+
+    # --------------------------------------------------------------------------
+    #           DO NOT MODIFY THE BELOW CODE (RESULTS PIPELINING)
+    # --------------------------------------------------------------------------
+    def flight_started(self) -> None:
+        """
+        Resets all per-flight state. Called automatically at the start of
+        each flight by inference(). Do not call manually.
+
+        Clears result buffers, visited-frame records, and track-length
+        counters. Also reinitialises the tracker so that track IDs and
+        internal state do not bleed across flights.
+        """
+        # Reset Per-Flight State Dictionaries.
+        self.track_id_results : Dict = {}
+        self.visited_frame    : Dict = {}
+        self.track_len_so_far : Dict = {}
+
+        # Reset the Per-Flight Track ID Counter for Untracked Models.
+        # Safe to Leave in Even if the Model has its Own Tracker.
+        self._next_track_id : int = 1
+
+        # Reset Optional Offset Tracker State if this Model Uses One.
+        # Prevents Frame History & Track IDs from Leaking Between Flights.
+        if hasattr(self, "_offset_tracker"):
+            self._offset_tracker.prev_frames_items = [[]]
+            self._offset_tracker.track_ids_in_use  = set()
+        self.active_tracks = {}
+
+        # Reset the Transform Model's Feature Cache.
+        # Without this, the First Frame of a New Flight Would Use Stale Backbone
+        # Features from the Last Frame of the Previous Flight.
+        if hasattr(self, "_model_transform_raw"):
+            self._model_transform_raw.reset_cache()
+
+
+    def get_all_frame_images(self, flight_id: str) -> List[str]:
+        """
+        Returns a sorted list of image filenames for the given flight.
+
+        Scans the flight folder under test_data_path and collects all files
+        (excluding subdirectories) in sorted order.
+
+        Args:
+            flight_id (str): The flight folder name.
+
+        Returns:
+            List[str]: Sorted list of image filenames within the flight folder.
+        """
+        # Import Extra Libraries for this Function.
+        from os import listdir
+        from os.path import isfile, join
+
+        # Initalise Variables.
+        flight_folder = join(str(self.test_data_path), flight_id)
+
+        # Return All Image Files from the Flight Folder.
+        return sorted(
+            f for f in listdir(flight_folder)
+            if isfile(join(flight_folder, f))
+        )
+
+
+    def _proxy_register(
+        self,
+        class_name : str,
+        track_id   : int,
+        bbox       : List[float],
+        confidence : float,
+        img_name   : str,
+        source = 'DETECTED',
+        warning = False,
+        introspection_score = None,
+        introspection_threshold = None,
+        **extra_introspection_fields,
+    ) -> None:
+        """
+        Wraps register_object_and_location with MIN_TRACK_LEN and MIN_SCORE
+        filtering before committing a detection to the results.
+
+        A detection is only forwarded if:
+          - Its track has been observed for more than MIN_TRACK_LEN frames.
+          - Its confidence score meets or exceeds MIN_SCORE.
+          - Its track ID has not already been registered for this frame.
+
+        Args:
+            class_name (str): Object class label, e.g. "airborne".
+            track_id (int): Unique ID for the tracked object.
+            bbox (List[float]): Bounding box [x1, y1, x2, y2].
+            confidence (float): Detection confidence score (0-1).
+            img_name (str): Image filename this detection belongs to.
+            source (str): The type of frame detected for tracking (Detected or Coast).
+            warning (bool): Whether the introspection module flagged this track as
+                            unreliable on this frame (True) or not (False).
+            introspection_score (Optional[float]): The introspection strategy's
+                            continuous decision signal for this track/frame, for
+                            visualisation and debugging.
+            introspection_threshold (Optional[float]): The threshold the above
+                            score was compared against to reach the warning
+                            decision.
+            **extra_introspection_fields: Any additional strategy-specific
+                            diagnostic fields to be written straight through to
+                            the results file.
+
+        Raises:
+            Exception: If the same track_id is registered twice for img_name.
+        """
+        # Initialise Track Length Counter if this is a New Track ID.
+        if track_id not in self.track_len_so_far:
+            self.track_len_so_far[track_id] = 0
+        
+        # Exclude Coast Frames from Tracking. 
+        if source == 'DETECTED':
+            self.track_len_so_far[track_id] += 1
+
+        # Skip Detections from Tracks that Have Not Yet Reached MIN_TRACK_LEN.
+        if self.track_len_so_far[track_id] <= MIN_TRACK_LEN:
+            return
+
+        # Skip Detections Below the Minimum Confidence Threshold.
+        if confidence < MIN_SCORE:
+            return
+
+        # Guard Against Duplicate Track IDs within the Same Frame.
+        if img_name not in self.visited_frame:
+            self.visited_frame[img_name] = []
+        if track_id in self.visited_frame[img_name]:
+            raise Exception(
+                f"Two Detections in Frame '{img_name}' Share track_id={track_id}."
+            )
+        self.visited_frame[img_name].append(track_id)
+
+        # Commit the Detection to the Results.
+        self.register_object_and_location(
+            class_name, track_id, bbox, confidence, img_name, source=source, warning=warning,
+            introspection_score=introspection_score, introspection_threshold=introspection_threshold,
+            **extra_introspection_fields,
+        )
+
+
+    def inference(self, flight_id: str) -> None:
+        """
+        Runs the segmentation-based detection and tracking pipeline over all
+        frames in a single flight.
+
+        Iterates frames in order then calls the tracker and registers qualifying
+        detections. Called automatically by AirbornePredictor.evaluation() for
+        each flight.
+
+        Do not call manually.
+
+        Args:
+            flight_id (str): The flight folder name to run inference on.
+
+        Returns:
+            None:
+        """
+        # Reset Per-Flight State.
+        self.flight_started()
+        prev_frame = None
+
+        # Apply to all Frames in the Sequence.
+        for frame_name in tqdm(self.get_all_frame_images(flight_id), desc=f"Flight {flight_id}"):
+            frame_path = self.get_frame_image_location(flight_id, frame_name)
+            frame = cv2.imread(str(frame_path))
+
+            # Skip Empty Frames.
+            if frame is None:
+                log(LogLevel.WARNING, "hrnetw32_ttd:inference",
+                     "Could Not Read Frame '%s', Skipping.", frame_path)
+                prev_frame = frame
+                continue
+
+            # Run the Model on the Current & Previous Frame.
+            detections = self.run_model_on_frame(
+                frame=frame,
+                prev_frame=prev_frame,
+                frame_name=frame_name,
+                flight_id=flight_id
+            )
+
+            # Update the Frames.
+            prev_frame = frame
+
+            # Register Each Detection through the Filter/Format Layer.
+            _KNOWN_DET_KEYS = {
+                "class_name", "track_id", "bbox", "confidence", "source",
+                "warning", "coast_count", "introspection_score", "introspection_threshold",
+            }
+            for det in detections:
+                # Collect any Strategy-Specific Diagnostic Fields Beyond the Standard Set.
+                extra_fields = {k: v for k, v in det.items() if k not in _KNOWN_DET_KEYS}
+
+                # Update the Proxy Register Object. 
+                self._proxy_register(
+                    class_name = det.get("class_name", "airborne"),
+                    track_id   = int(det["track_id"]),
+                    bbox       = det["bbox"],
+                    confidence = float(det["confidence"]),
+                    img_name   = frame_name,
+                    source     = det.get("source", "DETECTED"),
+                    warning    = det.get("warning", False),
+                    introspection_score     = det.get("introspection_score"),
+                    introspection_threshold = det.get("introspection_threshold"),
+                    **extra_fields,
+                )
+
+
+    def run(self) -> None:
+        """
+        Extends the parent run() to save FPS statistics to fps_stats.json
+        inside the run directory after all flights have been processed.
+
+        This ensures record_fps_stats() is called exactly once, after the
+        full frame_times list has been populated across every flight.
+        """
+        # Run the Standard Evaluation Pipeline.
+        super().run()
+
+        # Save FPS Stats if any Frames were Timed.
+        if self.frame_times:
+            record_fps_stats(
+                frame_times_sec = self.frame_times,
+                run_dir         = self.get_results_directory(),
+                warmup_frames   = 10,
+            )
+
+        # Save Stage Profiling Metrics to JSON if Enabled.
+        if self.timer.enabled and self.timer.n_frames:
+            self.timer.save(
+                os.path.join(self.get_results_directory(), "stage_timing.json"),
+                warmup_frames=10,
+                extra=dict(pipeline="hrnetw32_t2d",
+                           model_map={"stage1/model0": "HRNet-W32 (single model)"}),
+            )
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
+#                           STANDALONE ENTRY POINT
+# ------------------------------------------------------------------------------
+if __name__ == "__main__":
+    predictor = HRNetW32TrackToDetectPredictor()
+    predictor.run()
+# ------------------------------------------------------------------------------

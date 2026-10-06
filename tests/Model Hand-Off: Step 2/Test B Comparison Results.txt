@@ -1,0 +1,8 @@
+part11b3a52c0f1764533b32e36992b17b6e1
+  detections before=524 after=524  only-before=0  only-after=0
+  coasted shift (px): n=1 median=5.13 max=5.13
+  non-coasted shift (px): n=523 max=0.00
+part1036edfd6ece44c37b8ca9562fd701682
+  detections before=550 after=550  only-before=0  only-after=0
+  coasted shift (px): n=20 median=15.03 max=59.79
+  non-coasted shift (px): n=530 max=0.00

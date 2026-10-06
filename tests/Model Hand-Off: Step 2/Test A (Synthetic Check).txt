@@ -1,0 +1,75 @@
+python - <<'EOF' 2>&1 | tee outputs/results/verification_testing/"Model Hand-Off: Step 2"/"Test A (Synthetic Check) Results.txt"
+import types
+import numpy as np
+import torch
+
+from src.introspection_module.hrnetw32_introspective.hrnetw32_track_to_detect_test import HRNetW32TrackToDetectPredictor as P
+from src.introspection_module.hrnetw32_introspective.tracking_to_detect import tracking
+from src.introspection_module.hrnetw32_introspective.tracking_to_detect.prediction_structure import DetectedItem
+
+TOL_PX = 0.5
+
+
+def make_T(tx, ty, deg=0.0, c=(200.0, 200.0)):
+    a = np.deg2rad(deg)
+    R = np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
+    T = np.eye(3)
+    T[:2, :2] = R
+    T[:2, 2] = np.array(c) - R @ np.array(c) + np.array([tx, ty])
+    return T
+
+
+def run_scenario(T, d, label, n_det=12, n_coast=4):
+    pred = P.__new__(P)
+    pred.device = torch.device("cpu")
+    pred.frame_times = []
+    pred.active_tracks = {}
+    pred._offset_tracker = tracking.SimpleOffsetTracker(
+        min_track_size=8, threshold_to_find=0.6, threshold_to_continue=0.6,
+        threshold_distance=40, min_distance=1000, max_coast_frames=3, coast_decay=0.9)
+    pred._DetectedItem = DetectedItem
+    pred._estimate_transform = lambda prev, cur: T
+    pred.model_seg = lambda X: {k: torch.zeros(1, c, 32, 32) for k, c in
+                                [("mask", 1), ("offset", 2), ("size", 2),
+                                 ("tracking", 2), ("distance", 1), ("above_horizon", 1)]}
+    script = {"cands": []}
+    pred._seg_prediction_to_items = types.SimpleNamespace(pred_to_items=lambda **kw: script["cands"])
+
+    frame = np.zeros((128, 128), dtype=np.uint8)
+    p = np.array([200.0, 200.0])
+    errors, n_real = [], 0
+    for k in range(1, n_det + n_coast + 1):
+        if k > 1:
+            p = T[:2, :2] @ p + T[:2, 2] + d
+        script["cands"] = []
+        if k <= n_det:
+            script["cands"] = [dict(cx=p[0], cy=p[1], offset=[0.0, 0.0], w=24, h=24,
+                                    distance=500.0, conf=0.9, tracking=[-d[0], -d[1]])]
+        out = pred.run_model_on_frame(frame, frame, f"f{k}.png", "synthetic")
+        for det in out:
+            b = det["bbox"]
+            centre = np.array([(b[0] + b[2]) / 2, (b[1] + b[3]) / 2])
+            if det["source"] == "DETECTED":
+                n_real += 1
+            else:
+                errors.append((det["coast_count"], centre - p))
+    print(f"\n{label}")
+    if n_real == 0:
+        print("   WARNING: track never confirmed, scenario invalid")
+    worst = 0.0
+    for cc, e in errors:
+        m = float(np.hypot(*e)); worst = max(worst, m)
+        print(f"   coast {cc}: error vector ({e[0]:+.3f}, {e[1]:+.3f})  |error| = {m:.3f} px")
+    return worst
+
+
+results = {}
+results["S1 ego-motion only"]       = run_scenario(make_T(5, 3),      np.array([0.0, 0.0]),  "S1: translation (5,3) px/frame, stationary object")
+results["S2 ego-motion + rotation"] = run_scenario(make_T(5, 3, 0.5), np.array([0.0, 0.0]),  "S2: translation + 0.5 deg rotation, stationary object")
+results["S3 object motion only"]    = run_scenario(make_T(0, 0),      np.array([2.0, -1.0]), "S3: no ego-motion, object moving (2,-1) px/frame")
+results["S4 both"]                  = run_scenario(make_T(5, 3, 0.5), np.array([2.0, -1.0]), "S4: ego-motion + moving object")
+
+print("\nSUMMARY (worst coast error per scenario, tolerance %.1f px)" % TOL_PX)
+for k, v in results.items():
+    print(f"   {k:28s} {v:8.3f} px   {'PASS' if v <= TOL_PX else 'FAIL'}")
+EOF

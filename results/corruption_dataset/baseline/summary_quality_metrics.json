@@ -1,0 +1,18 @@
+{
+  "terminal_scr": null,
+  "background_complexity": null,
+  "scr_monotonicity": null,
+  "scr_ramp_coverage": null,
+  "onset_frame": null,
+  "psnr_at_peak": null,
+  "clean_background_complexity": {
+    "count": 1112,
+    "mean": 225.2338804595569,
+    "std": 259.16949061586644,
+    "min": 0.0,
+    "p25": 90.69361555547967,
+    "p50": 169.22152144334848,
+    "p75": 272.1944533574182,
+    "max": 2854.016006767805
+  }
+}

@@ -1,0 +1,23 @@
+Metric,Value,Status
+,,
+AWLT Median (s),0.40,Divergence: N/A (N=1) | Premature Loss: 0.40 (N=115)
+AWLT IQR (s),0.30-1.35,Range: 0.10-49.70 (N=54)
+False Negative Rate,0.1121,Divergence: 0.0000 (N=1) | Premature Loss: 0.1130 (N=115)
+False Alarm Rate (FAR),0.7442,32 of 43 Correct Tracks Warned
+Positional Divergence (Mean IoU Slope),-0.004603,"N = 166 Tracks, 56.0% Drifting"
+,,
+AFDR (Airborne Flight Detection Rate),0.3489,
+Total Aircraft Detected,12823,
+Total Aircraft in Dataset,36755,
+,,
+CEDR (Continuous Encounter Detection Rate),0.2463,N = 208
+FTPS@50 (False Tracks Per Sequence),0.0085,N = 2/159 Tracks
+FTPS@80 (False Tracks Per Sequence),0.0043,N = 1/159 Tracks
+FTPS@95 (False Tracks Per Sequence),0.0043,N = 1/159 tracks
+FTPS avg(50:95),0.0051,N = 159 Eligible Tracks
+,,
+FPS Mean,10.83,
+FPS Std Dev,0.32,
+FPS Min,9.10,
+FPS Max,11.59,
+Frames Measured,49793,

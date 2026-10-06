@@ -1,0 +1,77 @@
+# ------------------------------------------------------------------------------
+# -               V E R S I O N   I D E N T I F I C A T I O N                  -
+# ------------------------------------------------------------------------------
+# File:                    %name: ResNet34_Transforms_Adjusted.yaml %
+# Date Created:            %date_created: Fri Jun 12 20:44:23 2026 %
+# CM Version               %version: 1 %
+# CM Instance              %instance: 1 %
+# Author:                  %created_by: MBusato %
+# ------------------------------------------------------------------------------
+# -                          D E S C R I P T I O N                             -
+# ------------------------------------------------------------------------------
+# Experiment: ResNet34_Transforms
+# Model:      TrEstimatorTsm (ResNet34 + Temporal Shift Module)
+# Role:       Frame-to-frame transformation estimation (dx, dy, angle).
+#             Output alignment matrix fed into SegDetector before detection.
+# Notes:
+#   - Dataset: ~1000 flights, avg 260 frames, range ≤700m, water/coastline.
+#   - Real dx/dy range mostly ±12px; sigma_offset reduced to 15px accordingly.
+#   - sigma_angle reduced from 5.0 to 3.0 deg; stable low-altitude platform.
+#   - synthetic_img_ratio reduced to 0.30; real pairs preferred for water scenes.
+#   - nb_samples_per_epoch halved to 2048; transformation model is simpler.
+#   - crop_size and downscale must not be changed (hardcoded in architecture).
+# ------------------------------------------------------------------------------
+
+meta:
+  experiment: ResNet34_Transforms
+  version: 1
+  author: MBusato
+  model: TrEstimatorTsm
+  backbone: resnet34
+  role: transformation_estimation
+
+model_params:
+  model_type: TrEstimatorTsm
+  model_cls:  TrEstimatorTsm
+  base_model_name: resnet34
+  weight_scale: 3            
+
+train_params:
+  # --- Duration ---
+  nb_epochs: 255
+  nb_samples_per_epoch: 2048
+  nb_samples_valid: 512
+
+  # --- Optimiser ---
+  initial_lr: 1.0e-3
+  optimizer: sgd
+  grad_clip: 8.0
+
+  # --- Scheduler: CosineAnnealingWarmRestarts ---
+  scheduler: CosineAnnealingWarmRestarts
+  scheduler_period: 16    # T_0
+  scheduler_t_mult: 1.42  # T_mult
+
+  # --- Checkpointing ---
+  save_period: 5   # Save Every N Epochs.
+
+train_data_loader:
+  batch_size:  8
+  num_workers: 8
+
+val_data_loader:
+  batch_size:  4
+  num_workers: 8
+
+dataset_params:
+  # --- Input dimensions ---
+  crop_size:  [1024, 1024]
+  downscale:  1
+
+  # --- Synthetic vs real frame pair ratio ---
+  synthetic_img_ratio: 0.30  # 0.30 = 30% Synthetic, 70% Real Pairs.
+
+  # --- Synthetic transform parameter ranges ---
+  sigma_offset: 15.0
+  sigma_angle:  3.0
+  sigma_scale:  0.02

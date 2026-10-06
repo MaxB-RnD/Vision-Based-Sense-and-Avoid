@@ -1,0 +1,26 @@
+
+S1: translation (5,3) px/frame, stationary object
+   coast 1: error vector (+0.000, +0.000)  |error| = 0.000 px
+   coast 2: error vector (+0.000, +0.000)  |error| = 0.000 px
+   coast 3: error vector (+0.000, +0.000)  |error| = 0.000 px
+
+S2: translation + 0.5 deg rotation, stationary object
+   coast 1: error vector (+0.000, +0.000)  |error| = 0.000 px
+   coast 2: error vector (+0.000, +0.000)  |error| = 0.000 px
+   coast 3: error vector (+0.000, +0.000)  |error| = 0.000 px
+
+S3: no ego-motion, object moving (2,-1) px/frame
+   coast 1: error vector (+0.000, +0.000)  |error| = 0.000 px
+   coast 2: error vector (+0.000, +0.000)  |error| = 0.000 px
+   coast 3: error vector (+0.000, +0.000)  |error| = 0.000 px
+
+S4: ego-motion + moving object
+   coast 1: error vector (+0.000, +0.000)  |error| = 0.000 px
+   coast 2: error vector (+0.000, +0.000)  |error| = 0.000 px
+   coast 3: error vector (+0.000, +0.000)  |error| = 0.000 px
+
+SUMMARY (worst coast error per scenario, tolerance 0.5 px)
+   S1 ego-motion only              0.000 px   PASS
+   S2 ego-motion + rotation        0.000 px   PASS
+   S3 object motion only           0.000 px   PASS
+   S4 both                         0.000 px   PASS

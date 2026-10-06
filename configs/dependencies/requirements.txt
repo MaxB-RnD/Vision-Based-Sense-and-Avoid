@@ -79,7 +79,7 @@ matplotlib>=3.7.5
 seaborn>=0.13.0                 
 
 # Model Utilities & Management.
-effdet==0.2.4
+effdet==0.4.1
 efficientnet-pytorch==0.6.3  
 fvcore>=0.1.5.post20221221, <0.2.0
 omegaconf==2.0.6  

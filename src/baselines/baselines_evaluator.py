@@ -4,7 +4,7 @@
 # File:                    %name: baselines_evaluator.py %
 # Date Created:            %date_created: Tue Mar 24 15:18:38 2026 %
 # CM Version               %version: 3 %
-# CM Instance              %instance: 1 %
+# CM Instance              %instance: 2 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -23,11 +23,11 @@
 # evaluation is selected via a command-line argument.
 #
 # USAGE INSTRUCTIONS:
-#   1. Run the Script from this Folder:
+#   1. Run the Script from the Project Root:
 #         nohup python -m src.baselines.baselines_evaluator select_model > outputs/logs/baselines/baseline_evaluation.log 2>&1 &
 #
 #   2. Optional Environment Variables:
-#       - SELECTED_MODEL = (0-5)
+#       - SELECTED_MODEL = (0-2)
 #            0 = Winning Solution (Original)
 #            1 = RT-DETR v2
 #            2 = YOLOv11
@@ -77,7 +77,7 @@ from logging_module import LogLevel, log
 from notebooks.helpers.notebook_helpers import (
     get_next_run_dir, load_combined_gt, resolve_local_flights,
     convert_results_to_metrics_format, measure_predictor_complexity,
-    build_extended_summary
+    build_summary
 )
  
 # Confirm Project Root.
@@ -109,6 +109,7 @@ def main() -> None:
     # Set Path to Desired Evaluation Dataset.
     DATASET_PATH = "configs/datasets/hard_dataset_flights.txt"
     DATASET_PARTS = ["part1", "part2", "part3"]
+    DATASET_ROOT = os.path.join(PROJECT_ROOT, "data", "original_dataset")
 
     # Set Results Variables (Auto-Incrementing Run Directory).
     RESULTS_DIR = "outputs/results/baselines/" + model_list[SELECTED_MODEL]
@@ -122,6 +123,7 @@ def main() -> None:
     # Print Summary Statement.
     log(LogLevel.INFO, "baselines_evaluator:config", "Configuration Loaded.")
     print(f"  Model Selected : {model_list[SELECTED_MODEL]}")
+    print(f"  Dataset Root   : {DATASET_ROOT}")
     print(f"  Dataset Path   : {DATASET_PATH}")
     print(f"  Dataset Parts  : {DATASET_PARTS}")
     print(f"  Run Name       : {run_name}")
@@ -130,7 +132,7 @@ def main() -> None:
     print(f"  Min Track Len  : {MIN_TRACK_LEN}")
     
     # Find all Available Sequences from the Provided Dataset.
-    local_flights = resolve_local_flights(DATASET_PATH, PROJECT_ROOT)
+    local_flights = resolve_local_flights(DATASET_PATH, DATASET_ROOT)
 
     # Add Spacing in Console Output for Readability.
     print()
@@ -151,7 +153,7 @@ def main() -> None:
         log(LogLevel.DEBUG, "baselines_evaluator:preprocessing", " ... and %d more.", len(local_flights) - 5)
 
     # Load & Filter Ground Truth to Include Local Flights Only. 
-    combined_gt = load_combined_gt(DATASET_PARTS, local_flights, PROJECT_ROOT)
+    combined_gt = load_combined_gt(DATASET_PARTS, local_flights, DATASET_ROOT)
     log(LogLevel.INFO, "baselines_evaluator:preprocessing", "Flights in Filtered Ground Truth: %d", len(combined_gt['samples']))
 
     # Build Set of Image Filenames That Physically Exist on Disk.
@@ -295,7 +297,7 @@ def main() -> None:
         log(LogLevel.ERROR, "baselines_evaluator:summary", "No Summary Files Found! Run Inference First.")
     else:
         # Build Summary DataFrame.
-        summary_df = build_extended_summary(
+        summary_df = build_summary(
             summary_json_path = summary_files[0],
             run_dir           = os.path.join(RESULTS_DIR, run_name),
             complexity        = complexity,
@@ -303,10 +305,10 @@ def main() -> None:
         )
     
         # Print Summary to Console.
-        print("\n" + "=" * 60)
-        print(" BASELINE MODEL - FULL HARD DATASET BENCHMARK SUMMARY")
-        print("=" * 60)
-        print(summary_df.set_index("Metric").to_string())
+        print("\n" + "=" * 65)
+        print(" BASELINE MODEL - FULL HARD DATASET BENCHMARK SUMMARY".center(65))
+        print("=" * 65)
+        print(summary_df.to_string(index=False))
 # ------------------------------------------------------------------------------
 
 

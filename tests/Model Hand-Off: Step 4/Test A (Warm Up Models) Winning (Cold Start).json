@@ -1,0 +1,16 @@
+{
+  "which": "winning",
+  "tag": "cold",
+  "gpu": "Quadro RTX 8000",
+  "setup_s": 1832.7640415470014,
+  "warmup_total_s": 1828.4,
+  "flight_s": 201.35820897000667,
+  "frames": 1198,
+  "median_ms": 151.09620300063398,
+  "p95_ms": 165.16139669183752,
+  "max_ms": 190.0633960030973,
+  "stalled_frames": 0,
+  "graphs_before": 8,
+  "graphs_after": 8,
+  "inductor_cache_dir": "/tmp/ind_3x9az7wh"
+}

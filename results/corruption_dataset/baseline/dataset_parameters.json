@@ -1,0 +1,16 @@
+{
+  "run_name": "run1",
+  "flags": [
+    "--corrupted-fraction",
+    "0.0",
+    "--seed",
+    "42",
+    "--active-corruptions",
+    "iso_noise",
+    "defocus_blur",
+    "colour_quantisation",
+    "near_focus",
+    "far_focus",
+    "low_light"
+  ]
+}

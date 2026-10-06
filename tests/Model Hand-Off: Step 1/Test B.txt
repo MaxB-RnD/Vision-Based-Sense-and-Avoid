@@ -1,0 +1,39 @@
+MODE=always DATASET_ENV=step1_always PARTIAL_RUN_FLIGHTS=part11b3a52c0f1764533b32e36992b17b6e1,part1036edfd6ece44c37b8ca9562fd701682 MIN_TRACK_LEN=0 MIN_SCORE=0 python - <<'EOF' 2>&1 | tee outputs/results/introspection_module/step1_checks/testB_always.txt
+import json, os
+from src.introspection_module.hrnetw32_introspective.hrnetw32_introspective_test import HRNetW32IntrospectivePredictor
+from src.introspection_module.hrnetw32_introspective.introspection_modules import IntrospectionModule, NullIntrospectionModule
+
+class AlwaysEscalate(IntrospectionModule):
+    name = "none"
+    def should_escalate(self, track_state): return True
+
+mode = os.environ["MODE"]
+HRNetW32IntrospectivePredictor.introspection_module = AlwaysEscalate() if mode == "always" else NullIntrospectionModule()
+p = HRNetW32IntrospectivePredictor()
+p.run()
+
+det = warn = warn_frames = 0
+for fl in p.get_all_flight_ids():
+    res = json.load(open(os.path.join(p.get_results_directory(fl), "result.json")))
+    wf = set()
+    for r in res:
+        for d in r["detections"]:
+            det += 1
+            if d["warning"]:
+                warn += 1
+                wf.add(r["img_name"])
+    warn_frames += len(wf)
+
+print(f"\n[{mode}] output: det={det} warn={warn} warn_frames={warn_frames}")
+print(f"[{mode}] counters: checks={p.num_track_checks} esc={p.num_escalations} esc_frames={p.num_escalated_frames} frames={p.num_frames_processed}")
+assert det == p.num_track_checks, "detections in output != num_track_checks"
+assert warn == p.num_escalations, "warnings in output != num_escalations"
+assert warn_frames == p.num_escalated_frames, "warned frames in output != num_escalated_frames"
+assert p.num_escalated_frames <= p.num_escalations <= p.num_track_checks
+assert p.num_escalated_frames <= p.num_frames_processed
+if mode == "always":
+    assert p.num_escalations == p.num_track_checks
+else:
+    assert p.num_escalations == 0
+print(f"Test B ({mode}) passed")
+EOF

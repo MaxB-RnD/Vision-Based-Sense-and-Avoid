@@ -46,6 +46,11 @@ def add_flags(parser):
                         help='Will be used if specified')   
     parser.add_argument('--enc-max-range', '-f', default=DEFAULT_MAX_RANGE_M,
                         help='Max range of intruder in the encounters')
+    parser.add_argument('--raw-results-dir', default=None,
+                        help='Path to the run directory containing one result.json per flight '
+                        '(e.g. outputs/results/introspection_module/<module>/run0), used to write '
+                        'failure_onset_frame / warning_lead_time_seconds back into each flight\'s '
+                        'result.json for visualisation.')
  
 def call_script(script_handler, args_list):
     parser = argparse.ArgumentParser()
@@ -69,7 +74,7 @@ def call_match_calculation(groundtruth, result_file, min_track_len, min_score=No
     return call_script(match_groundtruth_results, args_list)
 
 def call_metrics_with_target_far(gt_det_match_result_path, encounters,
-                                                          far=None, min_score=0):
+                                                          far=None, min_score=0, raw_results_dir=None):
     args_list = ['--encounters-with-groundtruth-filename', encounters, 
                  '--groundtruth-results-matches-filename', gt_det_match_result_path, 
                  '--target-metrics', 'far', 
@@ -77,22 +82,29 @@ def call_metrics_with_target_far(gt_det_match_result_path, encounters,
                  '--use-track-fl-dr']
     if far is not None:
         args_list += ['--target-value', str(far)]
+    if raw_results_dir is not None:
+        args_list += ['--raw-results-dir', raw_results_dir]
     return call_metrics_calculation(args_list)
 
-def call_metrics_with_target_fppi(gt_det_match_result_path, encounters, fppi, min_score=0):
-    return call_metrics_calculation(['--encounters-with-groundtruth-filename', encounters, 
-                                     '--groundtruth-results-matches-filename', gt_det_match_result_path,
-                                     '--target-metrics', 'fppi', 
-                                     '--min-det-score', str(min_score),
-                                     '--target-value', str(fppi),
-                                     '--use-track-fl-dr'])
+def call_metrics_with_target_fppi(gt_det_match_result_path, encounters, fppi, min_score=0, raw_results_dir=None):
+    args_list = ['--encounters-with-groundtruth-filename', encounters, 
+                 '--groundtruth-results-matches-filename', gt_det_match_result_path,
+                 '--target-metrics', 'fppi', 
+                 '--min-det-score', str(min_score),
+                 '--target-value', str(fppi),
+                 '--use-track-fl-dr']
+    if raw_results_dir is not None:
+        args_list += ['--raw-results-dir', raw_results_dir]
+    return call_metrics_calculation(args_list)
 
-def call_metrics_with_score(gt_det_match_result_path, encounters, score=None):
+def call_metrics_with_score(gt_det_match_result_path, encounters, score=None, raw_results_dir=None):
     args_list = ['--encounters-with-groundtruth-filename', encounters, 
                  '--groundtruth-results-matches-filename', gt_det_match_result_path,
                  '--use-track-fl-dr']
     if score is not None:
         args_list += ['--detection-score-threshold', str(score)]
+    if raw_results_dir is not None:
+        args_list += ['--raw-results-dir', raw_results_dir]
     return call_metrics_calculation(args_list)
 
 def calculate_airborne_encounters(groundtruth, output_dir):
@@ -128,20 +140,60 @@ def summarize(summaries_dir):
         results = defaultdict(list)
         for summary in summaries:
             results_name = os.path.basename(os.path.dirname(summary['gt_det_matches']))
+            # Original Detection Metrics.
             results['Algorithm'].append(results_name)
             results['Score'].append(summary['min_det_score'])
             results['FPPI'].append(summary['fppi'])
+            results['HFAR'].append(summary['far'])
             results['AFDR'].append(summary['fl_dr_in_range'])
             results['Detected planned aircraft'].append(summary['det_aircraft_in_range'])
             results['Total planned aircraft'].append(summary['tot_aircraft_in_range'])
+
+            # Advanced Tracking Metrics.
+            results['CEDR'].append(round(summary['cedr_mean'], 5))
+            results['CEDR Qualifying Encounters'].append(summary['cedr_num_qualifying_encounters'])
             results['FTPS@50'].append(round(summary['ftps_rate_by_threshold']['50'], 5))
             results['FTPS@80'].append(round(summary['ftps_rate_by_threshold']['80'], 5))
             results['FTPS@95'].append(round(summary['ftps_rate_by_threshold']['95'], 5))
             results['FTPS avg(50:95)'].append(round(summary['ftps_averaged'], 5))
             results['FTPS Eligible Tracks'].append(summary['ftps_num_eligible_tracks'])
-            results['HFAR'].append(summary['far'])
-            results['CEDR'].append(round(summary['cedr_mean'], 5))
-            results['CEDR Qualifying Encounters'].append(summary['cedr_num_qualifying_encounters'])
+
+            # Introspection Metrics.
+            results['AWLT Mean'].append(summary.get('awlt_mean'))
+            results['AWLT Median'].append(summary.get('awlt_median'))
+            results['AWLT Std'].append(summary.get('awlt_std'))
+            results['AWLT IQR'].append(summary.get('awlt_iqr'))
+            results['AWLT Min'].append(summary.get('awlt_min'))
+            results['AWLT Max'].append(summary.get('awlt_max'))
+            results['Num Warned In Advance'].append(summary.get('num_warned_in_advance'))
+            results['False Negative Rate'].append(round(summary['false_negative_rate'], 5) if summary['false_negative_rate'] is not None else None)
+            results['False Alarm Rate'].append(round(summary['false_alarm_rate'], 5) if summary['false_alarm_rate'] is not None else None)
+            results['Num Correct Tracks'].append(summary.get('num_correct_tracks'))
+            results['Num False Alarms'].append(summary.get('num_false_alarms'))
+            results['Mean IoU Slope'].append(summary['mean_iou_slope'])
+
+            # Introspection Metrics. Split by Failure Type.
+            awlt_mean_by_type = summary.get('awlt_mean_by_failure_type', {})
+            awlt_median_by_type = summary.get('awlt_median_by_failure_type', {})
+            awlt_std_by_type = summary.get('awlt_std_by_failure_type', {})
+            awlt_iqr_by_type = summary.get('awlt_iqr_by_failure_type', {})
+            num_warned_by_type = summary.get('num_warned_in_advance_by_failure_type', {})
+            fnr_by_type = summary.get('false_negative_rate_by_failure_type', {})
+            num_failed_by_type = summary.get('num_failed_tracks_by_failure_type', {})
+            for failure_type, column_label in (('sustained', 'Divergence'), ('early_termination', 'Premature Loss')):
+                fnr_value = fnr_by_type.get(failure_type)
+                results['AWLT Mean ({})'.format(column_label)].append(awlt_mean_by_type.get(failure_type))
+                results['AWLT Median ({})'.format(column_label)].append(awlt_median_by_type.get(failure_type))
+                results['AWLT Std ({})'.format(column_label)].append(awlt_std_by_type.get(failure_type))
+                results['AWLT IQR ({})'.format(column_label)].append(awlt_iqr_by_type.get(failure_type))
+                results['Num Warned In Advance ({})'.format(column_label)].append(
+                    num_warned_by_type.get(failure_type))
+                results['False Negative Rate ({})'.format(column_label)].append(
+                    round(fnr_value, 5) if fnr_value is not None else None)
+                results['Num Failed Tracks ({})'.format(column_label)].append(
+                    num_failed_by_type.get(failure_type))
+
+            # Original Tracking Metrics.
             for dr_criteria in ['Tracking']:
                 for scenario in list(HORIZON_QUERIES.keys()):
                     results['EDR {}, {}'.format(scenario, dr_criteria)].append(
@@ -150,6 +202,8 @@ def summarize(summaries_dir):
                             round(summary[dr_criteria]['Encounters'][str(range_)][scenario]['detected'], 5))
                     results['Total {}, {}'.format(scenario, dr_criteria)].append(
                             round(summary[dr_criteria]['Encounters'][str(range_)][scenario]['total'], 5))
+
+        # Save All Metrics to File. 
         df_to_save = pd.DataFrame.from_dict(results)
         df_to_save = df_to_save.sort_values(
             ['EDR All, Tracking', 'EDR Below Horizon, Tracking', 'EDR Mixed, Tracking', 
@@ -178,7 +232,11 @@ def run(flags):
     if not os.path.exists(encounters_gt_path):
         encounters_gt_path = calculate_airborne_encounters(groundtruth_path, flags.dataset_folder)
         groundtruth_path = _change_to_csv(groundtruth_path) # for acceleration of other evaluations
-    
+
+    # Resolve where each Flight's Raw (Per-Flight) result.json Lives, so failure_onset_frame / 
+    # warning_lead_time_seconds can be Written Back into it.
+    raw_results_dir = flags.raw_results_dir or os.path.dirname(os.path.normpath(flags.results_folder))
+
     result_files = glob(os.path.join(flags.results_folder, '*.json*')) 
 
     for result_file in result_files:
@@ -203,10 +261,11 @@ def run(flags):
         # now perform metrics calculation for baseline far
         if flags.baseline_far:
             _, summary_json = call_metrics_with_target_far(gt_det_matches_filename, encounters_gt_path, 
-                                                        min_score=min_score, far=flags.baseline_far)
+                                                        min_score=min_score, far=flags.baseline_far,
+                                                        raw_results_dir=raw_results_dir)
         else:
             _, summary_json = call_metrics_with_score(gt_det_matches_filename, encounters_gt_path,
-                                                                                score=min_score)
+                                                        score=min_score, raw_results_dir=raw_results_dir)
         # copy summary for directory of summaires
         shutil.copyfile(summary_json, os.path.join(summaries_dir, 
                 os.path.basename(summary_json.replace('summary', '{}_summary'.format(exp_name)))))  
@@ -214,11 +273,14 @@ def run(flags):
         # now perform metrics calculation for baseline fppi
         if flags.baseline_fppi:
             _, summary_json = call_metrics_with_target_fppi(gt_det_matches_filename, encounters_gt_path, 
-                                                       fppi=flags.baseline_fppi, min_score=min_score)
+                                                       fppi=flags.baseline_fppi, min_score=min_score,
+                                                       raw_results_dir=raw_results_dir)
             shutil.copyfile(summary_json, os.path.join(summaries_dir, 
                 os.path.basename(summary_json.replace('summary', '{}_summary'.format(exp_name)))))
                        
     summarize(summaries_dir)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluate airborne detection results with airborne metrics')
     add_flags(parser)
@@ -227,8 +289,3 @@ if __name__ == '__main__':
     args = parser.parse_args()
     setup_logging(args.log_level)
     run(args)
-
-
-
-
- 
