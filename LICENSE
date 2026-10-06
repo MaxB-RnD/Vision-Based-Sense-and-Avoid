@@ -1,0 +1,38 @@
+Copyright (c) 2026 Lockheed Martin Australia. All rights reserved.
+
+Authored by Maxwell Busato, University of Adelaide
+(Australian Institute for Machine Learning), 2026.
+
+This software and its contents are the intellectual property of the copyright
+holder named above and are protected under applicable copyright and
+intellectual property laws.
+
+No part of this software may be reproduced, distributed, modified, or
+transmitted in any form or by any means without prior written permission of
+the copyright holder. Unauthorised use, copying, or distribution is prohibited.
+
+
+==============================================================================
+THIRD-PARTY COMPONENTS
+==============================================================================
+The following portions of this repository are third-party works. They remain
+under their original licences and copyright notices, which take precedence
+over the notice above for those portions.
+
+1. Winning solution, AICrowd Airborne Object Tracking Challenge (2021)
+   Location:  src/baselines/winning_solution/
+   Copyright: (c) 2021 Dmytro Poplavskiy
+   Licence:   Community Data License Agreement - Sharing, Version 1.0
+              https://cdla.dev/sharing-1-0/
+
+2. Airborne metrics
+   Location:  core/metrics/
+   Copyright: (c) 2020 Amazon.com, Inc. or its affiliates
+   Licence:   Community Data License Agreement - Sharing, Version 1.0
+              https://cdla.dev/sharing-1-0/
+
+3. AOT dataset
+   Not included in this repository. See the dataset's own terms of use.
+
+Python dependencies (PyTorch, timm, effdet and others) are installed
+separately and are governed by their own licences.
