@@ -57,7 +57,7 @@ LOG_DIR="outputs/logs/model_training/corruption_dataset"
 # Experiment Config Names (Relative to configs/models/ Directory).
 EXPERIMENTS=(
     "winning_solution_star/HRNetW32_Corruption"
-    "winning_solution_star/GerNetB2_Corruption"
+    "winning_solution_star/GerNetB2_FPM_Corruption"
     "winning_solution_star/DLA60_Corruption"
     "winning_solution_star/HRNetW48_Corruption"
 )
