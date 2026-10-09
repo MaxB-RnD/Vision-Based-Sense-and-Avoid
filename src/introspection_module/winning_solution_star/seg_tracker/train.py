@@ -1035,7 +1035,7 @@ def train(experiment_name: str,
 
             if len(fp_samples) == 0:
                 log(LogLevel.WARNING, "train:train",
-                    "No false positives found at epoch %d. Keeping the current sampler.\n", epoch_num)
+                    "No False Positives Found at Epoch %d. Keeping the Current Sampler.\n", epoch_num)
             else:
                 dataset_train.set_fpm_samples(fp_samples)
                 data_loader = DataLoader(
