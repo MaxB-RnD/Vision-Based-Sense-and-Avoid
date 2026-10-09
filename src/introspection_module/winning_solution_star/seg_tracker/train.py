@@ -1029,24 +1029,28 @@ def train(experiment_name: str,
                 torch.save(fp_samples, fp_path)
  
             print(f"  FP Samples Found: {len(fp_samples)}")
- 
+
             if wb_run is not None:
                 wb_run.log({"fp_mining/n_samples": len(fp_samples)}, step=epoch_num)
- 
-            dataset_train.set_fpm_samples(fp_samples)
-            data_loader = DataLoader(
-                dataset_train,
-                num_workers=cfg['train_data_loader']['num_workers'],
-                shuffle=False,
-                batch_size=batch_size,
-                sampler=TrackPreferredSamplerWithFP(
+
+            if len(fp_samples) == 0:
+                log(LogLevel.WARNING, "train:train",
+                    "No false positives found at epoch %d. Keeping the current sampler.\n", epoch_num)
+            else:
+                dataset_train.set_fpm_samples(fp_samples)
+                data_loader = DataLoader(
                     dataset_train,
-                    num_samples=nb_samples_per_epoch,
-                    fp_samples=fp_samples,
-                    tracking_samples_share=tracking_samples_share,
-                    fp_samples_share=fp_samples_share,
+                    num_workers=cfg['train_data_loader']['num_workers'],
+                    shuffle=False,
+                    batch_size=batch_size,
+                    sampler=TrackPreferredSamplerWithFP(
+                        dataset_train,
+                        num_samples=nb_samples_per_epoch,
+                        fp_samples=fp_samples,
+                        tracking_samples_share=tracking_samples_share,
+                        fp_samples_share=fp_samples_share,
+                    )
                 )
-            )
  
     # Done. 
     logger.close()

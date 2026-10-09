@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------
 # -               V E R S I O N   I D E N T I F I C A T I O N                  -
 # ------------------------------------------------------------------------------
-# File:                    %name: HRNetW32_Complete.yaml %
+# File:                    %name: DLA60_Corruption.yaml %
 # Date Created:            %date_created: Tue May 05 19:19:19 2026 %
 # CM Version               %version: 4 %
 # CM Instance              %instance: 1 %
@@ -9,36 +9,36 @@
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
 # ------------------------------------------------------------------------------
-# Experiment:   HRNetW32_Complete
-# Model:        HRNetSegmentation (hrnet_w32)
-# Role:         Segmentation model (model_seg1)
-# Reference:    Winning Solution Table 2 - AFDR 81.2% @ 0.0002 FPPI
+# Experiment:   DLA60_Corruption
+# Model:        DLA8xSeparateHeads (dla60_res2next)
+# Role:         Crop refinement model (model_dla)
+# Reference:    Winning Solution Table 2 - AFDR 79.1% @ 0.0002 FPPI
 # Notes:
-#   - CosineAnnealingWarmRestarts (T_0=16, T_mult=1.42).
-#   - False positive mining at epochs: 80, 150, 230.
-#   - Final checkpoint at epoch 300.
+#   - Uses 512x512 crops around detections.
+#   - combine_outputs_dim reduced to 256 vs HRNet (512).
+#   - SGD + cosine warm restarts.
+#   - 300-epoch schedule (FPM at epochs 80, 150, 230).
 # ------------------------------------------------------------------------------
 
 meta:
-  experiment: HRNetW32_Corruption
+  experiment: DLA60_Corruption
   version: 4
   author: MBusato
-  model: HRNetSegmentation
-  backbone: hrnet_w32
-  role: segmentation
+  model: DLA8xSeparateHeads
+  backbone: dla60_res2next
+  role: crop_refinement
   input_resolution: [512, 512]
   optimizer: sgd
   scheduler: CosineAnnealingWarmRestarts
 
 model_params:
-  model_type:             HRNetSegmentation
-  model_cls:              HRNetSegmentation
-  base_model_name:        hrnet_w32
+  model_type:             DLA8xSeparateHeads
+  model_cls:              DLA8xSeparateHeads
+  base_model_name:        dla60_res2next
   input_frames:           2
   feature_location:       ''
-  combine_outputs_dim:    512
+  combine_outputs_dim:    256
   combine_outputs_kernel: 1
-  upscale_mode:           nearest
   output_binary_mask:     true
   output_above_horizon:   true
   pred_scale:             8
@@ -55,7 +55,7 @@ train_params:
   grad_clip:             8.0
   freeze_backbone_steps: 5
 
-  # --- Scheduler: CosineAnnealingWarmRestarts ---
+  # --- Scheduler ---
   scheduler:        CosineAnnealingWarmRestarts
   scheduler_period: 16      # T_0
   scheduler_t_mult: 1.42    # T_mult
@@ -63,7 +63,7 @@ train_params:
   # --- Loss ---
   mask_loss: fl
 
-  # --- Crop Sampling (50 / 25 / 25 split) ---
+  # --- Crop Sampling ---
   # 50% Fully Random Crops.
   # 25% Hard False Positive Frames.
   # 25% Airborne Frames.

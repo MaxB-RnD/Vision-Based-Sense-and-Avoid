@@ -5,7 +5,7 @@
 # File:                    %name: train_winning_solution.sh %
 # Date Created:            %date_created: Tue May 05 19:34:12 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 2 %
+# CM Instance              %instance: 3 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -48,7 +48,7 @@ set -e
 #                                 CONFIGURATION
 # ------------------------------------------------------------------------------
 TRAIN_FLIGHTS="configs/datasets/training_subsets/train.txt"
-VAL_FLIGHTS="configs/datasets/training_subsets/val.txt"
+VAL_FLIGHTS="configs/datasets/training_subsets/validation.txt"
 OUTPUT_DIR="outputs/results/model_training/corruption_dataset/winning_solution_star"
 WANDB_PROJECT="Vision Based Sense & Avoid"
 SEED=42
@@ -56,10 +56,10 @@ LOG_DIR="outputs/logs/model_training/corruption_dataset"
 
 # Experiment Config Names (Relative to configs/models/ Directory).
 EXPERIMENTS=(
-    "winning_solution_star/HRNetW32_Complete"
-    "winning_solution_star/GerNetB2_Complete"
-    "winning_solution_star/DLA60_Complete"
-    "winning_solution_star/HRNetW48_Complete"
+    "winning_solution_star/HRNetW32_Corruption"
+    "winning_solution_star/GerNetB2_Corruption"
+    "winning_solution_star/DLA60_Corruption"
+    "winning_solution_star/HRNetW48_Corruption"
 )
 
 # Human-Readable Names for Logging.
