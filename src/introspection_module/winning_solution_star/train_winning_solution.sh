@@ -22,9 +22,9 @@
 #
 # USAGE:
 #   1. Run: chmod +x src/introspection_module/winning_solution_star/train_winning_solution.sh
-#   2. nohup src/introspection_module/winning_solution_star/train_winning_solution.sh > outputs/logs/model_training/train_winning_solution_star.log 2>&1 &
+#   2. nohup src/introspection_module/winning_solution_star/train_winning_solution.sh > outputs/logs/model_training/corruption_dataset/train_winning_solution_star.log 2>&1 &
 #   3. Then monitor from terminal with:
-#            tail -f outputs/logs/model_training/train_winning_solution_star.log OR watch W&B directly.
+#            tail -f outputs/logs/model_training/corruption_dataset/train_winning_solution_star.log OR watch W&B directly.
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
@@ -49,10 +49,10 @@ set -e
 # ------------------------------------------------------------------------------
 TRAIN_FLIGHTS="configs/datasets/training_subsets/train.txt"
 VAL_FLIGHTS="configs/datasets/training_subsets/val.txt"
-OUTPUT_DIR="outputs/results/model_training/winning_solution_star"
+OUTPUT_DIR="outputs/results/model_training/corruption_dataset/winning_solution_star"
 WANDB_PROJECT="Vision Based Sense & Avoid"
 SEED=42
-LOG_DIR="outputs/logs/model_training"
+LOG_DIR="outputs/logs/model_training/corruption_dataset"
 
 # Experiment Config Names (Relative to configs/models/ Directory).
 EXPERIMENTS=(

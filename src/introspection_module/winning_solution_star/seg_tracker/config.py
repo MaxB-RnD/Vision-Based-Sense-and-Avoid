@@ -1,5 +1,5 @@
 from pathlib import Path
-DATA_DIR = Path(__file__).resolve().parents[4] / "data"
+DATA_DIR = Path(__file__).resolve().parents[4] / "data" / "corruption_dataset"
 SRC_DATA_DIR = 'data'
 
 IMG_FORMAT = 'png'

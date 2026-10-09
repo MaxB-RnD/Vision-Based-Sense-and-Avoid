@@ -3,7 +3,7 @@
 # ------------------------------------------------------------------------------
 # File:                    %name: HRNetW32_Complete.yaml %
 # Date Created:            %date_created: Tue May 05 19:19:19 2026 %
-# CM Version               %version: 3 %
+# CM Version               %version: 4 %
 # CM Instance              %instance: 1 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
@@ -15,13 +15,13 @@
 # Reference:    Winning Solution Table 2 - AFDR 81.2% @ 0.0002 FPPI
 # Notes:
 #   - CosineAnnealingWarmRestarts (T_0=16, T_mult=1.42).
-#   - False positive mining at epochs: 250, 370, 535, 770, 1100, 1535.
-#   - Final checkpoint at epoch 2220.
+#   - False positive mining at epochs: 80, 150, 230.
+#   - Final checkpoint at epoch 300.
 # ------------------------------------------------------------------------------
 
 meta:
-  experiment: HRNetW32_Complete
-  version: 3
+  experiment: HRNetW32_Corruption
+  version: 4
   author: MBusato
   model: HRNetSegmentation
   backbone: hrnet_w32
@@ -45,24 +45,24 @@ model_params:
 
 train_params:
   # --- Duration ---
-  nb_epochs:            2220
-  nb_samples_per_epoch: 4096
+  nb_epochs:            300
+  nb_samples_per_epoch: 2048
   nb_samples_valid:     512
- 
+
   # --- Optimiser ---
   initial_lr:            1.0e-3
   optimizer:             sgd
   grad_clip:             8.0
   freeze_backbone_steps: 5
- 
+
   # --- Scheduler: CosineAnnealingWarmRestarts ---
   scheduler:        CosineAnnealingWarmRestarts
   scheduler_period: 16      # T_0
   scheduler_t_mult: 1.42    # T_mult
- 
+
   # --- Loss ---
   mask_loss: fl
- 
+
   # --- Crop Sampling (50 / 25 / 25 split) ---
   # 50% Fully Random Crops.
   # 25% Hard False Positive Frames.
@@ -70,16 +70,13 @@ train_params:
   tracking_samples_share: 0.25
   fp_samples_share:       0.25
   fpm_batch_size:         4
- 
+
   # --- False Positive Mining ---
   fpm_epochs:
-    250:  8
-    370:  8
-    535:  8
-    770:  8
-    1100: 8
-    1535: 8
- 
+    80:  8
+    150: 8
+    230: 8
+
   # --- Loss Weights ---
   loss_scale:
     cls:           2000
@@ -88,17 +85,17 @@ train_params:
     distance:      1
     tracking:      1
     above_horizon: 1
- 
+
 train_data_loader:
-  batch_size:   16
-  num_workers:  8
- 
+  batch_size:   8
+  num_workers:  7
+
 val_data_loader:
-  batch_size:   16
-  num_workers:  8
- 
+  batch_size:   4
+  num_workers:  4
+
 dataset_params:
   back_steps:            [1]
   scale:                 1
-  crop_with_plane_ratio: 0.25
+  crop_with_plane_ratio: 0.5
   crop_size:             [512, 512]
