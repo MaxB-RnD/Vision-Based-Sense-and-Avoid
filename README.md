@@ -25,7 +25,7 @@
 
 ## **1. Overview**
 
-This repository contains the official codebase and experimental evaluation framework associated with the research paper and Honours thesis:
+**This repository contains the official codebase and experimental evaluation framework associated with the research paper and Honours thesis:**
 
 > **"Vision-Based Sense and Avoid: Monocular Airborne Object Tracking for Safe Drone Flight"**  
 > *Max Busato, in partnership with Lockheed Martin Australia - Advanced Systems & Technology Group and The University of Adelaide.*
@@ -88,6 +88,7 @@ If you find this work, evaluation protocol, or codebase helpful in your research
 
 ## **4. Repository Structure**
 
+```
 Vision-Based-Sense-and-Avoid/
 ├── configs/
 │   ├── datasets/               # Flight splits and evaluation manifests.
@@ -121,6 +122,7 @@ Vision-Based-Sense-and-Avoid/
 ├── LICENSE                     # Software license agreement.
 ├── README.md                   # Repository overview and reproduction guide.
 └── setup.sh                    # Environment setup and dependency installation script.
+```
 
 ---
 
@@ -128,7 +130,7 @@ Vision-Based-Sense-and-Avoid/
 
 ## **5. Getting Started**
 
-### *5.1 Prerequisites*
+### 5.1 Prerequisites
 - Linux / WSL2 (Ubuntu 20.04+ recommended).
 - Python 3.11.
 - NVIDIA GPU with CUDA 12.0+ support (for MAX-AUTOTUNE graph compilation).
@@ -136,7 +138,7 @@ Vision-Based-Sense-and-Avoid/
 
 <br/>
 
-### *5.2 Environment Setup*
+### 5.2 Environment Setup
 
 **1. Clone the repository with Git LFS:**
 ```bash
@@ -165,7 +167,7 @@ bash setup.sh
 
 ## **6. Dataset Preparation & Utilities**
 
-The [Airborne Object Tracking (AOT)](https://www.aicrowd.com/challenges/airborne-object-tracking-challenge#dataset) dataset comprises over 11 TB of monocular flight sequences hosted openly on AWS S3 (AWS credentials are not required).
+The [**Airborne Object Tracking (AOT)**](https://www.aicrowd.com/challenges/airborne-object-tracking-challenge#dataset) dataset comprises over 11 TB of monocular flight sequences hosted openly on AWS S3 (AWS credentials are not required).
 
 Several CLI utilities are provided under `src/data/` to browse, download, and preprocess subsets:
 
@@ -175,16 +177,17 @@ Several CLI utilities are provided under `src/data/` to browse, download, and pr
   ```
 * **Build Targeted Subsets:** Query flights matching challenging criteria (e.g. sub-36 px² targets, multi-aircraft encounters):
   ```bash
-  python -m src.data.data_builder
+  python -m src.data.original_dataset.data_builder
   ```
 * **Download Flight Sequences:** Download image frames for flights specified in a split manifest:
   ```bash
-  python -m src.data.download_data
+  python -m src.data.original_dataset.download_data
   ```
 * **Annotated Video Rendering:** Render frame-by-frame tracker output bounding boxes with ground truth overlays:
   ```bash
-  python -m src.data.view_data
+  python -m src.data.original_dataset.view_data
   ```
+> 💡 ***Note:*** *The utilities above are provided for exploring the dataset structure and selectively fetching flight samples. You do not need to run them manually before evaluation. Each notebook (See Sectiuon 7) handles its own data loading, downloading any required flight sequences and assembling the necessary clean or corrupted splits directly during execution.*
 
 ---
 
@@ -200,21 +203,23 @@ Experiments can be executed either via automated CLI scripts or step-by-step thr
 * **`notebooks/core_improvement.ipynb`:** Evaluates single-backbone replacements (MobileNetV4, EfficientViT-M2/B2, ResNet34, HRNet-W32), CUDA graph acceleration, and the Tracking-to-Detect (T2D) motion architecture under AFDR, CEDR, and FTPS.
 * **`notebooks/introspection_module.ipynb`:** Evaluates runtime introspection strategies (Static Confidence, EWMA Trend, Coast-Count, Kalman NIS) under temporally ramped image corruptions (sensor noise, optical defocus, low light).
 
+<br/>
+
 ### 7.2 Automated Terminal Evaluation
 
-For batch testing and headless benchmarks:
+**For batch testing and headless benchmarks:**
 
 ```bash
-# Run baseline ensemble evaluation
-python -m src.baselines.baselines_evaluator
+# Run baseline ensemble evaluation.
+python -m src.baselines.baselines_evaluator select_model
 
-# Run single backbone & T2D evaluation
-python -m src.core_improvement.core_improvement_evaluator
+# Run single backbone & T2D evaluation.
+python -m src.core_improvement.core_improvement_evaluator select_model
 
-# Run introspection failure detection evaluation
-python -m src.introspection_module.introspection_evaluator
+# Run introspection failure detection evaluation.
+python -m src.introspection_module.introspection_module_evaluator select_module
 ```
 
-Full numeric benchmarking tables, diagnostic curves, and trade-off comparisons across all models and configurations are available in the [Honours Thesis](docs/Honours_Thesis.pdf) and [Research Paper](docs/Research_Paper.pdf).
+Full numeric benchmarking tables, diagnostic curves, and trade-off comparisons across all models and configurations are available in the [**Honours Thesis**](docs/Honours_Thesis.pdf) and [**Research Paper**](docs/Research_Paper.pdf).
 
 ---
