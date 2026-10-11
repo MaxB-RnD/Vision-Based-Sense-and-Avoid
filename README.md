@@ -170,7 +170,7 @@ Performance is evaluated using the official Airborne Object Tracking Challenge m
 The example below shows a complete annotated flight sequence with object detections, identifiers, and range information overlaid on each frame.
 
 <div align="center">
-    <img src="docs/Images/Data_Viewer_Video.gif" width="900">
+    <img src="docs/GIFs/Data_Viewer_Video.gif" width="900">
 </div>
 
 ### 6.3 Data Tools
