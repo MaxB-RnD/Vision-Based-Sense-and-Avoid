@@ -474,7 +474,7 @@ Backbone comparison under the optimised pipeline.
 
 <div align="center">
 
-<img src="docs/Images/SAA_Backbone_Tradeoffs.png" width="900">
+<img src="docs/Images/SAA_Backbone_Tradeoffs_Detection.png" width="900">
 
 <p><em>
 Performance trade-offs across backbone models.
