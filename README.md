@@ -25,10 +25,12 @@
 
 ## **1. Overview**
 
-**This repository contains the official codebase and experimental evaluation framework associated with the research paper and Honours thesis:**
+This repository contains the official codebase and experimental evaluation framework associated with the research paper and Honours thesis:
 
 > **"Vision-Based Sense and Avoid: Monocular Airborne Object Tracking for Safe Drone Flight"**  
 > *Max Busato, in partnership with Lockheed Martin Australia - Advanced Systems & Technology Group and The University of Adelaide.*
+
+<br/>
 
 Autonomous Sense-and-Avoid (SAA) systems require early, dependable detection of unexpected airborne traffic to plan safe separation manoeuvres. Using the **Airborne Object Tracking (AOT)** dataset, spanning over 5.9M high-resolution frames across diverse aerial encounters, this project investigates:
 
@@ -169,7 +171,7 @@ bash setup.sh
 
 The [**Airborne Object Tracking (AOT)**](https://www.aicrowd.com/challenges/airborne-object-tracking-challenge#dataset) dataset comprises over 11 TB of monocular flight sequences hosted openly on AWS S3 (AWS credentials are not required).
 
-Several CLI utilities are provided under `src/data/` to browse, download, and preprocess subsets:
+**Several CLI utilities are provided under `src/data/` to browse, download, and preprocess subsets:**
 
 * **Browse Flight Metadata:** Inspect encounter properties (object pixel size, distance, horizon profile) without downloading full sequences:
   ```bash
