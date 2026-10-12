@@ -69,6 +69,15 @@ NAMES=(
     "DLA60"
     "HRNet48"
 )
+
+# GPU Memory to Reserve Per Model, in GiB (Same Order as EXPERIMENTS). This Stops 
+# Other Jobs Taking the Memory Mid-Run on the Shared GPU.
+RESERVE_GIB=(
+    9     # HRNet32
+    6     # GerNet-M BiFPN
+    9     # DLA60
+    12    # HRNet48
+)
 # ------------------------------------------------------------------------------
 
 
@@ -146,11 +155,13 @@ for i in "${!EXPERIMENTS[@]}"; do
     echo "------------------------------------------------------------------------"
     echo "  [$MODEL_NUM/$TOTAL] Starting: $NAME"
     echo "  Config  : $EXP"
+    echo "  Reserve : ${RESERVE_GIB[$i]} GiB GPU"
     echo "  Log     : $LOG_FILE"
     echo "  Time    : $(date)"
     echo "------------------------------------------------------------------------"
 
     # Run Training Script (Python Module Entry Point).
+    GPU_RESERVE_GIB="${RESERVE_GIB[$i]}" \
     python -m src.introspection_module.winning_solution_star.seg_tracker.train train "$EXP" \
         --train-flights "$TRAIN_FLIGHTS" \
         --val-flights   "$VAL_FLIGHTS" \
