@@ -1,0 +1,37 @@
+nohup: ignoring input
+[Fri 16 Oct 2026 00:17:57 ACDT] START always-light
+[Fri 16 Oct 2026 02:10:34 ACDT] light exit code 0
+[Fri 16 Oct 2026 02:10:34 ACDT] START always-ensemble
+[Fri 16 Oct 2026 04:51:18 ACDT] ensemble exit code 0
+[Fri 16 Oct 2026 04:51:18 ACDT] 2x2 on A=outputs/results/introspection_module/none/test/run4 B=outputs/results/introspection_module/winning_solution/test/run3
+range limit: 699.9811862165178 m | A=outputs/results/introspection_module/none/test/run4 | B=outputs/results/introspection_module/winning_solution/test/run3
+
+=== ALL in-range GT frames  (N = 36755 GT frames) ===
+                  ensemble hit  ensemble miss
+HRNet hit                15920           2586
+HRNet miss                 224          18025
+HRNet recall 0.5035 | ensemble recall 0.4392
+escalation gain: ensemble recovers 224 of 18249 HRNet misses (1.2%)
+ensemble loses 2586 of 18506 HRNet hits (14.0%)
+HRNet hits that are coasted-only: 515
+
+=== above horizon  (N = 11819 GT frames) ===
+                  ensemble hit  ensemble miss
+HRNet hit                 7368            422
+HRNet miss                  92           3937
+HRNet recall 0.6591 | ensemble recall 0.6312
+escalation gain: ensemble recovers 92 of 4029 HRNet misses (2.3%)
+ensemble loses 422 of 7790 HRNet hits (5.4%)
+HRNet hits that are coasted-only: 112
+
+=== below horizon  (N = 908 GT frames) ===
+                  ensemble hit  ensemble miss
+HRNet hit                  519             81
+HRNet miss                   2            306
+HRNet recall 0.6608 | ensemble recall 0.5738
+escalation gain: ensemble recovers 2 of 308 HRNet misses (0.6%)
+ensemble loses 81 of 600 HRNet hits (13.5%)
+HRNet hits that are coasted-only: 21
+
+saved outputs/results/verification_testing/Model Hand-Off: Step 5/outcomes_frame_level.csv
+[Fri 16 Oct 2026 04:51:22 ACDT] DONE
