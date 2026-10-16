@@ -1,0 +1,11 @@
+module,dataset_split,params_json,false_alarm_rate,false_negative_rate,run_dir
+rolling_confidence_trend,validation,"{""ewma_threshold"": 0.0, ""slope_threshold"": -0.02}",0.525,0.11023622047244094,outputs/results/introspection_module/rolling_confidence_trend/validation/run8
+rolling_confidence_trend,validation,"{""ewma_threshold"": 0.0, ""slope_threshold"": -0.025}",0.475,0.33858267716535434,outputs/results/introspection_module/rolling_confidence_trend/validation/run9
+rolling_confidence_trend,validation,"{""ewma_threshold"": 0.0, ""slope_threshold"": -0.03}",0.325,0.6771653543307087,outputs/results/introspection_module/rolling_confidence_trend/validation/run10
+rolling_confidence_trend,validation,"{""ewma_threshold"": 0.0, ""slope_threshold"": -0.04}",0.025,0.9921259842519685,outputs/results/introspection_module/rolling_confidence_trend/validation/run11
+rolling_confidence_trend,validation,"{""ewma_threshold"": 0.6, ""slope_threshold"": -0.03}",0.325,0.6614173228346457,outputs/results/introspection_module/rolling_confidence_trend/validation/run12
+rolling_confidence_trend,validation,"{""ewma_threshold"": 0.6, ""slope_threshold"": -0.04}",0.025,0.9606299212598425,outputs/results/introspection_module/rolling_confidence_trend/validation/run13
+rolling_confidence_trend,validation,"{""ewma_threshold"": 0.65, ""slope_threshold"": -0.03}",0.425,0.6377952755905512,outputs/results/introspection_module/rolling_confidence_trend/validation/run14
+rolling_confidence_trend,validation,"{""ewma_threshold"": 0.65, ""slope_threshold"": -0.04}",0.15,0.9212598425196851,outputs/results/introspection_module/rolling_confidence_trend/validation/run15
+rolling_confidence_trend,validation,"{""ewma_threshold"": 0.7, ""slope_threshold"": -0.03}",0.525,0.5590551181102362,outputs/results/introspection_module/rolling_confidence_trend/validation/run16
+rolling_confidence_trend,validation,"{""ewma_threshold"": 0.7, ""slope_threshold"": -0.04}",0.475,0.7874015748031497,outputs/results/introspection_module/rolling_confidence_trend/validation/run17

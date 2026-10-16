@@ -5,7 +5,7 @@
 # File:                    %name: train_winning_solution.sh %
 # Date Created:            %date_created: Tue May 05 19:34:12 2026 %
 # CM Version               %version: 1 %
-# CM Instance              %instance: 2 %
+# CM Instance              %instance: 3 %
 # Author:                  %created_by: MBusato %
 # ------------------------------------------------------------------------------
 # -                          D E S C R I P T I O N                             -
@@ -22,9 +22,9 @@
 #
 # USAGE:
 #   1. Run: chmod +x src/introspection_module/winning_solution_star/train_winning_solution.sh
-#   2. nohup src/introspection_module/winning_solution_star/train_winning_solution.sh > outputs/logs/model_training/train_winning_solution_star.log 2>&1 &
+#   2. nohup src/introspection_module/winning_solution_star/train_winning_solution.sh > outputs/logs/model_training/corruption_dataset/train_winning_solution_star.log 2>&1 &
 #   3. Then monitor from terminal with:
-#            tail -f outputs/logs/model_training/train_winning_solution_star.log OR watch W&B directly.
+#            tail -f outputs/logs/model_training/corruption_dataset/train_winning_solution_star.log OR watch W&B directly.
 #
 # ------------------------------------------------------------------------------
 # -                          L I C E N S I N G                                 -
@@ -48,18 +48,18 @@ set -e
 #                                 CONFIGURATION
 # ------------------------------------------------------------------------------
 TRAIN_FLIGHTS="configs/datasets/training_subsets/train.txt"
-VAL_FLIGHTS="configs/datasets/training_subsets/val.txt"
-OUTPUT_DIR="outputs/results/model_training/winning_solution_star"
+VAL_FLIGHTS="configs/datasets/training_subsets/validation.txt"
+OUTPUT_DIR="outputs/results/model_training/corruption_dataset/winning_solution_star"
 WANDB_PROJECT="Vision Based Sense & Avoid"
 SEED=42
-LOG_DIR="outputs/logs/model_training"
+LOG_DIR="outputs/logs/model_training/corruption_dataset"
 
 # Experiment Config Names (Relative to configs/models/ Directory).
 EXPERIMENTS=(
-    "winning_solution_star/HRNetW32_Complete"
-    "winning_solution_star/GerNetB2_Complete"
-    "winning_solution_star/DLA60_Complete"
-    "winning_solution_star/HRNetW48_Complete"
+    "winning_solution_star/HRNetW32_Corruption"
+    "winning_solution_star/GerNetB2_FPM_Corruption"
+    "winning_solution_star/DLA60_Corruption"
+    "winning_solution_star/HRNetW48_Corruption"
 )
 
 # Human-Readable Names for Logging.
@@ -68,6 +68,15 @@ NAMES=(
     "GerNet-M BiFPN"
     "DLA60"
     "HRNet48"
+)
+
+# GPU Memory to Reserve Per Model, in GiB (Same Order as EXPERIMENTS). This Stops 
+# Other Jobs Taking the Memory Mid-Run on the Shared GPU.
+RESERVE_GIB=(
+    9     # HRNet32
+    6     # GerNet-M BiFPN
+    9     # DLA60
+    12    # HRNet48
 )
 # ------------------------------------------------------------------------------
 
@@ -146,11 +155,13 @@ for i in "${!EXPERIMENTS[@]}"; do
     echo "------------------------------------------------------------------------"
     echo "  [$MODEL_NUM/$TOTAL] Starting: $NAME"
     echo "  Config  : $EXP"
+    echo "  Reserve : ${RESERVE_GIB[$i]} GiB GPU"
     echo "  Log     : $LOG_FILE"
     echo "  Time    : $(date)"
     echo "------------------------------------------------------------------------"
 
     # Run Training Script (Python Module Entry Point).
+    GPU_RESERVE_GIB="${RESERVE_GIB[$i]}" \
     python -m src.introspection_module.winning_solution_star.seg_tracker.train train "$EXP" \
         --train-flights "$TRAIN_FLIGHTS" \
         --val-flights   "$VAL_FLIGHTS" \

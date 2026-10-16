@@ -482,6 +482,44 @@ def load_checkpoint(path: str, model: nn.Module,
 # ------------------------------------------------------------------------------
 #                               MAIN TRAIN FUNCTION
 # ------------------------------------------------------------------------------
+def reserve_gpu_memory():
+    """Pre-reserve GPU memory for this process.
+
+    Allocates one big block and frees it WITHOUT empty_cache(), so PyTorch's
+    caching allocator keeps it reserved and no other process can take it.
+    Later allocations (training, validation, FP mining) are carved out of it.
+    Fails immediately, rather than 150 epochs in, if the memory isn't free.
+    """
+    # Read the Requested GPU Memory Reservation in GiB.
+    gib = float(os.environ.get("GPU_RESERVE_GIB", "0"))
+
+    # Skip Reservation if the Requested Amount is Zero or Less.
+    if gib <= 0:
+        return
+
+    # Convert the Requested Memory from GiB to Bytes.
+    need = int(gib * 1024 ** 3)
+
+    # Retrieve the Currently Available & Total GPU Memory.
+    free, total = torch.cuda.mem_get_info()
+
+    # Check Whether Enough GPU Memory is Available.
+    if free < need:
+        # Raise an Error if the Requested Memory Cannot Be Reserved.
+        raise RuntimeError(
+            f"Cannot reserve {gib:.1f} GiB: only {free / 1024 ** 3:.1f} GiB of "
+            f"{total / 1024 ** 3:.1f} GiB free. Another process is using the GPU.")
+
+    # Allocate a Single GPU Memory Block of the Requested Size.
+    block = torch.empty(need, dtype=torch.uint8, device="cuda")
+
+    # Delete the Block Reference While Keeping Memory in PyTorch's Cache.
+    del block  # Do Not Call torch.cuda.empty_cache() Because it Would Release Cached Memory.
+        
+    # Print the Total GPU Memory Currently Reserved by PyTorch.
+    print(f"  Reserved {torch.cuda.memory_reserved() / 1024 ** 3:.1f} GiB of GPU memory.")
+
+
 def train(experiment_name: str,
           fold: int,
           continue_epoch: int      = -1,
@@ -491,6 +529,9 @@ def train(experiment_name: str,
           use_wandb: bool          = False,
           wandb_project: str       = "airborne-detection"):
     
+    # Reserve GPU Memory Up Front.
+    reserve_gpu_memory()
+
     # Load Configuration & Split into Model/Train Params.
     cfg = common_utils.load_config_data(experiment_name)
     model_params = DotDict(cfg["model_params"])
@@ -1029,24 +1070,28 @@ def train(experiment_name: str,
                 torch.save(fp_samples, fp_path)
  
             print(f"  FP Samples Found: {len(fp_samples)}")
- 
+
             if wb_run is not None:
                 wb_run.log({"fp_mining/n_samples": len(fp_samples)}, step=epoch_num)
- 
-            dataset_train.set_fpm_samples(fp_samples)
-            data_loader = DataLoader(
-                dataset_train,
-                num_workers=cfg['train_data_loader']['num_workers'],
-                shuffle=False,
-                batch_size=batch_size,
-                sampler=TrackPreferredSamplerWithFP(
+
+            if len(fp_samples) == 0:
+                log(LogLevel.WARNING, "train:train",
+                    "No False Positives Found at Epoch %d. Keeping the Current Sampler.\n", epoch_num)
+            else:
+                dataset_train.set_fpm_samples(fp_samples)
+                data_loader = DataLoader(
                     dataset_train,
-                    num_samples=nb_samples_per_epoch,
-                    fp_samples=fp_samples,
-                    tracking_samples_share=tracking_samples_share,
-                    fp_samples_share=fp_samples_share,
+                    num_workers=cfg['train_data_loader']['num_workers'],
+                    shuffle=False,
+                    batch_size=batch_size,
+                    sampler=TrackPreferredSamplerWithFP(
+                        dataset_train,
+                        num_samples=nb_samples_per_epoch,
+                        fp_samples=fp_samples,
+                        tracking_samples_share=tracking_samples_share,
+                        fp_samples_share=fp_samples_share,
+                    )
                 )
-            )
  
     # Done. 
     logger.close()
